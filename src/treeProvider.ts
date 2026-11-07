@@ -86,9 +86,26 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
   setAllSessionsExpanded(on: boolean): void {
     if (this.allSessionsExpanded === on) return;
     this.allSessionsExpanded = on;
-    // オフに戻すときは強制折りたたみも解き、通常の状態（表示中だけ展開）に戻す
-    if (!on) this.collapsedFlag.clear();
+    // オフに戻すだけでは畳まない（畳むのは collapseAllSessions の役目）。
+    // 折りたたみフラグはここでは触らない: 項目単位の操作でモードを抜けたときに、
+    // 以前に畳んだセッションまで開いてしまうのを防ぐ
     this.renderEpoch++;
+    this._onDidChange.fire(undefined);
+  }
+  /** 全セッションを明示的に折りたたむ（タイトルバーのトグルをオフにしたとき）。
+   *  表示中セッションの「既定で展開」よりも、利用者の明示操作を優先する。
+   *  後から到着した新しいセッションにはフラグが付かないので、自動追尾で
+   *  最新が開く動きはそのまま保たれる */
+  collapseAllSessions(): void {
+    for (const s of this.sessions) {
+      this.collapsedFlag.add(s.id);
+      this.seeded.delete(s.id);
+      for (const key of [...this.expanded]) {
+        if (key === `s:${s.id}` || key.startsWith(`k:${s.id}:`) || key.startsWith(`n:${s.id}:`) || key.startsWith(`o:${s.id}`)) {
+          this.expanded.delete(key);
+        }
+      }
+    }
     this._onDidChange.fire(undefined);
   }
 
@@ -96,7 +113,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
     if (!this.traces.has(session.id)) {
       const trace = await this.ensureTrace(session);
       this.traces.set(session.id, trace);
-      if (trace && session.id === this.displayedId && !this.seeded.has(session.id)) {
+      if (trace && session.id === this.displayedId && !this.seeded.has(session.id) && !this.collapsedFlag.has(session.id)) {
         this.seeded.add(session.id);
         this.seedExpanded(session.id, trace);
       }
@@ -116,28 +133,24 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       this.expanded.add(`n:${sessionId}:${part.skillName}:${part.graph.rootId}`);
     }
   }
-  /** 表示中セッションが切り替わったとき、展開状態は新しいセッションの初期状態から始める */
+  /** 表示中セッションが切り替わったとき、展開状態は新しいセッションの初期状態から始める。
+   *  ただし明示的に畳まれたセッションは、表示に切り替えても畳んだままにする
+   *  （開くのは displaySession 側でフラグを解除してからここに来る経路だけ） */
   resetExpandedFor(sessionId: string): void {
     this.expanded = new Set();
     this.seeded.delete(sessionId);
     const trace = this.traces.get(sessionId);
-    if (trace) { this.seeded.add(sessionId); this.seedExpanded(sessionId, trace); }
+    if (trace && !this.collapsedFlag.has(sessionId)) { this.seeded.add(sessionId); this.seedExpanded(sessionId, trace); }
   }
   setExpanded(key: string, isExpanded: boolean): void {
     if (isExpanded) this.expanded.add(key); else this.expanded.delete(key);
   }
-  /** そのセッションが（子を持つ要素について）すべて展開されているか */
-  isFullyExpanded(sessionId: string): boolean {
-    const trace = this.traces.get(sessionId);
-    if (!trace) return false;
-    if (!this.expanded.has(`s:${sessionId}`)) return false;
-    for (const part of trace.skills) {
-      if (!this.expanded.has(`k:${sessionId}:${part.skillName}`)) return false;
-      for (const gn of part.graph.order) {
-        if (gn.children.length && !gn.cycle && !this.expanded.has(`n:${sessionId}:${part.skillName}:${gn.id}`)) return false;
-      }
-    }
-    return true;
+  /** セッション自体が開いているか（トグルの判定はこれだけに使う）。
+   *  以前は「配下の全要素が開いているか」で判定していたため、手で1つ畳んだり
+   *  展開の取りこぼしが1つでもあると永遠に「未展開」と判定され、畳む側に
+   *  倒れなかった（2026-11-07 の不具合報告） */
+  isSessionExpanded(sessionId: string): boolean {
+    return this.expanded.has(`s:${sessionId}`);
   }
   /** そのセッション配下をすべて折りたたむ（項目を作り直して畳んだ状態で再描画する） */
   collapseSession(sessionId: string): void {

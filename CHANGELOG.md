@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.1] - 2026-11-07
+
+### Fixed
+
+- **Per-session expand/collapse toggle now collapses reliably.** The
+  toggle used to decide by whether *every* element under the session was
+  expanded, so a single manually collapsed node (or one expand that the
+  view dropped) made it choose "expand" forever. It now toggles on the
+  session's own open/closed state.
+- **"Collapse all sessions" now includes the displayed session.**
+  Turning the all-sessions toggle off used to return to the normal
+  state, in which the displayed session stays open — leaving exactly
+  one session visibly expanded. An explicit collapse now wins over the
+  displayed session's default-open behaviour; sessions that arrive
+  later still open as usual.
+
 ## [1.0.0] - 2026-11-07
 
 First release.
