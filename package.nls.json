@@ -12,12 +12,12 @@
   "command.copyNodeSubtree": "Copy This Subtree",
   "command.toggleAutoFollow": "Toggle Auto-Follow Latest Session",
   "config.documentIncludeNotes": "Include the 'How to read' notes and the glossary in document copies (Markdown / HTML) of a summary. Off by default, to keep pasted documents light to edit. The on-screen summary always shows them.",
-  "config.autoFollowLatest": "Keep the newest Copilot session in view and update live as records grow (follow-tail: viewing a past session is never interrupted; new sessions only join the history with a badge).",
+  "config.autoFollowLatest": "Keep the newest session (Copilot / Kiro) in view and update live as records grow (follow-tail: viewing a past session is never interrupted; new sessions only join the history with a badge).",
   "command.enableAutoFollow": "Resume Auto-Follow",
   "command.pauseAutoFollow": "Pause Auto-Follow (Manual Mode)",
   "command.toggleExpandCollapseAllSessions": "Expand/Collapse All Sessions",
   "command.displaySession": "Display This Session",
   "command.openSkillSummary": "Show This Skill Summary",
   "command.toggleExpandCollapse": "Expand/Collapse All",
-  "skilltrace.description": "See which skill files GitHub Copilot actually loaded. SkillTrace overlays Copilot session records onto a skill's reference graph and shows, per file, how certain its arrival is, the measured token usage, and how full the context window became. 100% local, no tracking — a measurement tool and learning aid for Agent Skills."
+  "skilltrace.description": "See which skill files GitHub Copilot or Amazon Kiro actually loaded. SkillTrace overlays Copilot / Kiro session records onto a skill's reference graph and shows, per file, how certain its arrival is, the measured usage, and how full the context window became. 100% local, no tracking — a measurement tool and learning aid for Agent Skills."
 }

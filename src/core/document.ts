@@ -6,7 +6,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, TraceNode } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
-import { esc, fmt, GLOSSARY } from "./common";
+import { esc, fmt, fmtCredits, usedToolsSummary, GLOSSARY } from "./common";
 import { formatLocalDateTime } from "./sessions";
 
 function unicodeBar(ratio: number | null | undefined, width = 20): string {
@@ -96,6 +96,11 @@ function mdCell(s: string): string {
 }
 
 function measuredMd(st: SessionTrace): string {
+  if (st.source === "kiro") {
+    const rows = (st.creditTurns ?? []).map(t =>
+      `| ${t.turn + 1} | ${fmtCredits(t.credits)} | ${mdCell(usedToolsSummary(t.usedTools))} |`).join("\n");
+    return `| ターン | クレジット | 使用したツール |\n| --- | ---: | --- |\n${rows}\n| 合計 | ${fmtCredits(st.creditsTotal)} |  |\n\nKiro の実測はトークンではなくクレジットで記録されます（usage_summary の積算）。`;
+  }
   const rows = st.turns.map(r =>
     `| ${r.turn + 1} | ${fmt(r.inputTokens)} | ${fmt(r.cacheReadTokens)} | ${fmt(r.cacheWriteTokens)} | ${fmt(r.outputTokens)} | ${fmt(r.reasoningTokens)} |`).join("\n");
   const t = st.totals;
@@ -106,6 +111,11 @@ function measuredMd(st: SessionTrace): string {
 }
 
 function contextMd(st: SessionTrace): string {
+  if (st.source === "kiro") {
+    const r = st.lastContextUsageRatio;
+    const pct = r !== null && r !== undefined ? `${(r * 100).toFixed(1)}%` : "—";
+    return `最終使用率 ${pct} ${unicodeBar(r)}（記録は使用率のスナップショットのみで、トークンの絶対量と上限は記録されません）`;
+  }
   const pct = st.contextFillRatio !== null ? `${(st.contextFillRatio * 100).toFixed(1)}%` : "—";
   return `最終使用量 ${fmt(st.lastContextCurrentTokens)} / 上限 ${fmt(st.contextTokenLimit)} トークン（${pct}） ${unicodeBar(st.contextFillRatio)}`;
 }
@@ -127,6 +137,8 @@ export function renderSessionMarkdown(st: SessionTrace, opts?: DocumentOptions):
     return `| ${mdCell(part.skillName)} | ${firstOrder !== null ? "#" + firstOrder : "—"} | 高 ${counts.A} ・ 中 ${counts.B} ・ 低 ${counts.C} | ${counts.N} | ${part.nodes.length} | ${fmt(reachedTok(part.nodes))} | ${fmt(totalTok(part.nodes))} |`;
   }).join("\n");
   const trees = st.skills.map(part => `### ${part.skillName}\n\n${treeMd(part)}`).join("\n\n");
+  const contextLoads = st.contextLoads?.length
+    ? `\n\n## 常時文脈（コンテキストへの読み込み）\n\n${st.contextLoads.map(l => `- ${l.path}${l.at ? `（${formatLocalDateTime(l.at)}）` : ""}`).join("\n")}\n\nスキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。` : "";
   const outside = st.outsideReads.length
     ? `\n\n## スキル外で読まれたファイル\n\n${st.outsideReads.map(r => `- ${r.path}（${r.tool} ／ ${r.at ? formatLocalDateTime(r.at) : ""}）${r.failed ? "（読取失敗）" : ""}${r.title ? ` — ${r.title}` : ""}`).join("\n")}` : "";
   return `# セッションサマリ
@@ -141,12 +153,13 @@ ${metaLines(st).map(([k, v]) => `- ${k}: ${v}`).join("\n")}
 | スキル | 最初の到達順 | 到達の内訳（確度別） | 記録なし | 全ファイル | 到達分の推定トークン合計 | スキル全体の推定トークン合計 |
 | --- | ---: | --- | ---: | ---: | ---: | ---: |
 ${skillRows}
+${st.skills.length ? "" : "\nこのセッションではスキル起動は検出されませんでした。"}
 
 ## 到達の流れ
 
-${trees}
+${trees}${contextLoads}
 
-## トークン実測
+## ${st.source === "kiro" ? "クレジット実測" : "トークン実測"}
 
 ${measuredMd(st)}
 
@@ -164,7 +177,7 @@ export function renderSkillMarkdown(st: SessionTrace, part: SkillPart, opts?: Do
 
 ${metaLines(st).map(([k, v]) => `- ${k}: ${v}`).join("\n")}
 
-> このスキルの範囲だけを表示しています。トークン実測とコンテキストウィンドウ使用量はセッション全体の値です（このスキル単独の実測ではありません）。到達順の番号はセッション全体の通し番号です。
+> このスキルの範囲だけを表示しています。${st.source === "kiro" ? "クレジット実測" : "トークン実測"}とコンテキストウィンドウ使用量はセッション全体の値です（このスキル単独の実測ではありません）。到達順の番号はセッション全体の通し番号です。
 
 プロンプト:
 > ${st.session.userMessagePreview.replace(/\n/g, " ")}${st.session.userMessageTruncated ? " …" : ""}
@@ -181,7 +194,7 @@ ${treeMd(part)}
 | --- | --- | ---: | --- | --- | ---: |
 ${nodeRows}
 
-## トークン実測（セッション全体）
+## ${st.source === "kiro" ? "クレジット実測" : "トークン実測"}（セッション全体）
 
 ${measuredMd(st)}
 
@@ -237,6 +250,13 @@ function metaHtml(st: SessionTrace): string {
 }
 
 function measuredHtml(st: SessionTrace): string {
+  if (st.source === "kiro") {
+    const rows = (st.creditTurns ?? []).map(t =>
+      `<tr><td style="${H.cell}">${t.turn + 1}</td><td style="${H.cellR}">${fmtCredits(t.credits)}</td><td style="${H.cell}">${esc(usedToolsSummary(t.usedTools))}</td></tr>`).join("");
+    return `<table style="${H.table}"><tr><th style="${H.cell}">ターン</th><th style="${H.cell}">クレジット</th><th style="${H.cell}">使用したツール</th></tr>${rows}
+<tr><th style="${H.cell}">合計</th><th style="${H.cellR}">${fmtCredits(st.creditsTotal)}</th><td style="${H.cell}"></td></tr></table>
+<p>Kiro の実測はトークンではなくクレジットで記録されます（usage_summary の積算）。</p>`;
+  }
   const rows = st.turns.map(r =>
     `<tr><td style="${H.cell}">${r.turn + 1}</td><td style="${H.cellR}">${fmt(r.inputTokens)}</td><td style="${H.cellR}">${fmt(r.cacheReadTokens)}</td><td style="${H.cellR}">${fmt(r.cacheWriteTokens)}</td><td style="${H.cellR}">${fmt(r.outputTokens)}</td><td style="${H.cellR}">${fmt(r.reasoningTokens)}</td></tr>`).join("");
   const t = st.totals;
@@ -248,6 +268,11 @@ function measuredHtml(st: SessionTrace): string {
 }
 
 function contextHtml(st: SessionTrace): string {
+  if (st.source === "kiro") {
+    const r = st.lastContextUsageRatio;
+    const pct = r !== null && r !== undefined ? `${(r * 100).toFixed(1)}%` : "—";
+    return `<p>最終使用率 ${pct} <span style="${H.mono}">${unicodeBar(r)}</span>（記録は使用率のスナップショットのみで、トークンの絶対量と上限は記録されません）</p>`;
+  }
   const pct = st.contextFillRatio !== null ? `${(st.contextFillRatio * 100).toFixed(1)}%` : "—";
   return `<p>最終使用量 ${fmt(st.lastContextCurrentTokens)} / 上限 ${fmt(st.contextTokenLimit)} トークン（${pct}） <span style="${H.mono}">${unicodeBar(st.contextFillRatio)}</span></p>`;
 }
@@ -274,6 +299,8 @@ export function renderSessionHtmlFragment(st: SessionTrace, opts?: DocumentOptio
     return `<tr><td style="${H.cell}">${esc(part.skillName)}</td><td style="${H.cellR}">${firstOrder !== null ? "#" + firstOrder : "—"}</td><td style="${H.cell}">高 ${counts.A} ・ 中 ${counts.B} ・ 低 ${counts.C}</td><td style="${H.cellR}">${counts.N}</td><td style="${H.cellR}">${part.nodes.length}</td><td style="${H.cellR}">${fmt(reachedTok(part.nodes))}</td><td style="${H.cellR}">${fmt(totalTok(part.nodes))}</td></tr>`;
   }).join("");
   const trees = st.skills.map(part => `<h3 style="${H.h3}">${esc(part.skillName)}</h3>${treeHtml(part)}`).join("");
+  const contextLoads = st.contextLoads?.length
+    ? `<h2 style="${H.h2}">常時文脈（コンテキストへの読み込み）</h2><ul>${st.contextLoads.map(l => `<li>${esc(l.path)}${l.at ? `（${esc(formatLocalDateTime(l.at))}）` : ""}</li>`).join("")}</ul><p>スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。</p>` : "";
   const outside = st.outsideReads.length
     ? `<h2 style="${H.h2}">スキル外で読まれたファイル</h2><ul>${st.outsideReads.map(r => `<li>${esc(r.path)}（${esc(r.tool)} ／ ${esc(r.at ? formatLocalDateTime(r.at) : "")}）${r.failed ? "（読取失敗）" : ""}${r.title ? ` — ${esc(r.title)}` : ""}</li>`).join("")}</ul>` : "";
   return `<div style="${H.root}">
@@ -283,9 +310,11 @@ ${metaHtml(st)}
 ${promptHtml(st)}
 <h2 style="${H.h2}">起動したスキル</h2>
 <table style="${H.table}"><tr><th style="${H.cell}">スキル</th><th style="${H.cell}">最初の到達順</th><th style="${H.cell}">到達の内訳（確度別）</th><th style="${H.cell}">記録なし</th><th style="${H.cell}">全ファイル</th><th style="${H.cell}">到達分の推定トークン合計</th><th style="${H.cell}">スキル全体の推定トークン合計</th></tr>${skillRows}</table>
+${st.skills.length ? "" : "<p>このセッションではスキル起動は検出されませんでした。</p>"}
 <h2 style="${H.h2}">到達の流れ</h2>
 ${trees}
-<h2 style="${H.h2}">トークン実測</h2>
+${contextLoads}
+<h2 style="${H.h2}">${st.source === "kiro" ? "クレジット実測" : "トークン実測"}</h2>
 ${measuredHtml(st)}
 <h2 style="${H.h2}">コンテキストウィンドウ使用量</h2>
 ${contextHtml(st)}${outside}
@@ -300,7 +329,7 @@ export function renderSkillHtmlFragment(st: SessionTrace, part: SkillPart, opts?
   return `<div style="${H.root}">
 <h1 style="${H.h1}">スキルサマリ — ${esc(part.skillName)}</h1>
 ${metaHtml(st)}
-<div style="${H.note}">このスキルの範囲だけを表示しています。トークン実測とコンテキストウィンドウ使用量はセッション全体の値です（このスキル単独の実測ではありません）。到達順の番号はセッション全体の通し番号です。</div>
+<div style="${H.note}">このスキルの範囲だけを表示しています。${st.source === "kiro" ? "クレジット実測" : "トークン実測"}とコンテキストウィンドウ使用量はセッション全体の値です（このスキル単独の実測ではありません）。到達順の番号はセッション全体の通し番号です。</div>
 <p style="${H.muted}">プロンプト</p>
 ${promptHtml(st)}
 <p>到達: ${pill("A")} <b>${counts.A}</b>（コンテキストへの読み込みを確認）／ ${pill("B")} <b>${counts.B}</b>（読み取り）／ ${pill("C")} <b>${counts.C}</b>（言及のみ）／ 記録なし <b>${counts.N}</b> ／ 全 ${part.nodes.length} ファイル</p>
@@ -308,7 +337,7 @@ ${promptHtml(st)}
 ${treeHtml(part)}
 <h2 style="${H.h2}">ノード明細</h2>
 <table style="${H.table}"><tr><th style="${H.cell}">ファイル</th><th style="${H.cell}">確度</th><th style="${H.cell}">順</th><th style="${H.cell}">初出</th><th style="${H.cell}">根拠</th><th style="${H.cell}">推定トークン</th></tr>${nodeRows}</table>
-<h2 style="${H.h2}">トークン実測（セッション全体）</h2>
+<h2 style="${H.h2}">${st.source === "kiro" ? "クレジット実測" : "トークン実測"}（セッション全体）</h2>
 ${measuredHtml(st)}
 <h2 style="${H.h2}">コンテキストウィンドウ使用量（セッション全体）</h2>
 ${contextHtml(st)}${notesHtmlSections(false, opts)}

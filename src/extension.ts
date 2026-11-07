@@ -7,6 +7,7 @@ import { parseEventsFile } from "./core/events";
 import { buildSessionTrace, firstHeading, type SessionTrace } from "./core/trace";
 import { renderSessionHtml, renderSkillHtml } from "./core/report";
 import { defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
+import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroInvokedSkillNames } from "./core/kiro";
 import { detectSkillsForSession } from "./core/autodetect";
 import { renderSessionCopy } from "./core/copy";
 import { renderSessionMarkdown, renderSkillMarkdown } from "./core/document";
@@ -28,6 +29,24 @@ export function activate(context: vscode.ExtensionContext): void {
     return cfg.trim() ? cfg.trim().replace(/^~(?=$|\/|\\)/, homedir()) : defaultSessionStateDir();
   };
 
+  // Kiro: スキル探索はセッションの全ワークスペース（マルチルート）と
+  // ユーザー全局（~/.kiro/skills 等）に対して行い、見つけたルートも一緒に返す
+  const kiroSkillCandidates = (session: SessionInfo): { name: string; dir: string; root: string }[] => {
+    const roots = session.workspacePaths?.length ? session.workspacePaths : (session.workspaceHint ? [session.workspaceHint] : []);
+    const seen = new Set<string>();
+    const out: { name: string; dir: string; root: string }[] = [];
+    for (const root of [...roots, homedir()]) {
+      if (!root || !existsSync(root)) continue;
+      for (const s of discoverSkills(root)) {
+        const key = s.dir.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ ...s, root });
+      }
+    }
+    return out;
+  };
+
   // セッションのトレース構築（parse → スキル判定（複数）→ グラフ → SessionTrace）
   const buildCache = new Map<string, { mtimeMs: number; trace: SessionTrace | null }>();
   const buildTraceFor = async (session: SessionInfo): Promise<SessionTrace | null> => {
@@ -35,6 +54,22 @@ export function activate(context: vscode.ExtensionContext): void {
     if (cached && cached.mtimeMs === session.mtimeMs) return cached.trace;
     let trace: SessionTrace | null = null;
     try {
+      if (session.source === "kiro") {
+        const parsed = await parseKiroMessagesFile(session.eventsPath);
+        const activated = new Set(parsed.activations.map(a => a.name));
+        const parts = kiroSkillCandidates(session)
+          .filter(s => activated.has(s.name))
+          .map(s => ({ graph: buildGraph(s.dir, s.root), skillDirAbs: s.dir, disclosed: true }));
+        // スキル起動が無くても、常時文脈・クレジット・読み取りの記録があれば
+        // トレースを構築する（仕様駆動などのセッションでも中身が見えるように）
+        const hasContent = parsed.inclusions.length > 0 || parsed.creditsTotal > 0 || parsed.toolExecutions.length > 0;
+        if (parts.length || hasContent) {
+          const workspaceAbs = session.workspacePaths?.[0] ?? session.workspaceHint ?? "";
+          trace = buildKiroSessionTrace(parsed, parts, { sessionId: session.id, workspaceAbs });
+        }
+        buildCache.set(session.id, { mtimeMs: session.mtimeMs, trace });
+        return trace;
+      }
       const workspaceDir = (session.workspaceHint && existsSync(session.workspaceHint))
         ? session.workspaceHint
         : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
@@ -62,7 +97,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const hit = scanCache.get(key);
     if (hit !== undefined) return hit;
     let result: string[] | null = null;
-    if (session.workspaceHint && existsSync(session.workspaceHint)) {
+    if (session.source === "kiro") {
+      const cands = kiroSkillCandidates(session);
+      if (cands.length) result = scanKiroInvokedSkillNames(session.eventsPath, cands);
+    } else if (session.workspaceHint && existsSync(session.workspaceHint)) {
       result = scanInvokedSkillNames(session.eventsPath, discoverSkills(session.workspaceHint));
     }
     scanCache.set(key, result);
@@ -93,6 +131,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let lastSignature = "";
   let debounce: NodeJS.Timeout | null = null;
   let baseWatcher: FSWatcher | null = null;
+  let kiroWatcher: FSWatcher | null = null;
   let sessionWatcher: FSWatcher | null = null;
   let watchedSessionDir: string | null = null;
 
@@ -101,7 +140,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const refreshStatus = (): void => {
     if (!sessions.length) {
       statusBar.text = "$(pulse) SkillTrace";
-      statusBar.tooltip = "Copilot のセッションがまだありません。";
+      statusBar.tooltip = "セッションがまだありません。";
     } else if (effectivelyFollowing()) {
       statusBar.text = "$(pulse) SkillTrace 追尾中";
       statusBar.tooltip = "最新のセッションを表示し、新しいセッションへ自動で移ります。クリックで自動追尾をオフにします。";
@@ -133,14 +172,21 @@ export function activate(context: vscode.ExtensionContext): void {
     watchedSessionDir = session.dir;
     try {
       sessionWatcher = watch(session.dir, (_event, filename) => {
-        if (!filename || filename === "events.jsonl") scheduleRefresh();
+        if (!filename || filename === "events.jsonl" || filename === "messages.jsonl") scheduleRefresh();
       });
       sessionWatcher.on("error", () => { /* ポーリングで代替 */ });
     } catch { /* ポーリングで代替 */ }
   };
 
   const refreshSessions = (): void => {
-    const list = listSessions(sessionStateDir());
+    // Copilot と Kiro のセッションを同じ履歴に混ぜ、新しい順に並べる
+    const kiroList: SessionInfo[] = listKiroSessions(defaultKiroHome()).map(k => ({
+      id: k.id, dir: k.dir, eventsPath: k.eventsPath, mtimeMs: k.mtimeMs,
+      workspaceHint: k.workspacePaths[0] ?? k.rootPaths[0] ?? null,
+      source: "kiro", title: k.title,
+      workspacePaths: k.workspacePaths.length ? k.workspacePaths : k.rootPaths,
+    }));
+    const list = [...listSessions(sessionStateDir()), ...kiroList].sort((a, b) => b.mtimeMs - a.mtimeMs);
     const newest = list[0];
     // 表示の決定（follow-tail）
     let newDisplayed = displayedId;
@@ -158,7 +204,7 @@ export function activate(context: vscode.ExtensionContext): void {
     lastSignature = signature;
 
     if (!list.length) {
-      treeView.message = "Copilot のセッションがまだありません。スキルを使うセッションを実行すると、ここに履歴として自動で並びます。";
+      treeView.message = "セッションがまだありません。Copilot / Kiro でスキルを使うセッションを実行すると、ここに履歴として自動で並びます。";
     } else {
       treeView.message = undefined;
     }
@@ -187,6 +233,11 @@ export function activate(context: vscode.ExtensionContext): void {
       baseWatcher = watch(sessionStateDir(), () => scheduleRefresh());
       baseWatcher.on("error", () => { /* ポーリングで代替 */ });
     } catch { /* ポーリングで代替 */ }
+    try {
+      kiroWatcher?.close();
+      kiroWatcher = watch(join(defaultKiroHome(), "sessions"), () => scheduleRefresh());
+      kiroWatcher.on("error", () => { /* ポーリングで代替 */ });
+    } catch { /* Kiro 未使用環境では監視なし（ポーリングで代替） */ }
   };
 
   // 自動追尾のオン/オフは「1つのスイッチ」: ビューのボタン・ステータスバー・設定の
@@ -414,7 +465,7 @@ export function activate(context: vscode.ExtensionContext): void {
   refreshSessions();
   const poll = setInterval(refreshSessions, 3000);
   context.subscriptions.push({ dispose: () => clearInterval(poll) });
-  context.subscriptions.push({ dispose: () => { baseWatcher?.close(); sessionWatcher?.close(); if (debounce) clearTimeout(debounce); } });
+  context.subscriptions.push({ dispose: () => { baseWatcher?.close(); kiroWatcher?.close(); sessionWatcher?.close(); if (debounce) clearTimeout(debounce); } });
 }
 
 export function deactivate(): void { /* 購読は context.subscriptions で破棄される */ }

@@ -4,6 +4,16 @@ export function esc(s: unknown): string {
 }
 export const fmt = (n: number | null | undefined): string => (n === null || n === undefined ? "—" : n.toLocaleString("en-US"));
 
+/** Kiro のクレジット実測の表示（小数2桁。Kiro の画面表示に合わせる） */
+export const fmtCredits = (v: number | null | undefined): string => (v === null || v === undefined ? "—" : v.toFixed(2));
+
+/** 使用したツールの一覧を、重複を数えて短くまとめる（例: read_file ×3） */
+export function usedToolsSummary(tools: string[]): string {
+  const counts = new Map<string, number>();
+  for (const t of tools) counts.set(t, (counts.get(t) ?? 0) + 1);
+  return [...counts.entries()].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n)).join(", ");
+}
+
 /** 用語の説明（用語集 v0.1）。レポート末尾の表と、文書コピーの用語表で共有する。
  *  用語が増えたら、ここだけをメンテする */
 export const GLOSSARY: [string, string][] = [
@@ -14,6 +24,7 @@ export const GLOSSARY: [string, string][] = [
   ["コンテキスト", "モデルがそのターンで参照している情報全体（システムの指示、会話履歴、読み込まれたファイルなど）のことです。その上限がコンテキストウィンドウ（context window）で、上限に近づくと古い内容が要約・切り捨てられることがあります。"],
   ["キャッシュ", "前のターンに送った入力と共通する部分を再利用する仕組みです。キャッシュ読取は再利用で済んだ入力、キャッシュ書込は将来の再利用のために保存された入力を指します。コンテキストの上限を増やすものではなく、同じ内容を繰り返し送るコストと時間を減らすためのものです。"],
   ["コンテキストウィンドウ使用量／使用率", "セッションの最後のターン時点で、コンテキストウィンドウの上限に対してどれだけ使っていたかです。使用量はトークン数、使用率はその割合を指します。"],
+  ["クレジット（credit）", "Kiro での利用量の単位です。トークン数ではなく、依頼（ターン）ごとの作業量に対して課金・記録される単位で、セッション記録の usage_summary にターン単位で残ります。Kiro のセッションでは、SkillTrace はこのクレジット実測を表示します（トークンの内訳は記録されません）。"],
   ["推定トークン", "ファイルの文字数から概算したトークン数です。実際に消費される量とは別物で、大きさの目安として使います。"],
   ["実測", "セッション記録に残る usage（API の利用量記録）を集計した値です。入力（input）はモデルへ送られた量、出力（output）は生成された量、推論（reasoning）はモデル内部の推論に使われた量です。キャッシュまわりは「キャッシュ」の項を見てください。"],
   ["スキル外", "スキルの格納場所（.github / .kiro / .agents の skills フォルダ配下）には入っていないのに、スキルから参照されているファイルです。.kiro/steering/ の文書など、複数のスキルから共有される文書が該当します。"],
