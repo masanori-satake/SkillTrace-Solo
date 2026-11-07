@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.2] - 2026-11-08
+
+### 追加 (Added)
+- **学習ドキュメント 03「Copilot と Kiro のセッション記録を読み比べる」を追加。**
+  両プラットフォームのセッション記録（保存場所、形式、スキル起動と参照の辿りの
+  記録、常時文脈、実測の単位、コンテキストウィンドウ使用量）を、実機で確認した
+  実例セッションの数値とともに対比し、SkillTrace での到達の確度の対応付けと、
+  記録を読む際の落とし穴（対応付けキーの違い、単位の非対称性など）をまとめた。
+  あわせて学習ドキュメントの索引に Kiro 側の基礎データを追記した。
+- **Added learning document 03, "Comparing Copilot and Kiro session records"**,
+  contrasting how the two platforms record sessions (storage, format, skill
+  activation and reference traversal, always-loaded context, measured units,
+  context-window usage), with SkillTrace's certainty mapping and the pitfalls
+  found while reading the records on a real machine.
+
 ## [1.0.1] - 2026-11-07
 
 ### Fixed

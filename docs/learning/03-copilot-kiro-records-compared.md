@@ -147,5 +147,131 @@ Kiro にはスキル専用のイベント種別がありません。スキル起
 取り込まれた文書の file:// URI が並びます。実測したセッションでは
 AGENTS.md と `.kiro/steering/` の3文書、計5件が入っていました。
 スキル起動とは別に「常にかかっている文脈」がどれかが、この一覧で分かります。
-steering のないワークスペースでは、このイベント自
-...[truncated 9113 chars]
+steering のないワークスペースでは、このイベント自体が現れません
+（プローブで対照確認済み）。
+
+### 実測は usage_summary（クレジット）
+
+`usage_summary` の `promptTurnSummaries` に、ターン単位の実測が入ります。
+
+```json
+{"unit":"credit","unitPlural":"credits","usage":0.8200442711442787,"usedTools":["disclose_context","list_directory","read_file","read_file","read_file"]}
+```
+
+- 単位は **credit（クレジット）** で、トークンの内訳は記録されません
+- `usedTools` に、そのターンで使ったツールが並びます
+- あわせて `elapsedTime`（所要時間）と `status` も残ります
+
+### 文脈使用量は contextUsage（割合のみ）
+
+`session_metadata` はキー・バリュー形式のスナップショットで、
+`key` が `contextUsage` のものの `value` が `{usagePercentage: 4.1247}` の形です。
+
+- 残るのは **割合（%）だけ** で、トークンの絶対量も上限も記録されません
+- ターンの途中でも何度も記録されるため、使用率の推移は追えます
+## 4. 実例で読み比べる
+
+同じ役割のプローブ（SKILL.md → references 2段の合言葉探し）を、
+両プラットフォームで実行した記録の対比です。
+
+| | Copilot（phase0-probe） | Kiro（kiro-probe） |
+| --- | --- | --- |
+| ターン数 | 4 | 1 |
+| ツール実行 | 5回 | 8回（探索4・開示1・読み取り3） |
+| 実測 | 入力 71,271 / 出力 770 / キャッシュ読取 52,862 / キャッシュ書込 18,397 / 推論 355 トークン | 0.82 credits |
+| 文脈使用量 | 最終 19,561 トークン（上限 200,000） | 4.1247% → 4.2921% と推移 |
+
+読み取れること:
+
+- Copilot は「何トークン使ったか」が細かく残る代わりに、ワークスペースの
+  情報は薄い。Kiro は「何クレジット使ったか」と「どのワークスペースか」が
+  残る代わりに、トークンの内訳は残らない
+- Kiro のプローブでツール呼び出しの半分が「探索」（`search`）だったのは、
+  スキルの置き場所を探してから開示する、という Kiro の動きが記録に
+  そのまま表れているためです
+- どちらも「起動 → SKILL.md → 参照を順に辿る」という progressive disclosure の
+  動き自体は、記録から同じように追跡できます
+
+もう1つ、Kiro 側の対照データとして、12ルートのワークスペース
+（AGENTS.md と steering が大量に常時読み込まれる環境）での1ターンは
+**19.88 credits** でした。最小構成のプローブ（0.82）の約24倍です。
+常時文脈の量がクレジットを支配する、という構図が実測で見えます
+（Copilot 側で入力トークンが膨らむ話と同型です。02 を参照）。
+
+## 5. SkillTrace での対応付け
+
+SkillTrace は、プラットフォームごとに違う記録を、共通の物差し
+（到達の確度: 高・中・低）に読み替えて表示します。対応付けは次のとおりです。
+
+| 確度 | Copilot | Kiro |
+| --- | --- | --- |
+| 高（読み込みを確認） | `skill.context_delivered_ref` で言及／`skill.invoked` に SKILL.md の見出し | `steering_inclusion` 等の `documents` に列挙／`disclose_context` で開示された SKILL.md |
+| 中（読み取り成功） | `tool.execution_complete` の成功 | `read_files` の `tool_result` が成功 |
+| 低（言及のみ） | 上記以外のイベントでの言及 | 上記以外のイベントでの言及 |
+
+実測の表示も供給源で切り替えます。Copilot はトークン実測と
+コンテキストウィンドウ使用量（トークン）、Kiro はクレジット実測と
+コンテキストウィンドウ使用率（%）です。Kiro でスキル起動のないセッション
+（仕様駆動など）でも、常時文脈（`documents` の一覧）とクレジットは
+記録から表示できます。
+
+## 6. 落とし穴（実機確認で踏んだもの）
+
+- **Kiro の `executionId` はターン共通**。呼び出しと結果を `executionId` で
+  対応付けると全部同じ相手にくっつきます。対応キーは `toolCallId`
+- **Kiro の disclose の結果は `success: false` だった**。それでもスキルは
+  起動し、合言葉まで正しく返りました。起動の成否を結果フラグで判断すると
+  誤ります。起動の事実は `tool_call` 側で確定させます
+- **disclose の結果は本文ではない**（104文字）。「開示されたら本文も
+  記録にあるはず」という前提で探すと迷子になります。本文の到達は
+  続く `read_files` で裏付けます
+- **file:// URI はエンコードされている**。`file:///c%3A/Users/...` のように
+  ドライブレターのコロンが `%3A` になります。通常のパスと突き合わせる前に
+  デコードが必要です
+- **単位は換算できない**。0.82 credits と 71,271 トークンは、どちらも
+  「1回のプローブ実行の実測」ですが、土台が違うので大小比較はできません。
+  比較できるのは、それぞれの単位の中での相対的な変化だけです
+- **Copilot のマルチルートは記録が弱い**。`cwd` が1つしか残らないため、
+  2つ目以降のフォルダのセッションでは基準を取り違える可能性があります。
+  Kiro は `workspacePaths` / `rootPaths` がある分、この点は確実です
+
+## 7. 自分で覗く方法（再現実験）
+
+両方のストアはただのテキストファイルなので、エディタや PowerShell で
+直接覗けます。
+
+### Copilot
+
+```powershell
+# 最新セッションのイベント種別の内訳
+$f = (Get-ChildItem "$env:USERPROFILE\.copilot\session-state" -Recurse -Filter events.jsonl | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+Get-Content $f -Encoding UTF8 | ForEach-Object { ($_ | ConvertFrom-Json).type } | Group-Object | Select-Object Count, Name
+# スキル起動の記録だけ見る
+Get-Content $f -Encoding UTF8 | Where-Object { $_ -match 'skill\.' }
+```
+
+### Kiro
+
+```powershell
+# 最新セッションの種別内訳（payload.type を見る）
+$f2 = (Get-ChildItem "$env:USERPROFILE\.kiro\sessions" -Recurse -Filter messages.jsonl | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+Get-Content $f2 -Encoding UTF8 | ForEach-Object { ($_ | ConvertFrom-Json).payload.type } | Group-Object | Select-Object Count, Name
+# スキル起動（disclose_context）の確認
+$kl = Get-Content $f2 -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json }
+$kl | Where-Object { $_.payload.type -eq 'tool_call' -and $_.payload.actionType -eq 'disclose_context' } | ForEach-Object { $_.payload.args }
+# クレジット実測
+$kl | Where-Object { $_.payload.type -eq 'usage_summary' } | ForEach-Object { $_.payload.promptTurnSummaries } | Format-List
+```
+
+注意: PowerShell 5.1 の `Get-Content` は UTF-8 を文字化けさせることが
+あるため、`-Encoding UTF8` を付けてください（ファイル自体は正常です）。
+
+## まとめ
+
+- 問いは同じでも、記録の設計はプラットフォームの考え方を映します。
+  Copilot は「モデルの消費（トークン）」を細かく残し、Kiro は
+  「作業の対価（クレジット）」と「作業場所（ワークスペース）」を残します
+- スキルの読み込みを追う鍵は、Copilot ではスキル専用イベント、
+  Kiro では `disclose_context` と `steering_inclusion` です
+- 記録を読むときは、単位と対応キーの前提を最初に確認すること。
+  それを怠ると、§6 のような誤読をします
