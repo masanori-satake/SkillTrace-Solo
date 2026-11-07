@@ -5,7 +5,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, Trace, TraceNode } from "./trace";
 import { formatLocalDateTime } from "./sessions";
-import { esc, fmt, GLOSSARY } from "./common";
+import { esc, fmt, fmtCredits, usedToolsSummary, GLOSSARY } from "./common";
 import { renderSessionMarkdown, renderSessionHtmlFragment, renderSkillMarkdown, renderSkillHtmlFragment } from "./document";
 export { esc, fmt };
 
@@ -105,6 +105,52 @@ function renderFillChart(src: FillSource): string {
 <svg width="${W}" height="${H}" style="background:var(--panel);border:1px solid var(--line);border-radius:6px">
 ${grid}<polyline points="${pts}" fill="none" stroke="#6cb2f5" stroke-width="2"/>${dots}${xLabels}</svg>
 <p class="bar-legend">縦軸: コンテキストウィンドウ使用量（上限に対する割合）／ 横軸: ターン</p>`;
+}
+
+// --- Kiro の実測表示: トークンではなくクレジットと使用率（%）で記録される ---
+type CreditSource = Pick<SessionTrace, "creditsTotal" | "creditTurns">;
+function creditsBlock(src: CreditSource): string {
+  const rows = (src.creditTurns ?? []).map(t =>
+    `<tr><td>${t.turn + 1}</td><td>${fmtCredits(t.credits)}</td><td>${esc(usedToolsSummary(t.usedTools))}</td></tr>`).join("");
+  return `<h2>クレジット実測</h2>
+<p>合計 <b>${fmtCredits(src.creditsTotal)}</b> credits（usage_summary の積算。Kiro の実測はトークンではなくクレジットで記録されます）</p>
+<table class="nodes"><tr><th>ターン</th><th>クレジット</th><th>使用したツール</th></tr>${rows}</table>`;
+}
+
+type UsageRatioSource = Pick<SessionTrace, "contextUsageSeries" | "lastContextUsageRatio">;
+function renderKiroUsageChart(src: UsageRatioSource): string {
+  const series = src.contextUsageSeries ?? [];
+  if (!series.length) return "";
+  const W = 680, H = 200, mL = 46, mR = 12, mT = 16, mB = 26;
+  const iw = W - mL - mR, ih = H - mT - mB;
+  const X = (i: number) => mL + (series.length === 1 ? iw / 2 : (iw * i) / (series.length - 1));
+  const Y = (v: number) => mT + ih * (1 - v);
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(r => {
+    const y = Y(r);
+    const dash = r === 1 ? ` stroke-dasharray="4 3"` : "";
+    const cap = r === 1 ? `<text x="${mL + 4}" y="${y - 4}">上限 100%</text>` : "";
+    return `<line x1="${mL}" y1="${y}" x2="${W - mR}" y2="${y}" style="stroke:var(--line)"${dash}/>`
+      + `<text x="${mL - 6}" y="${y + 4}" text-anchor="end">${Math.round(r * 100)}%</text>${cap}`;
+  }).join("");
+  const pts = series.map((p, i) => `${X(i).toFixed(1)},${Y(p.ratio).toFixed(1)}`).join(" ");
+  const dots = series.map((p, i) =>
+    `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.ratio).toFixed(1)}" r="${i === series.length - 1 ? 3.5 : 2.2}" fill="#6cb2f5"/>`).join("");
+  const xLabels = `<text x="${X(0)}" y="${H - 6}" text-anchor="middle">記録 1</text>`
+    + (series.length > 1 ? `<text x="${X(series.length - 1)}" y="${H - 6}" text-anchor="middle">記録 ${series.length}</text>` : "");
+  const zone = fillZone(src.lastContextUsageRatio ?? null);
+  const pct = src.lastContextUsageRatio !== null && src.lastContextUsageRatio !== undefined ? (src.lastContextUsageRatio * 100).toFixed(1) + "%" : "—";
+  return `<h2>コンテキストウィンドウ使用量</h2>
+<p>最終使用率 ${pct} <span class="zone" style="color:${zone.color}">● ${zone.label}</span></p>
+<svg width="${W}" height="${H}" style="background:var(--panel);border:1px solid var(--line);border-radius:6px">
+${grid}<polyline points="${pts}" fill="none" stroke="#6cb2f5" stroke-width="2"/>${dots}${xLabels}</svg>
+<p class="bar-legend">縦軸: コンテキストウィンドウ使用率 ／ 横軸: 記録された時点の順序</p>
+<p class="tok">Kiro の記録には使用率（%）だけが残ります。トークンの絶対量と上限は記録されません。</p>`;
+}
+
+/** 実測ブロック: 供給源で出し分ける（Copilot=トークン実測、Kiro=クレジット実測） */
+function usageBlock(trace: Trace | SessionTrace): string {
+  if (trace.source === "kiro") return `${creditsBlock(trace)}\n${renderKiroUsageChart(trace)}`;
+  return `<h2>トークン実測</h2>\n${tokenTable(trace.turns, trace.totals)}\n${renderFillChart(trace)}`;
 }
 
 // 先頭の用語導線: 「困ったらこの文書の中に用語集がある」と認知させることが目的
@@ -240,9 +286,7 @@ ${healthWarn(trace.health)}
 <p>到達: ${gradeBadge("A")} <b>${counts.A}</b>（コンテキストへの読み込みを確認）／ ${gradeBadge("B")} <b>${counts.B}</b>（読み取り）／ ${gradeBadge("C")} <b>${counts.C}</b>（言及のみ）／ ${gradeBadge(null)} <b>${counts.N}</b>（記録なし）／ 全 ${trace.nodes.length} ファイル</p>
 ${renderTreeHtml(trace.nodes, graph)}
 <button id="play" type="button">▶ 到達順に再生</button>
-<h2>トークン実測</h2>
-${tokenTable(trace.turns, trace.totals)}
-${renderFillChart(trace)}
+${usageBlock(trace)}
 <h2>ノード明細</h2>
 <table class="nodes"><tr><th>ファイル</th><th>確度</th><th>順</th><th>初出</th><th>根拠</th><th>推定トークン</th></tr>${nodeRows}</table>
 ${outside}
@@ -260,6 +304,11 @@ ${PLAY_SCRIPT}`;
 
 export function renderSkillHtml(st: SessionTrace, part: SkillPart, docOpts?: { includeNotes?: boolean }): string {
   const shim: Trace = {
+    source: st.source,
+    creditsTotal: st.creditsTotal,
+    creditTurns: st.creditTurns,
+    contextUsageSeries: st.contextUsageSeries,
+    lastContextUsageRatio: st.lastContextUsageRatio,
     session: {
       id: st.session.id, startedAt: st.session.startedAt, workspace: st.session.workspace,
       skillDir: part.skillDir, skillName: part.skillName,
@@ -276,7 +325,9 @@ export function renderSkillHtml(st: SessionTrace, part: SkillPart, docOpts?: { i
   };
   return renderHtml(shim, part.graph, {
     title: `スキルサマリ — ${part.skillName}`,
-    scopeNote: "このスキルの範囲だけを表示しています。トークン実測とコンテキストウィンドウ使用量はセッション全体の値です（このスキル単独の実測ではありません）。到達順の番号はセッション全体の通し番号です。",
+    scopeNote: st.source === "kiro"
+      ? "このスキルの範囲だけを表示しています。クレジット実測とコンテキストウィンドウ使用量はセッション全体の値です（このスキル単独の実測ではありません）。到達順の番号はセッション全体の通し番号です。"
+      : "このスキルの範囲だけを表示しています。トークン実測とコンテキストウィンドウ使用量はセッション全体の値です（このスキル単独の実測ではありません）。到達順の番号はセッション全体の通し番号です。",
     doc: { md: renderSkillMarkdown(st, part, docOpts), frag: renderSkillHtmlFragment(st, part, docOpts) },
   });
 }
@@ -311,10 +362,11 @@ ${promptBlock(st.session.userMessagePreview, st.session.userMessageTruncated)}
 ${healthWarn(st.health)}
 <h2>起動したスキル</h2>
 <table class="skills"><tr><th>スキル</th><th>最初の到達順</th><th>到達の内訳（確度別）</th><th>記録なし</th><th>全ファイル</th><th>到達分の推定トークン合計</th><th>スキル全体の推定トークン合計</th></tr>${skillRows}</table>
-<p class="tok">スキルごとの詳しい内訳は、ツリーでスキルを選んで「このスキルのサマリ」を開いてください。</p>
-<h2>トークン実測</h2>
-${tokenTable(st.turns, st.totals)}
-${renderFillChart(st)}
+${st.skills.length ? `<p class="tok">スキルごとの詳しい内訳は、ツリーでスキルを選んで「このスキルのサマリ」を開いてください。</p>` : `<p>このセッションではスキル起動は検出されませんでした。</p>`}
+${st.contextLoads?.length ? `<h2>常時文脈（コンテキストへの読み込み）</h2>
+<ul>${st.contextLoads.map(l => `<li>${esc(l.path)}${l.at ? `（${esc(formatLocalDateTime(l.at))}）` : ""}</li>`).join("")}</ul>
+<p class="tok">スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。</p>` : ""}
+${usageBlock(st)}
 <h2>到達の流れ</h2>
 ${treesHtml}
 <button id="play" type="button">▶ 到達順に再生</button>

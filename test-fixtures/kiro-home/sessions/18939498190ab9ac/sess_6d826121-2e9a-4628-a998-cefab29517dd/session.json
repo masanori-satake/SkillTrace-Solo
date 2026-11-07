@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "1.0.0",
+  "dataModelVersion": 1,
+  "id": "sess_6d826121-2e9a-4628-a998-cefab29517dd",
+  "title": "Kiro-Probe スキルで合言葉を確認",
+  "agentMode": "vibe",
+  "workspacePaths": [
+    "c:\\Users\\masas\\Downloads\\skilltrace-kiro-probe\\skilltrace-kiro-probe"
+  ],
+  "rootPaths": [
+    "c:\\Users\\masas\\Downloads\\skilltrace-kiro-probe\\skilltrace-kiro-probe"
+  ],
+  "createdAt": "2026-11-07T15:02:57.154Z",
+  "lastModifiedAt": "2026-11-07T15:04:58.439Z",
+  "modelId": "auto",
+  "autopilot": false,
+  "workflowLaunch": "when-asked",
+  "contextSnapshotModelDisplay": {
+    "modelId": "auto",
+    "display": "Auto (model selected dynamically on the server)"
+  },
+  "semanticReviewEnabled": true,
+  "disableAutoCompaction": false,
+  "ftaEnabled": false,
+  "workflowsEnabled": true,
+  "specPlanEnabled": false,
+  "specWorkflow": "quick",
+  "specSkipClarificationEnabled": true,
+  "memoryConfig": {
+    "mode": "read_write",
+    "reflection": true
+  },
+  "memoryConfigSource": "explicit",
+  "status": "idle",
+  "_meta": {
+    "kiro": {
+      "policyPreset": [
+        "edit-workspace"
+      ],
+      "shellType": "powershell",
+      "settings": {
+        "workflows": {
+          "enabled": true
+        },
+        "goal": {
+          "enabled": true
+        },
+        "memory": {
+          "mode": "read_write",
+          "reflection": true
+        }
+      },
+      "language": "Japanese"
+    }
+  }
+}

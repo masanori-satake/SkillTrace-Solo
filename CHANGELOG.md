@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.1.0] - 2026-11-08
+
+### 追加 (Added)
+- **Amazon Kiro に対応。** Kiro の v3 セッションストア（`~/.kiro/sessions/`）の
+  記録を読み取り、Copilot のセッションと同じ履歴ツリーに混ぜて表示する
+  （Kiro のセッションには「Kiro」と表示）。スキル起動は `disclose_context`、
+  参照の辿りは `read_files` の成功、常時文脈は `steering_inclusion` の
+  documents から判定し、到達の確度の物差しは Copilot と共通。実測は
+  クレジット（`usage_summary`）とコンテキストウィンドウ使用率（%）で表示する
+  （Kiro の記録にはトークン数がないため）。ワークスペースは記録の
+  `workspacePaths` / `rootPaths` を使うため、マルチルートにもそのまま対応する。
+  実機のプローブセッションで検証済み（起動・2段の辿り・0.82 credits）。
+- **スキルが起動しなかったセッションでも、常時文脈と実測を表示。**
+  仕様駆動（Specs）などスキル起動のないセッションでも、常時文脈
+  （steering / AGENTS.md）、クレジット、読み取りのいずれかが記録にあれば
+  開けるようにし、ツリーに「常時文脈」のグループ、サマリにも同名の節を
+  追加した。スキル起動が検出されなかったことはサマリに明記する。
+- **Added Amazon Kiro support.** SkillTrace now reads Kiro's v3 session
+  store (`~/.kiro/sessions/`) and shows Kiro sessions in the same history
+  tree as Copilot sessions (labelled "Kiro"). Activation is detected from
+  `disclose_context`, reference traversal from successful `read_files`,
+  and always-loaded context from `steering_inclusion` documents, using the
+  same certainty scale as Copilot. Usage is shown in credits
+  (`usage_summary`) and context-window usage as a percentage, because
+  Kiro's records carry no token counts. Workspace roots come from the
+  record's `workspacePaths` / `rootPaths`, so multi-root workspaces work
+  as recorded. Sessions with no skill activation (e.g. spec-driven work)
+  now also open when always-loaded context, credits, or reads are
+  recorded, with an always-loaded context group in the tree and section
+  in the summary.
+
 ## [1.0.2] - 2026-11-08
 
 ### 追加 (Added)

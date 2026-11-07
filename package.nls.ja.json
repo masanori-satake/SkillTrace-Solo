@@ -12,12 +12,12 @@
   "command.copyNodeSubtree": "この部分ツリーをコピー",
   "command.toggleAutoFollow": "最新セッションの自動追尾を切り替え",
   "config.documentIncludeNotes": "サマリの文書コピー（Markdown / HTML）に「読み方の注意」と「用語の説明」を含めます。既定では含めません（貼り付け先での編集を軽くするため）。画面のサマリには常に表示されます。",
-  "config.autoFollowLatest": "最新の Copilot セッションを表示し続け、記録の追記にライブで反応します（follow-tail 方式: 過去のセッションを見ている間は差し替えず、新着は履歴とバッジだけ）。",
+  "config.autoFollowLatest": "最新のセッション（Copilot / Kiro）を表示し続け、記録の追記にライブで反応します（follow-tail 方式: 過去のセッションを見ている間は差し替えず、新着は履歴とバッジだけ）。",
   "command.enableAutoFollow": "自動追尾を再開",
   "command.pauseAutoFollow": "自動追尾を止める（手動モード）",
   "command.toggleExpandCollapseAllSessions": "すべてのセッションを展開／折りたたむ",
   "command.displaySession": "このセッションを表示",
   "command.openSkillSummary": "このスキルのサマリを表示",
   "command.toggleExpandCollapse": "すべて展開／折りたたむ",
-  "skilltrace.description": "GitHub Copilot がスキル実行時に実際に読み込んだファイルを可視化します。Copilot のセッション記録をスキルの参照グラフに重ね、ファイルごとの到達の確度、トークン実測、コンテキストウィンドウ使用量を表示します。100%ローカル処理、トラッキングなし。Agent Skills の計測ツール兼学習補助ツールです。"
+  "skilltrace.description": "GitHub Copilot と Amazon Kiro がスキル実行時に実際に読み込んだファイルを可視化します。Copilot / Kiro のセッション記録をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測、コンテキストウィンドウ使用量を表示します。100%ローカル処理、トラッキングなし。Agent Skills の計測ツール兼学習補助ツールです。"
 }

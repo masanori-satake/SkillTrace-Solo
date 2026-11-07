@@ -226,6 +226,7 @@
   },
   "keywords": [
     "copilot",
+    "kiro",
     "agent skills",
     "tokens",
     "context window",
@@ -253,6 +254,6 @@
     "check-version-bump": "node scripts/check-version.js --check-bump",
     "update-version": "node scripts/update-version.js"
   },
-  "version": "1.0.2",
+  "version": "1.1.0",
   "icon": "icon.png"
 }

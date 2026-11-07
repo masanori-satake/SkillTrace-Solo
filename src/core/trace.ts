@@ -39,6 +39,12 @@ export interface TraceNode {
 }
 export interface OutsideRead { path: string; at: string | null; tool: string; failed: boolean; title: string | null }
 export interface Trace {
+  /** 記録の供給源（未指定は Copilot として扱う。SessionTrace と同じ任意項目） */
+  source?: "copilot" | "kiro";
+  creditsTotal?: number;
+  creditTurns?: { turn: number; credits: number; usedTools: string[] }[];
+  contextUsageSeries?: { at: string | null; ratio: number }[];
+  lastContextUsageRatio?: number | null;
   session: { id: string; startedAt: string | null; workspace: string; skillDir: string; skillName: string; userMessagePreview: string; userMessageTruncated: boolean };
   health: ParsedEvents["health"];
   contextCurrentSeries: { at: string; tokens: number }[];
@@ -273,6 +279,18 @@ export interface SkillPart {
 }
 export interface SessionTrace {
   session: { id: string; startedAt: string | null; workspace: string; userMessagePreview: string; userMessageTruncated: boolean };
+  /** 記録の供給源（未指定は Copilot として扱う） */
+  source?: "copilot" | "kiro";
+  /** Kiro: クレジット実測の合計（usage_summary の積算） */
+  creditsTotal?: number;
+  /** Kiro: ターン別のクレジット実測 */
+  creditTurns?: { turn: number; credits: number; usedTools: string[] }[];
+  /** Kiro: コンテキストウィンドウ使用率の推移（0..1、contextUsage スナップショット） */
+  contextUsageSeries?: { at: string | null; ratio: number }[];
+  /** Kiro: 最後のコンテキストウィンドウ使用率（0..1） */
+  lastContextUsageRatio?: number | null;
+  /** Kiro: 常時文脈としてコンテキストに読み込まれた文書（steering_inclusion 等の documents） */
+  contextLoads?: { path: string; at: string | null }[];
   health: ParsedEvents["health"];
   contextCurrentSeries: { at: string; tokens: number }[];
   lastContextCurrentTokens: number | null;
@@ -311,6 +329,7 @@ export function buildSessionTrace(
 
   const base = traces[0];
   return {
+    source: "copilot",
     session: {
       id: opts.sessionId,
       startedAt: base?.session.startedAt ?? parsed.startedAt,

@@ -12,8 +12,10 @@ export interface SkillEl { kind: "skill"; session: SessionInfo; part: SkillPart 
 export interface NodeEl { kind: "node"; session: SessionInfo; part: SkillPart; gnode: GraphNode }
 export interface OutsideGroupEl { kind: "outsideGroup"; session: SessionInfo; reads: SessionTrace["outsideReads"] }
 export interface OutsideEl { kind: "outside"; session: SessionInfo; read: SessionTrace["outsideReads"][number] }
+export interface ContextGroupEl { kind: "contextGroup"; session: SessionInfo; loads: NonNullable<SessionTrace["contextLoads"]> }
+export interface ContextFileEl { kind: "contextFile"; session: SessionInfo; load: NonNullable<SessionTrace["contextLoads"]>[number] }
 export interface NoteEl { kind: "note"; session: SessionInfo; text: string }
-export type El = SessionEl | SkillEl | NodeEl | OutsideGroupEl | OutsideEl | NoteEl;
+export type El = SessionEl | SkillEl | NodeEl | OutsideGroupEl | OutsideEl | ContextGroupEl | ContextFileEl | NoteEl;
 
 export function elementKey(el: El): string {
   switch (el.kind) {
@@ -22,6 +24,8 @@ export function elementKey(el: El): string {
     case "node": return `n:${el.session.id}:${el.part.skillName}:${el.gnode.id}`;
     case "outsideGroup": return `o:${el.session.id}`;
     case "outside": return `o:${el.session.id}:${el.read.path}`;
+    case "contextGroup": return `c:${el.session.id}`;
+    case "contextFile": return `c:${el.session.id}:${el.load.path}`;
     case "note": return `t:${el.session.id}:${el.text}`;
   }
 }
@@ -101,7 +105,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       this.collapsedFlag.add(s.id);
       this.seeded.delete(s.id);
       for (const key of [...this.expanded]) {
-        if (key === `s:${s.id}` || key.startsWith(`k:${s.id}:`) || key.startsWith(`n:${s.id}:`) || key.startsWith(`o:${s.id}`)) {
+        if (key === `s:${s.id}` || key.startsWith(`k:${s.id}:`) || key.startsWith(`n:${s.id}:`) || key.startsWith(`o:${s.id}`) || key.startsWith(`c:${s.id}`)) {
           this.expanded.delete(key);
         }
       }
@@ -157,7 +161,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
     this.collapseEpoch.set(sessionId, (this.collapseEpoch.get(sessionId) ?? 0) + 1);
     this.collapsedFlag.add(sessionId);
     for (const key of [...this.expanded]) {
-      if (key === `s:${sessionId}` || key.startsWith(`k:${sessionId}:`) || key.startsWith(`n:${sessionId}:`) || key.startsWith(`o:${sessionId}`)) {
+      if (key === `s:${sessionId}` || key.startsWith(`k:${sessionId}:`) || key.startsWith(`n:${sessionId}:`) || key.startsWith(`o:${sessionId}`) || key.startsWith(`c:${sessionId}`)) {
         this.expanded.delete(key);
       }
     }
@@ -193,6 +197,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         const invoked = this.invokedLabel(s);
         // 行は短く保つ（ホバー時のボタンを収めるため）。発動スキルは子項目とツールチップで示す
         const parts: string[] = [];
+        if (s.source === "kiro") parts.push("Kiro");
         if (isDisplayed) parts.push("表示中");
         if (isLatest) parts.push("最新");
         if (invoked !== null && invoked.length === 0) parts.push("スキル未使用");
@@ -200,7 +205,9 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         item.tooltip = new vscode.MarkdownString([
           `**セッション ${s.id}**`,
           "",
+          s.title ? `タイトル: ${s.title}` : "",
           `最終更新: ${new Date(s.mtimeMs).toLocaleString()}`,
+          s.source === "kiro" ? "記録: Kiro" : "記録: Copilot",
           s.workspaceHint ? `ワークスペース: ${s.workspaceHint}` : "",
           `起動したスキル: ${invoked === null ? "未判定" : invoked.length ? invoked.join(", ") : "なし"}`,
         ].filter(Boolean).join("\n"));
@@ -267,6 +274,29 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         item.contextValue = "skilltraceOutsideGroup";
         break;
       }
+      case "contextGroup": {
+        item.label = "常時文脈";
+        item.description = `${element.loads.length} 件`;
+        item.tooltip = "スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）";
+        item.iconPath = new vscode.ThemeIcon("folder");
+        item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+        item.contextValue = "skilltraceContextGroup";
+        break;
+      }
+      case "contextFile": {
+        const l = element.load;
+        item.label = l.path.split(/[/\\\\]/).filter(Boolean).pop() ?? l.path;
+        item.description = "";
+        item.tooltip = `${l.path}\n${l.at ?? ""}`;
+        item.iconPath = new vscode.ThemeIcon("file");
+        item.collapsibleState = vscode.TreeItemCollapsibleState.None;
+        item.contextValue = "skilltraceContextFile";
+        const segments = l.path.split(/[/\\\\]/).filter(Boolean).length;
+        if (/^[a-zA-Z]:[\\\\/]/.test(l.path) || (l.path.startsWith("/") && segments >= 3)) {
+          item.command = { command: "skilltrace.openNodeFile", title: "Open File", arguments: [l.path] };
+        }
+        break;
+      }
       case "outside": {
         const r = element.read;
         item.label = r.path.split(/[/\\]/).filter(Boolean).pop() ?? r.path;
@@ -302,6 +332,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         const trace = await this.getOrBuildTrace(element.session);
         if (!trace) return [{ kind: "note", session: element.session, text: "このセッションではスキル起動を検出できませんでした" } as NoteEl];
         const out: El[] = trace.skills.map(part => ({ kind: "skill", session: element.session, part } as SkillEl));
+        if (trace.contextLoads?.length) out.push({ kind: "contextGroup", session: element.session, loads: trace.contextLoads } as ContextGroupEl);
         if (trace.outsideReads.length) out.push({ kind: "outsideGroup", session: element.session, reads: trace.outsideReads } as OutsideGroupEl);
         return out;
       }
@@ -322,6 +353,8 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       }
       case "outsideGroup":
         return element.reads.map(read => ({ kind: "outside", session: element.session, read } as OutsideEl));
+      case "contextGroup":
+        return element.loads.map(load => ({ kind: "contextFile", session: element.session, load } as ContextFileEl));
       default:
         return [];
     }
@@ -333,11 +366,16 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         return undefined;
       case "skill":
       case "outsideGroup":
+      case "contextGroup":
       case "note":
         return { kind: "session", session: element.session };
       case "outside": {
         const trace = this.traces.get(element.session.id);
         return trace ? { kind: "outsideGroup", session: element.session, reads: trace.outsideReads } : { kind: "session", session: element.session };
+      }
+      case "contextFile": {
+        const trace = this.traces.get(element.session.id);
+        return trace?.contextLoads ? { kind: "contextGroup", session: element.session, loads: trace.contextLoads } : { kind: "session", session: element.session };
       }
       case "node": {
         if (element.gnode.id === element.part.graph.rootId) {
