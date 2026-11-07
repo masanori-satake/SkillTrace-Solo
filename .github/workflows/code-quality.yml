@@ -1,0 +1,36 @@
+name: 'コード品質検証 (Code Quality)'
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: 'VSCode拡張機能CI実行 (Execute Base CI for VSCode)'
+    uses: masanori-satake/common-workflows/.github/workflows/base-ci-vscode.yml@v1
+    # SkillTrace-Solo 固有事項:
+    #   - Lint (ESLint) は未設定のため run_lint: false。型チェックは compile の
+    #     check-types (tsc --noEmit) で行う。
+    #   - テストは node --test（VS Code 不要）。build スクリプトは定義して
+    #     いないため、base 側の `npm run build --if-present` はスキップされる。
+    with:
+      run_lint: false
+    # 統一パラメータ（Node=lts/*, npm ci, 版チェック, lint, test(xvfb), build）は
+    # base 側のデフォルトに閉じ込められているため、原則 with: は不要。
+    # 必要に応じてのみ上書きする:
+    # with:
+    #   run_version_check: false   # 版チェックをスキップする場合
+    #   run_lint: false             # Lint 未設定の場合
+    #   run_test: false             # テスト未設定の場合
+    #   run_build: false            # ビルド未設定の場合
+    #   run_package_check: false    # VSIX パッケージング検証をスキップする場合

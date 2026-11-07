@@ -1,0 +1,258 @@
+{
+  "activationEvents": [
+    "onView:skilltrace-tree",
+    "onCommand:skilltrace.showSummary",
+    "onStartupFinished"
+  ],
+  "author": {
+    "name": "Masanori Satake"
+  },
+  "bugs": {
+    "url": "https://github.com/masanori-satake/SkillTrace-Solo/issues"
+  },
+  "categories": [
+    "Other"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.refresh",
+        "icon": "$(refresh)",
+        "title": "%command.refresh%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.showSummary",
+        "icon": "$(graph)",
+        "title": "%command.showSummary%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.openLearning",
+        "icon": "$(book)",
+        "title": "%command.openLearning%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.openSummaryInBrowser",
+        "icon": "$(globe)",
+        "title": "%command.openSummaryInBrowser%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.copyTreeAll",
+        "icon": "$(copy)",
+        "title": "%command.copyTreeAll%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.copyTreeVisible",
+        "icon": "$(clippy)",
+        "title": "%command.copyTreeVisible%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.copyNodeSubtree",
+        "icon": "$(copy)",
+        "title": "%command.copyNodeSubtree%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.copySessionSummaryMarkdown",
+        "icon": "$(markdown)",
+        "title": "%command.copySessionSummaryMarkdown%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.copySkillSummaryMarkdown",
+        "icon": "$(markdown)",
+        "title": "%command.copySkillSummaryMarkdown%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.toggleAutoFollow",
+        "title": "%command.toggleAutoFollow%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.enableAutoFollow",
+        "icon": "$(sync)",
+        "title": "%command.enableAutoFollow%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.pauseAutoFollow",
+        "icon": "$(debug-pause)",
+        "title": "%command.pauseAutoFollow%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.toggleExpandCollapseAllSessions",
+        "icon": "$(unfold)",
+        "title": "%command.toggleExpandCollapseAllSessions%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.displaySession",
+        "icon": "$(eye)",
+        "title": "%command.displaySession%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.openSkillSummary",
+        "icon": "$(graph)",
+        "title": "%command.openSkillSummary%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.toggleExpandCollapse",
+        "icon": "$(unfold)",
+        "title": "%command.toggleExpandCollapse%"
+      }
+    ],
+    "configuration": {
+      "properties": {
+        "skilltrace.sessionStateDir": {
+          "default": "",
+          "description": "%config.sessionStateDir%",
+          "type": "string"
+        },
+        "skilltrace.autoFollowLatest": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.autoFollowLatest%"
+        },
+        "skilltrace.documentIncludeNotes": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.documentIncludeNotes%"
+        }
+      },
+      "title": "SkillTrace-Solo"
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "skilltrace.pauseAutoFollow",
+          "group": "navigation@1",
+          "order": 1,
+          "when": "view == skilltrace-tree && skilltrace.autoFollow"
+        },
+        {
+          "command": "skilltrace.enableAutoFollow",
+          "group": "navigation@1",
+          "order": 1,
+          "when": "view == skilltrace-tree && !skilltrace.autoFollow"
+        },
+        {
+          "command": "skilltrace.refresh",
+          "group": "navigation@3",
+          "order": 3,
+          "when": "view == skilltrace-tree"
+        },
+        {
+          "command": "skilltrace.toggleExpandCollapseAllSessions",
+          "group": "navigation@8",
+          "order": 8,
+          "when": "view == skilltrace-tree"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "skilltrace.copyNodeSubtree",
+          "group": "inline",
+          "when": "view == skilltrace-tree && viewItem == skilltraceNode"
+        },
+        {
+          "command": "skilltrace.openSkillSummary",
+          "group": "inline",
+          "when": "view == skilltrace-tree && viewItem == skilltraceSkill"
+        },
+        {
+          "command": "skilltrace.showSummary",
+          "group": "inline",
+          "when": "view == skilltrace-tree && viewItem == skilltraceSession"
+        },
+        {
+          "command": "skilltrace.openSummaryInBrowser",
+          "group": "inline",
+          "when": "view == skilltrace-tree && viewItem == skilltraceSession"
+        },
+        {
+          "command": "skilltrace.copyTreeAll",
+          "group": "inline",
+          "when": "view == skilltrace-tree && viewItem == skilltraceSession"
+        },
+        {
+          "command": "skilltrace.copyTreeVisible",
+          "group": "inline",
+          "when": "view == skilltrace-tree && viewItem == skilltraceSession"
+        },
+        {
+          "command": "skilltrace.toggleExpandCollapse",
+          "group": "inline",
+          "when": "view == skilltrace-tree && viewItem == skilltraceSession"
+        },
+        {
+          "command": "skilltrace.copySessionSummaryMarkdown",
+          "when": "view == skilltrace-tree && viewItem == skilltraceSession"
+        },
+        {
+          "command": "skilltrace.copySkillSummaryMarkdown",
+          "when": "view == skilltrace-tree && viewItem == skilltraceSkill"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "skilltrace-tree",
+          "name": "%view.name%"
+        }
+      ]
+    }
+  },
+  "description": "%skilltrace.description%",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  },
+  "displayName": "SkillTrace-Solo",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "keywords": [
+    "copilot",
+    "agent skills",
+    "tokens",
+    "context window",
+    "observability",
+    "learning"
+  ],
+  "license": "MIT",
+  "main": "./dist/extension.js",
+  "name": "skilltrace-solo",
+  "publisher": "masanori-satake",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/masanori-satake/SkillTrace-Solo"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "compile": "npm run check-version && npm run check-types && node esbuild.js",
+    "compile-tests": "tsc -p . --outDir out",
+    "package": "npm run check-version && npm run check-types && node esbuild.js --production",
+    "pretest": "npm run compile-tests",
+    "test": "node --test \"out/test/*.test.js\"",
+    "vscode:prepublish": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "check-version": "node scripts/check-version.js",
+    "check-version-bump": "node scripts/check-version.js --check-bump",
+    "update-version": "node scripts/update-version.js"
+  },
+  "version": "1.0.0",
+  "icon": "icon.png"
+}

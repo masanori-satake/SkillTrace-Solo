@@ -1,0 +1,397 @@
+import { existsSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import * as vscode from "vscode";
+import { buildGraph } from "./core/graph";
+import { parseEventsFile } from "./core/events";
+import { buildSessionTrace, firstHeading, type SessionTrace } from "./core/trace";
+import { renderSessionHtml, renderSkillHtml } from "./core/report";
+import { defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
+import { detectSkillsForSession } from "./core/autodetect";
+import { renderSessionCopy } from "./core/copy";
+import { renderSessionMarkdown, renderSkillMarkdown } from "./core/document";
+import { TraceTreeProvider, elementKey, type El, type NodeEl, type SkillEl } from "./treeProvider";
+
+// 0.4.0 の状態モデル:
+// - セッションは「取り込む」ものではなく、履歴として常時並ぶ（手動取り込みは廃止）
+// - 表示中のセッションは1つ。自動追尾は follow-tail 方式: 最新セッションを表示して
+//   いる間だけ新しいセッションへ表示が移り、過去セッションを見ている間は
+//   新着は履歴への追加とバッジだけで、開いている中身を差し替えない
+/** 文書コピーに「読み方の注意」と「用語の説明」を含めるか（設定。既定は含めない） */
+const docOptions = (): { includeNotes: boolean } => ({
+  includeNotes: vscode.workspace.getConfiguration("skilltrace").get<boolean>("documentIncludeNotes") ?? false,
+});
+
+export function activate(context: vscode.ExtensionContext): void {
+  const sessionStateDir = (): string => {
+    const cfg = vscode.workspace.getConfiguration("skilltrace").get<string>("sessionStateDir") ?? "";
+    return cfg.trim() ? cfg.trim().replace(/^~(?=$|\/|\\)/, homedir()) : defaultSessionStateDir();
+  };
+
+  // セッションのトレース構築（parse → スキル判定（複数）→ グラフ → SessionTrace）
+  const buildCache = new Map<string, { mtimeMs: number; trace: SessionTrace | null }>();
+  const buildTraceFor = async (session: SessionInfo): Promise<SessionTrace | null> => {
+    const cached = buildCache.get(session.id);
+    if (cached && cached.mtimeMs === session.mtimeMs) return cached.trace;
+    let trace: SessionTrace | null = null;
+    try {
+      const workspaceDir = (session.workspaceHint && existsSync(session.workspaceHint))
+        ? session.workspaceHint
+        : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
+      if (workspaceDir) {
+        const parsed = await parseEventsFile(session.eventsPath);
+        const skills = detectSkillsForSession(parsed, workspaceDir);
+        if (skills.length) {
+          const parts = skills.map(skill => {
+            let rootHeading: string | null = null;
+            try { rootHeading = firstHeading(readFileSync(join(skill.dir, "SKILL.md"), "utf8")); } catch { /* 見出しなし */ }
+            return { graph: buildGraph(skill.dir, workspaceDir), skillDirAbs: skill.dir, rootHeading };
+          });
+          trace = buildSessionTrace(parsed, parts, { sessionId: session.id, workspaceAbs: workspaceDir });
+        }
+      }
+    } catch { trace = null; }
+    buildCache.set(session.id, { mtimeMs: session.mtimeMs, trace });
+    return trace;
+  };
+
+  // 履歴ラベル用の軽量スキャン（結果は id+mtime でキャッシュ）
+  const scanCache = new Map<string, string[] | null>();
+  const invokedLabel = (session: SessionInfo): string[] | null => {
+    const key = `${session.id}:${session.mtimeMs}`;
+    const hit = scanCache.get(key);
+    if (hit !== undefined) return hit;
+    let result: string[] | null = null;
+    if (session.workspaceHint && existsSync(session.workspaceHint)) {
+      result = scanInvokedSkillNames(session.eventsPath, discoverSkills(session.workspaceHint));
+    }
+    scanCache.set(key, result);
+    return result;
+  };
+
+  const provider = new TraceTreeProvider(buildTraceFor, invokedLabel);
+  // 折りたたみは自前のトグルボタンで担うため、組み込みの「すべて折りたたむ」は出さない
+  const treeView = vscode.window.createTreeView("skilltrace-tree", { treeDataProvider: provider, showCollapseAll: false });
+  context.subscriptions.push(treeView);
+
+  treeView.onDidExpandElement(e => {
+    provider.setExpanded(elementKey(e.element), true);
+    provider.clearCollapsed(e.element.session.id);
+  }, null, context.subscriptions);
+  treeView.onDidCollapseElement(e => {
+    provider.setExpanded(elementKey(e.element), false);
+  }, null, context.subscriptions);
+
+  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
+  statusBar.command = "skilltrace.toggleAutoFollow";
+  context.subscriptions.push(statusBar);
+
+  let autoFollow = vscode.workspace.getConfiguration("skilltrace").get<boolean>("autoFollowLatest") ?? true;
+  let sessions: SessionInfo[] = [];
+  let displayedId: string | null = null;
+  let prevNewestId: string | null = null;
+  let lastSignature = "";
+  let debounce: NodeJS.Timeout | null = null;
+  let baseWatcher: FSWatcher | null = null;
+  let sessionWatcher: FSWatcher | null = null;
+  let watchedSessionDir: string | null = null;
+
+  const effectivelyFollowing = (): boolean => autoFollow && sessions.length > 0 && displayedId === sessions[0].id;
+
+  const refreshStatus = (): void => {
+    if (!sessions.length) {
+      statusBar.text = "$(pulse) SkillTrace";
+      statusBar.tooltip = "Copilot のセッションがまだありません。";
+    } else if (effectivelyFollowing()) {
+      statusBar.text = "$(pulse) SkillTrace 追尾中";
+      statusBar.tooltip = "最新のセッションを表示し、新しいセッションへ自動で移ります。クリックで自動追尾をオフにします。";
+    } else if (autoFollow) {
+      statusBar.text = "$(eye) SkillTrace 過去を表示中";
+      statusBar.tooltip = "過去のセッションを表示中です（自動追尾はオン。最新のセッションを選ぶと追尾に戻ります）。クリックで自動追尾をオフにします。";
+    } else {
+      statusBar.text = "$(pause) SkillTrace 追尾オフ";
+      statusBar.tooltip = "自動追尾はオフです。クリックでオンにし、最新のセッションへ移ります。";
+    }
+    statusBar.show();
+  };
+
+  const updateBadge = (): void => {
+    if (!sessions.length || displayedId === null) { treeView.badge = undefined; return; }
+    const idx = sessions.findIndex(s => s.id === displayedId);
+    if (idx > 0) {
+      treeView.badge = { value: idx, tooltip: `表示中より新しいセッションが ${idx} 件あります` };
+    } else {
+      treeView.badge = undefined;
+    }
+  };
+
+  const ensureSessionWatcher = (session: SessionInfo | undefined): void => {
+    if (!session) return;
+    if (watchedSessionDir === session.dir && sessionWatcher) return;
+    sessionWatcher?.close();
+    sessionWatcher = null;
+    watchedSessionDir = session.dir;
+    try {
+      sessionWatcher = watch(session.dir, (_event, filename) => {
+        if (!filename || filename === "events.jsonl") scheduleRefresh();
+      });
+      sessionWatcher.on("error", () => { /* ポーリングで代替 */ });
+    } catch { /* ポーリングで代替 */ }
+  };
+
+  const refreshSessions = (): void => {
+    const list = listSessions(sessionStateDir());
+    const newest = list[0];
+    // 表示の決定（follow-tail）
+    let newDisplayed = displayedId;
+    if (!newest) newDisplayed = null;
+    else if (displayedId === null) newDisplayed = newest.id;
+    else if (autoFollow && displayedId === prevNewestId && newest.id !== prevNewestId) newDisplayed = newest.id;
+    else if (!list.some(s => s.id === displayedId)) newDisplayed = newest.id;
+
+    const signature = list.map(s => `${s.id}:${s.mtimeMs}`).join("|") + `#${newDisplayed ?? ""}#${autoFollow}`;
+    const displayedChanged = newDisplayed !== displayedId;
+    sessions = list;
+    displayedId = newDisplayed;
+    prevNewestId = newest?.id ?? null;
+    if (signature === lastSignature && !displayedChanged) { refreshStatus(); return; }
+    lastSignature = signature;
+
+    if (!list.length) {
+      treeView.message = "Copilot のセッションがまだありません。スキルを使うセッションを実行すると、ここに履歴として自動で並びます。";
+    } else {
+      treeView.message = undefined;
+    }
+    if (displayedChanged) provider.resetExpandedFor(displayedId ?? "");
+    const displayed = list.find(s => s.id === displayedId);
+    if (displayed) {
+      // 表示中セッションの記録が伸びていたら、再描画より先に古いトレースを捨てる
+      const built = buildCache.get(displayed.id);
+      if (built && built.mtimeMs !== displayed.mtimeMs) provider.invalidateTrace(displayed.id);
+    }
+    provider.setSessions(list, displayedId);
+    updateBadge();
+    refreshStatus();
+    ensureSessionWatcher(displayed);
+    if (displayed) void provider.getOrBuildTrace(displayed);
+  };
+
+  const scheduleRefresh = (): void => {
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(refreshSessions, 300);
+  };
+
+  const startWatching = (): void => {
+    try {
+      baseWatcher?.close();
+      baseWatcher = watch(sessionStateDir(), () => scheduleRefresh());
+      baseWatcher.on("error", () => { /* ポーリングで代替 */ });
+    } catch { /* ポーリングで代替 */ }
+  };
+
+  // 自動追尾のオン/オフは「1つのスイッチ」: ビューのボタン・ステータスバー・設定の
+  // どれを操作しても同じ状態が全箇所に反映される。設定への書き込みが一時的に
+  // 失敗しても切り替え自体は成立させる（0.3.2 の堅牢化を継続）。
+  const setAutoFollow = async (value: boolean, opts: { persist?: boolean } = {}): Promise<void> => {
+    autoFollow = value;
+    await vscode.commands.executeCommand("setContext", "skilltrace.autoFollow", value);
+    if (opts.persist !== false) {
+      try {
+        await vscode.workspace.getConfiguration("skilltrace").update("autoFollowLatest", value, vscode.ConfigurationTarget.Global);
+      } catch { /* スキーマ登録ラグ時はメモリ上の状態を正とする */ }
+    }
+    if (value && sessions.length) {
+      // 追尾に戻るときは最新のセッションへ表示を移す
+      displayedId = sessions[0].id;
+      provider.resetExpandedFor(displayedId);
+    }
+    lastSignature = "";
+    refreshSessions();
+  };
+
+  const asElement = (arg: unknown): El | undefined => {
+    if (!arg || typeof arg !== "object") return undefined;
+    if ("el" in arg) return (arg as { el: El }).el;
+    if ("kind" in arg) return arg as El;
+    return undefined;
+  };
+
+  // ツールバーのボタンは「表示中のセッション」に、履歴項目のホバーボタンは
+  // 「その項目のセッション」に適用する。どちらも対象セッションを1回の操作で
+  // 特定できるよう、コマンド引数（ツリー要素）から対象を解決する。
+  const sessionFromArg = (arg: unknown): SessionInfo | undefined => {
+    const el = asElement(arg);
+    if (el) return el.session;
+    return sessions.find(s => s.id === displayedId);
+  };
+  const traceFromArg = async (arg: unknown): Promise<{ session: SessionInfo; trace: SessionTrace } | null> => {
+    const session = sessionFromArg(arg);
+    if (!session) return null;
+    const trace = await provider.getOrBuildTrace(session);
+    return trace ? { session, trace } : null;
+  };
+
+  const expandSession = async (session: SessionInfo): Promise<void> => {
+    const trace = await provider.getOrBuildTrace(session);
+    if (!trace) return;
+    provider.clearCollapsed(session.id);
+    const sessionEl: El = { kind: "session", session };
+    provider.setExpanded(elementKey(sessionEl), true);
+    for (const part of trace.skills) {
+      for (const gnode of part.graph.order) {
+        if (!gnode.children.length || gnode.cycle) continue;
+        const el: NodeEl = { kind: "node", session, part, gnode };
+        try {
+          await treeView.reveal(el, { expand: true, select: false, focus: false });
+          provider.setExpanded(elementKey(el), true);
+        } catch { /* 見えていないノードは展開できなくても続行 */ }
+      }
+    }
+  };
+
+  let summaryPanel: vscode.WebviewPanel | null = null;
+  const showHtmlPanel = (title: string, html: string): void => {
+    try {
+      if (summaryPanel) {
+        summaryPanel.title = title;
+        summaryPanel.webview.html = html;
+        summaryPanel.reveal(vscode.ViewColumn.Beside);
+        return;
+      }
+      summaryPanel = vscode.window.createWebviewPanel(
+        "skilltraceSummary", title, vscode.ViewColumn.Beside,
+        { enableScripts: true, retainContextWhenHidden: true },
+      );
+      summaryPanel.onDidDispose(() => { summaryPanel = null; });
+      summaryPanel.webview.html = html;
+    } catch (err) {
+      void vscode.window.showErrorMessage(`SkillTrace: サマリを表示できませんでした — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("skilltrace.displaySession", (sessionId: string) => {
+      if (!sessions.some(s => s.id === sessionId)) return;
+      displayedId = sessionId;
+      provider.resetExpandedFor(sessionId);
+      lastSignature = "";
+      refreshSessions();
+    }),
+    vscode.commands.registerCommand("skilltrace.toggleAutoFollow", async () => { await setAutoFollow(!autoFollow); }),
+    vscode.commands.registerCommand("skilltrace.enableAutoFollow", async () => { await setAutoFollow(true); }),
+    vscode.commands.registerCommand("skilltrace.pauseAutoFollow", async () => { await setAutoFollow(false); }),
+    // タイトルバーのトグル: 履歴の全セッションを対象にする（0.4.6）。
+    // 項目側のトグルと同じ $(unfold) グリフで、表示中セッションだけを
+    // 対象にしていた旧 expandAll / collapseAll を置き換えた
+    vscode.commands.registerCommand("skilltrace.toggleExpandCollapseAllSessions", () => {
+      provider.setAllSessionsExpanded(!provider.isAllSessionsExpanded());
+    }),
+    vscode.commands.registerCommand("skilltrace.toggleExpandCollapse", async (arg?: unknown) => {
+      const session = sessionFromArg(arg);
+      if (!session) return;
+      // 項目単位の操作をしたら、全セッション展開モードは解除して通常の状態に戻す
+      if (provider.isAllSessionsExpanded()) provider.setAllSessionsExpanded(false);
+      await provider.getOrBuildTrace(session);
+      if (provider.isFullyExpanded(session.id)) provider.collapseSession(session.id);
+      else await expandSession(session);
+    }),
+    vscode.workspace.onDidChangeConfiguration(async e => {
+      if (e.affectsConfiguration("skilltrace.autoFollowLatest")) {
+        const v = vscode.workspace.getConfiguration("skilltrace").get<boolean>("autoFollowLatest") ?? true;
+        if (v !== autoFollow) await setAutoFollow(v, { persist: false });
+      }
+    }),
+    vscode.commands.registerCommand("skilltrace.refresh", () => {
+      if (displayedId) { buildCache.delete(displayedId); provider.invalidateTrace(displayedId); }
+      lastSignature = "";
+      refreshSessions();
+    }),
+    vscode.commands.registerCommand("skilltrace.showSummary", async (arg?: unknown) => {
+      const resolved = await traceFromArg(arg);
+      if (!resolved) { void vscode.window.showWarningMessage("SkillTrace: 対象セッションでスキル起動を検出できませんでした。"); return; }
+      showHtmlPanel("セッションサマリ", renderSessionHtml(resolved.trace, docOptions()));
+    }),
+    vscode.commands.registerCommand("skilltrace.openSkillSummary", async (arg: unknown) => {
+      const el = asElement(arg);
+      if (!el || el.kind !== "skill") return;
+      const skillEl = el as SkillEl;
+      const trace = provider.getTrace(skillEl.session.id) ?? (await provider.getOrBuildTrace(skillEl.session));
+      if (!trace) return;
+      const part = trace.skills.find(p => p.skillName === skillEl.part.skillName) ?? skillEl.part;
+      showHtmlPanel(`スキルサマリ — ${part.skillName}`, renderSkillHtml(trace, part, docOptions()));
+    }),
+    vscode.commands.registerCommand("skilltrace.openSummaryInBrowser", async (arg?: unknown) => {
+      try {
+        const resolved = await traceFromArg(arg);
+        if (!resolved) { void vscode.window.showWarningMessage("SkillTrace: 対象セッションでスキル起動を検出できませんでした。"); return; }
+        const file = join(tmpdir(), `skilltrace-session-${resolved.trace.session.id}.html`);
+        writeFileSync(file, renderSessionHtml(resolved.trace, docOptions()), "utf8");
+        await vscode.env.openExternal(vscode.Uri.file(file));
+      } catch (err) {
+        void vscode.window.showErrorMessage(`SkillTrace: ブラウザでサマリを開けませんでした — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }),
+    vscode.commands.registerCommand("skilltrace.copyTreeAll", async (arg?: unknown) => {
+      const resolved = await traceFromArg(arg);
+      if (!resolved) { void vscode.window.showWarningMessage("SkillTrace: 対象セッションがありません。"); return; }
+      await vscode.env.clipboard.writeText(renderSessionCopy(resolved.trace, { kind: "all" }));
+      void vscode.window.showInformationMessage("SkillTrace: セッション全体のツリーをコピーしました。");
+    }),
+    vscode.commands.registerCommand("skilltrace.copyTreeVisible", async (arg?: unknown) => {
+      const resolved = await traceFromArg(arg);
+      if (!resolved) { void vscode.window.showWarningMessage("SkillTrace: 対象セッションがありません。"); return; }
+      const sid = resolved.session.id;
+      await vscode.env.clipboard.writeText(renderSessionCopy(resolved.trace, {
+        kind: "visible",
+        isExpanded: (skillName, absId) => provider.isNodeExpanded(sid, skillName, absId),
+      }));
+      void vscode.window.showInformationMessage("SkillTrace: 表示中のツリーをコピーしました。");
+    }),
+    vscode.commands.registerCommand("skilltrace.copyNodeSubtree", async (arg: unknown) => {
+      const el = asElement(arg);
+      if (!el || el.kind !== "node") return;
+      const nodeEl = el as NodeEl;
+      const trace = provider.getTrace(nodeEl.session.id) ?? (await provider.getOrBuildTrace(nodeEl.session));
+      if (!trace) return;
+      const part = trace.skills.find(p => p.skillName === nodeEl.part.skillName) ?? nodeEl.part;
+      await vscode.env.clipboard.writeText(renderSessionCopy(trace, { kind: "subtree", part, rootId: nodeEl.gnode.id }));
+      void vscode.window.showInformationMessage(`SkillTrace: ${nodeEl.gnode.relToSkill} 以下をコピーしました。`);
+    }),
+    vscode.commands.registerCommand("skilltrace.copySessionSummaryMarkdown", async (arg?: unknown) => {
+      const resolved = await traceFromArg(arg);
+      if (!resolved) { void vscode.window.showWarningMessage("SkillTrace: 対象セッションがありません。"); return; }
+      await vscode.env.clipboard.writeText(renderSessionMarkdown(resolved.trace, docOptions()));
+      void vscode.window.showInformationMessage("SkillTrace: セッションサマリを Markdown でコピーしました。");
+    }),
+    vscode.commands.registerCommand("skilltrace.copySkillSummaryMarkdown", async (arg: unknown) => {
+      const el = asElement(arg);
+      if (!el || el.kind !== "skill") return;
+      const skillEl = el as SkillEl;
+      const trace = provider.getTrace(skillEl.session.id) ?? (await provider.getOrBuildTrace(skillEl.session));
+      if (!trace) return;
+      const part = trace.skills.find(p => p.skillName === skillEl.part.skillName) ?? skillEl.part;
+      await vscode.env.clipboard.writeText(renderSkillMarkdown(trace, part, docOptions()));
+      void vscode.window.showInformationMessage(`SkillTrace: スキルサマリ（${part.skillName}）を Markdown でコピーしました。`);
+    }),
+    vscode.commands.registerCommand("skilltrace.openNodeFile", async (absPath: string) => {
+      try { await vscode.window.showTextDocument(vscode.Uri.file(absPath), { preview: true }); }
+      catch { void vscode.window.showWarningMessage(`SkillTrace: ファイルを開けませんでした: ${absPath}`); }
+    }),
+    vscode.commands.registerCommand("skilltrace.openLearning", async () => {
+      const docPath = join(context.extensionPath, "docs", "learning", "README.md");
+      if (!existsSync(docPath)) { void vscode.window.showWarningMessage("SkillTrace: 学習ドキュメントが見つかりません。"); return; }
+      await vscode.window.showTextDocument(vscode.Uri.file(docPath), { preview: false });
+    }),
+  );
+
+  // 起動時: 履歴を並べ、自動追尾（follow-tail）を始める
+  refreshStatus();
+  void vscode.commands.executeCommand("setContext", "skilltrace.autoFollow", autoFollow);
+  startWatching();
+  refreshSessions();
+  const poll = setInterval(refreshSessions, 3000);
+  context.subscriptions.push({ dispose: () => clearInterval(poll) });
+  context.subscriptions.push({ dispose: () => { baseWatcher?.close(); sessionWatcher?.close(); if (debounce) clearTimeout(debounce); } });
+}
+
+export function deactivate(): void { /* 購読は context.subscriptions で破棄される */ }
