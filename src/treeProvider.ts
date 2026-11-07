@@ -166,6 +166,12 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
   }
   /** ユーザーが手で開いたら、折りたたみフラグはそのセッションについて解除する */
   clearCollapsed(sessionId: string): void { this.collapsedFlag.delete(sessionId); }
+  /** そのセッションの項目を作り直させる（項目 ID の世代を上げる）。
+   *  VS Code は同じ項目 ID の開閉状態を保持するため、フラグや collapsibleState を
+   *  変えただけでは表示に反映されないことがある。作り直しで確実に反映させる */
+  recreateSessionItems(sessionId: string): void {
+    this.collapseEpoch.set(sessionId, (this.collapseEpoch.get(sessionId) ?? 0) + 1);
+  }
   isNodeExpanded(sessionId: string, skillName: string, absId: string): boolean {
     return this.expanded.has(`n:${sessionId}:${skillName}:${absId}`);
   }
