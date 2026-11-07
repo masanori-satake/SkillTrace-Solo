@@ -235,9 +235,20 @@ export function activate(context: vscode.ExtensionContext): void {
     const trace = await provider.getOrBuildTrace(session);
     if (!trace) return;
     provider.clearCollapsed(session.id);
+    // まずセッション自体とスキルを開く。子ノードの reveal だけに頼ると、
+    // 参照のない SKILL.md（開く対象のノードがない）のときにセッションが
+    // 開かないまま「展開済み」と記録され、次のトグルが空振りする
     const sessionEl: El = { kind: "session", session };
-    provider.setExpanded(elementKey(sessionEl), true);
+    try {
+      await treeView.reveal(sessionEl, { expand: true, select: false, focus: false });
+      provider.setExpanded(elementKey(sessionEl), true);
+    } catch { /* ビューに見えていないときは記録もしない（次の操作で再試行できる） */ }
     for (const part of trace.skills) {
+      const skillEl: El = { kind: "skill", session, part };
+      try {
+        await treeView.reveal(skillEl, { expand: true, select: false, focus: false });
+        provider.setExpanded(elementKey(skillEl), true);
+      } catch { /* 見えていないスキルは展開できなくても続行 */ }
       for (const gnode of part.graph.order) {
         if (!gnode.children.length || gnode.cycle) continue;
         const el: NodeEl = { kind: "node", session, part, gnode };
@@ -272,6 +283,11 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("skilltrace.displaySession", (sessionId: string) => {
       if (!sessions.some(s => s.id === sessionId)) return;
+      // クリックして表示対象にしたセッションは、畳んだままにせず開く。
+      // フラグ解除だけでは、同じ項目 ID の開閉状態を保持する VS Code 側に
+      // 閉じたままにされることがあるため、項目を作り直して開いた状態を反映させる
+      provider.clearCollapsed(sessionId);
+      provider.recreateSessionItems(sessionId);
       displayedId = sessionId;
       provider.resetExpandedFor(sessionId);
       lastSignature = "";
@@ -284,7 +300,12 @@ export function activate(context: vscode.ExtensionContext): void {
     // 項目側のトグルと同じ $(unfold) グリフで、表示中セッションだけを
     // 対象にしていた旧 expandAll / collapseAll を置き換えた
     vscode.commands.registerCommand("skilltrace.toggleExpandCollapseAllSessions", () => {
-      provider.setAllSessionsExpanded(!provider.isAllSessionsExpanded());
+      const on = !provider.isAllSessionsExpanded();
+      provider.setAllSessionsExpanded(on);
+      // オフは「すべて折りたたむ」として扱い、表示中セッションも含めて畳む。
+      // 以前は通常状態（表示中だけ展開）に戻るだけだったため、1つだけ
+      // 開いたまま残って見えた（2026-11-07 の不具合報告）
+      if (!on) provider.collapseAllSessions();
     }),
     vscode.commands.registerCommand("skilltrace.toggleExpandCollapse", async (arg?: unknown) => {
       const session = sessionFromArg(arg);
@@ -292,7 +313,9 @@ export function activate(context: vscode.ExtensionContext): void {
       // 項目単位の操作をしたら、全セッション展開モードは解除して通常の状態に戻す
       if (provider.isAllSessionsExpanded()) provider.setAllSessionsExpanded(false);
       await provider.getOrBuildTrace(session);
-      if (provider.isFullyExpanded(session.id)) provider.collapseSession(session.id);
+      // 判定はセッション自体が開いているかだけを見る（配下の全要素の状態に
+      // 引きずられると、畳む側に倒れなくなる）
+      if (provider.isSessionExpanded(session.id)) provider.collapseSession(session.id);
       else await expandSession(session);
     }),
     vscode.workspace.onDidChangeConfiguration(async e => {

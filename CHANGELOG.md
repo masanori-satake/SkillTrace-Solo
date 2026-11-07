@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.0.1] - 2026-11-07
+
+### Fixed
+
+- **Per-session expand/collapse toggle now collapses reliably.** The
+  toggle used to decide by whether *every* element under the session was
+  expanded, so a single manually collapsed node (or one expand that the
+  view dropped) made it choose "expand" forever. It now toggles on the
+  session's own open/closed state.
+- **"Collapse all sessions" now includes the displayed session.**
+  Turning the all-sessions toggle off used to return to the normal
+  state, in which the displayed session stays open — leaving exactly
+  one session visibly expanded. An explicit collapse now wins over the
+  displayed session's default-open behaviour; sessions that arrive
+  later still open as usual.
+
+### 修正 (Fixed)
+
+- **セッション毎の展開/折りたたみトグルで、確実に折りたためるようにした**:
+  以前は「セッション配下の全要素が展開されているか」で開閉を判定していた
+  ため、手で1つでも畳んでいたり、展開の取りこぼしが1つでもあると常に
+  「未展開」と判定され、展開側に倒れ続けて畳むことができなかった。
+  判定を「セッション自体が開いているか」だけに変更した。
+- **「すべてのセッションを折りたたむ」で表示中セッションも畳むようにした**:
+  全セッショントグルをオフにすると通常状態に戻るだけだったため、既定で
+  開く表示中セッションが1件だけ開いたまま残っていた。明示的な折りたたみ
+  操作が既定の表示より優先されるようにし、表示中も含めてすべて畳む。
+  後から到着した新しいセッションは従来どおり開く。
+
 ## [1.0.0] - 2026-11-07
 
 First release.
