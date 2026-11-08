@@ -7,7 +7,7 @@ import { parseEventsFile } from "./core/events";
 import { buildSessionTrace, firstHeading, type SessionTrace } from "./core/trace";
 import { renderSessionHtml, renderSkillHtml } from "./core/report";
 import { defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
-import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroInvokedSkillNames } from "./core/kiro";
+import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames } from "./core/kiro";
 import { detectSkillsForSession } from "./core/autodetect";
 import { renderSessionCopy } from "./core/copy";
 import { renderSessionMarkdown, renderSkillMarkdown } from "./core/document";
@@ -61,8 +61,10 @@ export function activate(context: vscode.ExtensionContext): void {
           .filter(s => activated.has(s.name))
           .map(s => ({ graph: buildGraph(s.dir, s.root), skillDirAbs: s.dir, disclosed: true }));
         // スキル起動が無くても、常時文脈・クレジット・読み取りの記録があれば
-        // トレースを構築する（仕様駆動などのセッションでも中身が見えるように）
-        const hasContent = parsed.inclusions.length > 0 || parsed.creditsTotal > 0 || parsed.toolExecutions.length > 0;
+        // トレースを構築する（仕様駆動などのセッションでも中身が見えるように）。
+        // 起動の記録だけがある場合も対象に含める（スキルが見つからなくても
+        // 起動の事実は注記として表示するため）
+        const hasContent = parsed.inclusions.length > 0 || parsed.creditsTotal > 0 || parsed.toolExecutions.length > 0 || parsed.activations.length > 0;
         if (parts.length || hasContent) {
           const workspaceAbs = session.workspacePaths?.[0] ?? session.workspaceHint ?? "";
           trace = buildKiroSessionTrace(parsed, parts, { sessionId: session.id, workspaceAbs });
@@ -98,8 +100,11 @@ export function activate(context: vscode.ExtensionContext): void {
     if (hit !== undefined) return hit;
     let result: string[] | null = null;
     if (session.source === "kiro") {
-      const cands = kiroSkillCandidates(session);
-      if (cands.length) result = scanKiroInvokedSkillNames(session.eventsPath, cands);
+      // ラベルは「記録で何が起動したか」を示すものなので、候補（現在のワーク
+      // スペースで見つかるスキル）の有無に左右されず、記録の起動名をそのまま使う。
+      // 候補で絞ると、無関係なスキルが1つでも発見できる環境で、未発見スキルの
+      // 起動だけがあるセッションが「スキル未使用」と食い違って表示される
+      result = scanKiroActivationNames(session.eventsPath);
     } else if (session.workspaceHint && existsSync(session.workspaceHint)) {
       result = scanInvokedSkillNames(session.eventsPath, discoverSkills(session.workspaceHint));
     }

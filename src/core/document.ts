@@ -6,7 +6,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, TraceNode } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
-import { esc, fmt, fmtCredits, usedToolsSummary, inputSplit, cacheWriteObservation, firstContextUsageRatio, GLOSSARY } from "./common";
+import { esc, fmt, fmtCredits, usedToolsSummary, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, GLOSSARY } from "./common";
 import { formatLocalDateTime } from "./sessions";
 
 function unicodeBar(ratio: number | null | undefined, width = 20): string {
@@ -161,7 +161,7 @@ ${metaLines(st).map(([k, v]) => `- ${k}: ${v}`).join("\n")}
 | スキル | 最初の到達順 | 到達の内訳（確度別） | 記録なし | 全ファイル | 到達分の推定トークン合計 | スキル全体の推定トークン合計 |
 | --- | ---: | --- | ---: | ---: | ---: | ---: |
 ${skillRows}
-${st.skills.length ? "" : "\nこのセッションではスキル起動は検出されませんでした。"}
+${st.skills.length ? (undiscoveredSkillsNote(st.undiscoveredSkills) ? `\n${undiscoveredSkillsNote(st.undiscoveredSkills)}` : "") : undiscoveredSkillsNote(st.undiscoveredSkills) ? `\n${undiscoveredSkillsNote(st.undiscoveredSkills)} そのため、このスキルについては参照ツリーを表示できません。` : "\nこのセッションではスキル起動は検出されませんでした。"}
 
 ## 到達の流れ
 
@@ -321,7 +321,7 @@ ${metaHtml(st)}
 ${promptHtml(st)}
 <h2 style="${H.h2}">起動したスキル</h2>
 <table style="${H.table}"><tr><th style="${H.cell}">スキル</th><th style="${H.cell}">最初の到達順</th><th style="${H.cell}">到達の内訳（確度別）</th><th style="${H.cell}">記録なし</th><th style="${H.cell}">全ファイル</th><th style="${H.cell}">到達分の推定トークン合計</th><th style="${H.cell}">スキル全体の推定トークン合計</th></tr>${skillRows}</table>
-${st.skills.length ? "" : "<p>このセッションではスキル起動は検出されませんでした。</p>"}
+${st.skills.length ? (undiscoveredSkillsNote(st.undiscoveredSkills) ? `<p>${esc(undiscoveredSkillsNote(st.undiscoveredSkills))}</p>` : "") : undiscoveredSkillsNote(st.undiscoveredSkills) ? `<p>${esc(undiscoveredSkillsNote(st.undiscoveredSkills))} そのため、このスキルについては参照ツリーを表示できません。</p>` : "<p>このセッションではスキル起動は検出されませんでした。</p>"}
 <h2 style="${H.h2}">到達の流れ</h2>
 ${trees}
 ${contextLoads}

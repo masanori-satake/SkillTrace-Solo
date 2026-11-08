@@ -5,7 +5,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, Trace, TraceNode } from "./trace";
 import { formatLocalDateTime } from "./sessions";
-import { esc, fmt, fmtCredits, usedToolsSummary, inputSplit, cacheWriteObservation, firstContextUsageRatio, GLOSSARY } from "./common";
+import { esc, fmt, fmtCredits, usedToolsSummary, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, GLOSSARY } from "./common";
 import { renderSessionMarkdown, renderSessionHtmlFragment, renderSkillMarkdown, renderSkillHtmlFragment } from "./document";
 export { esc, fmt };
 
@@ -369,7 +369,7 @@ ${promptBlock(st.session.userMessagePreview, st.session.userMessageTruncated)}
 ${healthWarn(st.health)}
 <h2>起動したスキル</h2>
 <table class="skills"><tr><th>スキル</th><th>最初の到達順</th><th>到達の内訳（確度別）</th><th>記録なし</th><th>全ファイル</th><th>到達分の推定トークン合計</th><th>スキル全体の推定トークン合計</th></tr>${skillRows}</table>
-${st.skills.length ? `<p class="tok">スキルごとの詳しい内訳は、ツリーでスキルを選んで「このスキルのサマリ」を開いてください。</p>` : `<p>このセッションではスキル起動は検出されませんでした。</p>`}
+${st.skills.length ? `<p class="tok">スキルごとの詳しい内訳は、ツリーでスキルを選んで「このスキルのサマリ」を開いてください。</p>${undiscoveredSkillsNote(st.undiscoveredSkills) ? `\n<p class="tok">${esc(undiscoveredSkillsNote(st.undiscoveredSkills))}</p>` : ""}` : undiscoveredSkillsNote(st.undiscoveredSkills) ? `<p>${esc(undiscoveredSkillsNote(st.undiscoveredSkills))} そのため、このスキルについては参照ツリーを表示できません。</p>` : `<p>このセッションではスキル起動は検出されませんでした。</p>`}
 ${st.contextLoads?.length ? `<h2>常時文脈（コンテキストへの読み込み）</h2>
 <ul>${st.contextLoads.map(l => `<li>${esc(l.path)}${l.at ? `（${esc(formatLocalDateTime(l.at))}）` : ""}</li>`).join("")}</ul>${firstContextUsageRatio(st.contextUsageSeries) !== null ? `
 <p class="tok">最初に記録されたコンテキストウィンドウ使用率: ${(firstContextUsageRatio(st.contextUsageSeries)! * 100).toFixed(1)}%（セッションの早い段階の記録です。プロンプトや読み込まれたファイルも含まれるため常時文脈だけの使用率は分かりませんが、常時文脈の重さを見る手がかりになります）</p>` : ""}
