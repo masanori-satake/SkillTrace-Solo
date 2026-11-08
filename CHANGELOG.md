@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.3] - 2026-11-08
+
+### 追加 (Added)
+- **学習ドキュメント 05「スキルを安くする — 同じ成果でコストを下げる
+  直し方」を追加。** SkillTrace の実測から、自分のスキルのどこをどう
+  直すかの方針と判断をまとめた実務編。支払いのタイミング3種（常時文脈 /
+  SKILL.md / references）、観測から直し方を引く判断表と診断フロー
+  （Mermaid 図2点）、効果の確かめ方と「やってはいけないこと」を記載。
+  01〜04 を読んでいなくても、この文書だけで判断して行動に移せる構成にした。
+- **Added learning document 05, "Cheaper skills — cutting cost while
+  keeping the results".** A practical guide to deciding, from SkillTrace's
+  measurements, where and how to change your own skills: the three payment
+  timings (always-loaded context / SKILL.md / references), an
+  observation-to-fix decision table and diagnostic flow (two Mermaid
+  diagrams), how to verify the effect, and what not to do. Written to be
+  actionable on its own, before reading documents 01–04.
+
 ## [1.2.2] - 2026-11-08
 
 ### 修正 (Fixed)
