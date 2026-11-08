@@ -5,7 +5,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, Trace, TraceNode } from "./trace";
 import { formatLocalDateTime } from "./sessions";
-import { esc, fmt, fmtCredits, usedToolsSummary, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, GLOSSARY } from "./common";
+import { esc, fmt, fmtCredits, countTools, toolColumns, toolGroupsPresent, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, GLOSSARY } from "./common";
 import { renderSessionMarkdown, renderSessionHtmlFragment, renderSkillMarkdown, renderSkillHtmlFragment } from "./document";
 export { esc, fmt };
 
@@ -42,6 +42,11 @@ ul.tree{list-style:none;padding-left:18px}
 .termnav{background:var(--note);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
 .meta div{margin:1px 0}.meta .k{color:var(--muted)}
 table.gloss td:first-child{font-weight:700;white-space:nowrap;vertical-align:top}
+table.tmatrix td.n,table.tmatrix th.n{text-align:right}
+table.tmatrix th.tg{color:#222;font-weight:600;white-space:nowrap}
+.tg-legend{font-size:12px;color:var(--muted);margin:4px 0 0}
+.tg-chip{display:inline-block;width:10px;height:10px;border:1px solid var(--line);border-radius:2px;margin:0 4px 0 12px;vertical-align:-1px}
+.tg-chip:first-child{margin-left:0}
 svg text{fill:var(--muted);font-size:11px}
 .bar-legend{font-size:12px;color:var(--muted)}`;
 
@@ -110,11 +115,29 @@ ${grid}<polyline points="${pts}" fill="none" stroke="#6cb2f5" stroke-width="2"/>
 // --- Kiro の実測表示: トークンではなくクレジットと使用率（%）で記録される ---
 type CreditSource = Pick<SessionTrace, "creditsTotal" | "creditTurns">;
 function creditsBlock(src: CreditSource): string {
-  const rows = (src.creditTurns ?? []).map(t =>
-    `<tr><td>${t.turn + 1}</td><td>${fmtCredits(t.credits)}</td><td>${esc(usedToolsSummary(t.usedTools))}</td></tr>`).join("");
-  return `<h2>クレジット実測</h2>
-<p>合計 <b>${fmtCredits(src.creditsTotal)}</b> credits（usage_summary の積算。Kiro の実測はトークンではなくクレジットで記録されます）</p>
+  const turns = src.creditTurns ?? [];
+  const cols = toolColumns(turns);
+  const head = `<h2>クレジット実測</h2>
+<p>合計 <b>${fmtCredits(src.creditsTotal)}</b> credits（usage_summary の積算。Kiro の実測はトークンではなくクレジットで記録されます）</p>`;
+  if (!cols.length) {
+    const rows = turns.map(t => `<tr><td>${t.turn + 1}</td><td>${fmtCredits(t.credits)}</td><td></td></tr>`).join("");
+    return `${head}
 <table class="nodes"><tr><th>ターン</th><th>クレジット</th><th>使用したツール</th></tr>${rows}</table>`;
+  }
+  // ツールごとの列を持つマトリクス: セルはそのターンの呼び出し回数だけ。
+  // 列順はグループ→合計の多い順で全行共通にし、行同士を比べられるようにする
+  const headRows = `<tr><th rowspan="2">ターン</th><th rowspan="2">クレジット</th><th colspan="${cols.length}">使用したツール</th></tr>
+<tr>${cols.map(c => `<th class="tg" style="background:${c.group.color}">${esc(c.name)}</th>`).join("")}</tr>`;
+  const rows = turns.map(t => {
+    const counts = countTools(t.usedTools);
+    return `<tr><td>${t.turn + 1}</td><td class="n">${fmtCredits(t.credits)}</td>${cols.map(c => `<td class="n">${counts.get(c.name) ?? ""}</td>`).join("")}</tr>`;
+  }).join("");
+  const totalRow = `<tr><th>合計</th><th class="n">${fmtCredits(src.creditsTotal)}</th>${cols.map(c => `<th class="n">${c.total}</th>`).join("")}</tr>`;
+  const legend = `<p class="tg-legend">凡例（ツールのグループ）: ${toolGroupsPresent(cols).map(g => `<span class="tg-chip" style="background:${g.color}"></span>${esc(g.label)}`).join("")}</p>`;
+  return `${head}
+<div style="overflow-x:auto"><table class="nodes tmatrix">${headRows}${rows}
+${totalRow}</table></div>
+${legend}`;
 }
 
 type UsageRatioSource = Pick<SessionTrace, "contextUsageSeries" | "lastContextUsageRatio">;

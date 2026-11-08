@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.3.0] - 2026-11-08
+
+### 変更 (Changed)
+- **Kiro のクレジット実測の「使用したツール」を、ターン×ツールの
+  マトリクス表に変更。** これまではターンごとに「read_file ×56」のような
+  文字列が並び、行同士の比較が難しかった。ツールごとに列を立て、セルには
+  そのターンの呼び出し回数だけを入れる（0回は空白）。列の並びは役割の
+  グループ（読み取り・探索／書き込み・編集／実行／サブエージェント／
+  進行・対話／その他）→ グループ内は合計の多い順で、全行に共通。HTML
+  表示では列見出しをグループ色で塗り、色とグループの対応を示す凡例を
+  表の下に付けた。最終ターンの下にはツールごとの合計行も追加した。
+  画面サマリと文書コピー（Markdown / HTML）のすべてに適用。Markdown
+  では列またがりと色が表現できないため、列の並び順でグループが分かる
+  形にしている。
+- **Reworked the Kiro credit table's "tools used" into a turn × tool
+  matrix.** Each tool gets its own column and each cell holds only that
+  turn's call count (blank when zero), so rows and columns compare at a
+  glance. Columns are ordered by role group (read/explore, write/edit,
+  execute, sub-agents, progress/dialogue, other), then by session total;
+  HTML views colour the column headers by group and add a legend below
+  the table, and a totals row follows the last turn. Applies to the
+  on-screen summary and both document copies (Markdown / HTML); Markdown
+  cannot express the spanning header or colours, so grouping is conveyed
+  by column order there.
+
 ## [1.2.4] - 2026-11-08
 
 ### 修正 (Fixed)
