@@ -89,7 +89,13 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
 
   isAllSessionsExpanded(): boolean { return this.allSessionsExpanded; }
   setAllSessionsExpanded(on: boolean): void {
-    if (this.allSessionsExpanded === on) return;
+    if (this.allSessionsExpanded === on) {
+      // すでに全展開モードでも、「すべて展開」の再押下では手で畳まれた
+      // 項目を開き直せるよう、項目を作り直して再描画する（モードが
+      // 変わらないと再描画されず、ボタンが無反応に見えるため）
+      if (on) { this.renderEpoch++; this._onDidChange.fire(undefined); }
+      return;
+    }
     this.allSessionsExpanded = on;
     // オフに戻すだけでは畳まない（畳むのは collapseAllSessions の役目）。
     // 折りたたみフラグはここでは触らない: 項目単位の操作でモードを抜けたときに、
@@ -122,13 +128,19 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
     if (!this.traces.has(session.id)) {
       const trace = await this.ensureTrace(session);
       this.traces.set(session.id, trace);
-      if (session.id === this.displayedId && !this.seeded.has(session.id) && !this.collapsedFlag.has(session.id)) {
-        this.seeded.add(session.id);
+      if (session.id === this.displayedId && !this.collapsedFlag.has(session.id)) {
         // 表示中セッションは開いて描かれるため、セッション自体の展開は
         // トレースの有無によらず記録する。記録が無いと、項目側トグルが
         // 「閉じている」と誤判定し、トレース無しセッションを閉じられなくなる
         this.expanded.add(`s:${session.id}`);
-        if (trace) this.seedExpanded(session.id, trace);
+        // 子（スキル／ルートノード）のシードはトレースがあって初めてできる。
+        // seeded は「子までシード済み」の印として、セッション自体の記録とは
+        // 分ける（構築前に完了扱いにすると、構築後も子がシードされず、
+        // 表示中コピーが表示されている子を取りこぼす）
+        if (trace && !this.seeded.has(session.id)) {
+          this.seeded.add(session.id);
+          this.seedExpanded(session.id, trace);
+        }
       }
     }
     return this.traces.get(session.id) ?? null;
@@ -153,12 +165,12 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
     this.expanded = new Set();
     this.seeded.delete(sessionId);
     if (!this.collapsedFlag.has(sessionId)) {
-      this.seeded.add(sessionId);
       // トレースの有無によらず、表示中セッション自体の展開は記録する
-      // （getOrBuildTrace 側と同じ理由）
+      // （getOrBuildTrace 側と同じ理由）。子のシードは seeded で別に管理し、
+      // トレースがまだ無い場合は構築後に getOrBuildTrace が行う
       this.expanded.add(`s:${sessionId}`);
       const trace = this.traces.get(sessionId);
-      if (trace) this.seedExpanded(sessionId, trace);
+      if (trace) { this.seeded.add(sessionId); this.seedExpanded(sessionId, trace); }
     }
   }
   setExpanded(key: string, isExpanded: boolean): void {
