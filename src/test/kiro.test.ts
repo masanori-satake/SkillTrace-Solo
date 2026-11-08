@@ -111,6 +111,10 @@ test("kiro trace: a session without skill activation still shows context loads a
   assert.ok(html.includes("AGENTS.md"));
   assert.ok(html.includes("19.88"));
   assert.ok(html.includes("スキル起動は検出されませんでした"));
+  // 開始時点の使用率（最初の contextUsage = 12.5%）が常時文脈の節に併記される（Issue #9）
+  assert.ok(html.includes("セッション開始時点のコンテキストウィンドウ使用率: 12.5%"));
+  const md = renderSessionMarkdown(trace);
+  assert.ok(md.includes("セッション開始時点のコンテキストウィンドウ使用率: 12.5%"));
 });
 
 test("kiro trace: steering_inclusion documents give grade A", () => {

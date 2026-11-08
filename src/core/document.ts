@@ -6,7 +6,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, TraceNode } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
-import { esc, fmt, fmtCredits, usedToolsSummary, GLOSSARY } from "./common";
+import { esc, fmt, fmtCredits, usedToolsSummary, inputSplit, cacheWriteObservation, firstContextUsageRatio, GLOSSARY } from "./common";
 import { formatLocalDateTime } from "./sessions";
 
 function unicodeBar(ratio: number | null | undefined, width = 20): string {
@@ -104,10 +104,16 @@ function measuredMd(st: SessionTrace): string {
   const rows = st.turns.map(r =>
     `| ${r.turn + 1} | ${fmt(r.inputTokens)} | ${fmt(r.cacheReadTokens)} | ${fmt(r.cacheWriteTokens)} | ${fmt(r.outputTokens)} | ${fmt(r.reasoningTokens)} |`).join("\n");
   const t = st.totals;
-  const cache = Math.min(t.cacheReadTokens, t.inputTokens);
-  const fresh = t.inputTokens - cache;
-  const cacheBar = t.inputTokens ? ` ${unicodeBar(cache / t.inputTokens)}` : "";
-  return `| ターン | 入力 | キャッシュ読取 | キャッシュ書込 | 出力 | 推論 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n${rows}\n| 合計 | ${fmt(t.inputTokens)} | ${fmt(t.cacheReadTokens)} | ${fmt(t.cacheWriteTokens)} | ${fmt(t.outputTokens)} | ${fmt(t.reasoningTokens)} |\n\n入力トークンの内訳（合計 ${fmt(t.inputTokens)}）: キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(cache)}${cacheBar} ／ 新規入力 ${fmt(fresh)}`;
+  const { fresh, cacheRead, cacheWrite } = inputSplit(t);
+  const cacheBar = t.inputTokens ? ` ${unicodeBar(cacheRead / t.inputTokens)}` : "";
+  const obs = cacheWriteObservation(st.turns);
+  return `| ターン | 入力 | キャッシュ読取 | キャッシュ書込 | 出力 | 推論 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n${rows}\n| 合計 | ${fmt(t.inputTokens)} | ${fmt(t.cacheReadTokens)} | ${fmt(t.cacheWriteTokens)} | ${fmt(t.outputTokens)} | ${fmt(t.reasoningTokens)} |\n\n入力トークンの内訳（合計 ${fmt(t.inputTokens)}）: キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(cacheRead)}${cacheBar} ／ キャッシュ書込（将来の再利用のための保存） ${fmt(cacheWrite)} ／ 新規入力 ${fmt(fresh)}${obs ? `\n\n${obs}` : ""}`;
+}
+
+/** 常時文脈の節に併記する「セッション開始時点の使用率」（Kiro の最初の contextUsage） */
+function startUsageText(st: SessionTrace): string {
+  const r = firstContextUsageRatio(st.contextUsageSeries);
+  return r === null ? "" : `セッション開始時点のコンテキストウィンドウ使用率: ${(r * 100).toFixed(1)}%（最初の記録。会話が始まる前に、常時文脈だけで窓がどれだけ埋まっていたかの目安です）`;
 }
 
 function contextMd(st: SessionTrace): string {
@@ -138,7 +144,7 @@ export function renderSessionMarkdown(st: SessionTrace, opts?: DocumentOptions):
   }).join("\n");
   const trees = st.skills.map(part => `### ${part.skillName}\n\n${treeMd(part)}`).join("\n\n");
   const contextLoads = st.contextLoads?.length
-    ? `\n\n## 常時文脈（コンテキストへの読み込み）\n\n${st.contextLoads.map(l => `- ${l.path}${l.at ? `（${formatLocalDateTime(l.at)}）` : ""}`).join("\n")}\n\nスキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。` : "";
+    ? `\n\n## 常時文脈（コンテキストへの読み込み）\n\n${st.contextLoads.map(l => `- ${l.path}${l.at ? `（${formatLocalDateTime(l.at)}）` : ""}`).join("\n")}${startUsageText(st) ? `\n\n${startUsageText(st)}` : ""}\n\nスキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。` : "";
   const outside = st.outsideReads.length
     ? `\n\n## スキル外で読まれたファイル\n\n${st.outsideReads.map(r => `- ${r.path}（${r.tool} ／ ${r.at ? formatLocalDateTime(r.at) : ""}）${r.failed ? "（読取失敗）" : ""}${r.title ? ` — ${r.title}` : ""}`).join("\n")}` : "";
   return `# セッションサマリ
@@ -260,11 +266,11 @@ function measuredHtml(st: SessionTrace): string {
   const rows = st.turns.map(r =>
     `<tr><td style="${H.cell}">${r.turn + 1}</td><td style="${H.cellR}">${fmt(r.inputTokens)}</td><td style="${H.cellR}">${fmt(r.cacheReadTokens)}</td><td style="${H.cellR}">${fmt(r.cacheWriteTokens)}</td><td style="${H.cellR}">${fmt(r.outputTokens)}</td><td style="${H.cellR}">${fmt(r.reasoningTokens)}</td></tr>`).join("");
   const t = st.totals;
-  const cache = Math.min(t.cacheReadTokens, t.inputTokens);
-  const fresh = t.inputTokens - cache;
+  const { fresh, cacheRead, cacheWrite } = inputSplit(t);
+  const obs = cacheWriteObservation(st.turns);
   return `<table style="${H.table}"><tr><th style="${H.cell}">ターン</th><th style="${H.cell}">入力</th><th style="${H.cell}">キャッシュ読取</th><th style="${H.cell}">キャッシュ書込</th><th style="${H.cell}">出力</th><th style="${H.cell}">推論</th></tr>${rows}
 <tr><th style="${H.cell}">合計</th><th style="${H.cellR}">${fmt(t.inputTokens)}</th><th style="${H.cellR}">${fmt(t.cacheReadTokens)}</th><th style="${H.cellR}">${fmt(t.cacheWriteTokens)}</th><th style="${H.cellR}">${fmt(t.outputTokens)}</th><th style="${H.cellR}">${fmt(t.reasoningTokens)}</th></tr></table>
-<p>入力トークンの内訳（合計 ${fmt(t.inputTokens)}）: キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(cache)} <span style="${H.mono}">${unicodeBar(t.inputTokens ? cache / t.inputTokens : 0)}</span> ／ 新規入力 ${fmt(fresh)}</p>`;
+<p>入力トークンの内訳（合計 ${fmt(t.inputTokens)}）: キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(cacheRead)} <span style="${H.mono}">${unicodeBar(t.inputTokens ? cacheRead / t.inputTokens : 0)}</span> ／ キャッシュ書込（将来の再利用のための保存） ${fmt(cacheWrite)} ／ 新規入力 ${fmt(fresh)}</p>${obs ? `<p>${esc(obs)}</p>` : ""}`;
 }
 
 function contextHtml(st: SessionTrace): string {
@@ -300,7 +306,7 @@ export function renderSessionHtmlFragment(st: SessionTrace, opts?: DocumentOptio
   }).join("");
   const trees = st.skills.map(part => `<h3 style="${H.h3}">${esc(part.skillName)}</h3>${treeHtml(part)}`).join("");
   const contextLoads = st.contextLoads?.length
-    ? `<h2 style="${H.h2}">常時文脈（コンテキストへの読み込み）</h2><ul>${st.contextLoads.map(l => `<li>${esc(l.path)}${l.at ? `（${esc(formatLocalDateTime(l.at))}）` : ""}</li>`).join("")}</ul><p>スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。</p>` : "";
+    ? `<h2 style="${H.h2}">常時文脈（コンテキストへの読み込み）</h2><ul>${st.contextLoads.map(l => `<li>${esc(l.path)}${l.at ? `（${esc(formatLocalDateTime(l.at))}）` : ""}</li>`).join("")}</ul>${startUsageText(st) ? `<p>${esc(startUsageText(st))}</p>` : ""}<p>スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。</p>` : "";
   const outside = st.outsideReads.length
     ? `<h2 style="${H.h2}">スキル外で読まれたファイル</h2><ul>${st.outsideReads.map(r => `<li>${esc(r.path)}（${esc(r.tool)} ／ ${esc(r.at ? formatLocalDateTime(r.at) : "")}）${r.failed ? "（読取失敗）" : ""}${r.title ? ` — ${esc(r.title)}` : ""}</li>`).join("")}</ul>` : "";
   return `<div style="${H.root}">

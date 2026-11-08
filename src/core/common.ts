@@ -14,6 +14,38 @@ export function usedToolsSummary(tools: string[]): string {
   return [...counts.entries()].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n)).join(", ");
 }
 
+/** 入力トークンの3分解。Copilot の記録では「入力」はキャッシュ読取・書込を含む総数のため、
+ *  新規入力は差し引いて求める（Issue #9: 消費の構造を見せる） */
+export function inputSplit(t: { inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }): { fresh: number; cacheRead: number; cacheWrite: number } {
+  const input = Math.max(0, t.inputTokens);
+  const cacheRead = Math.min(Math.max(0, t.cacheReadTokens), input);
+  const cacheWrite = Math.min(Math.max(0, t.cacheWriteTokens), input - cacheRead);
+  return { fresh: input - cacheRead - cacheWrite, cacheRead, cacheWrite };
+}
+
+/** キャッシュ書込が発生したターン（1始まり）と、初回ターン以外で最大の書込。
+ *  診断ではなく観測として示すための事実だけを返す */
+export function cacheWriteFacts(turns: { turn: number; cacheWriteTokens: number }[]): { turns: number[]; maxLater: { turn: number; tokens: number } | null } {
+  const hits = turns.filter(t => t.cacheWriteTokens > 0).map(t => ({ turn: t.turn + 1, tokens: t.cacheWriteTokens }));
+  const later = hits.filter(h => h.turn > 1);
+  const maxLater = later.length ? later.reduce((a, b) => (b.tokens > a.tokens ? b : a)) : null;
+  return { turns: hits.map(h => h.turn), maxLater };
+}
+
+/** キャッシュ書込の発生ターンを観測として述べる一文（発生がなければ空文字） */
+export function cacheWriteObservation(turns: { turn: number; cacheWriteTokens: number }[]): string {
+  const f = cacheWriteFacts(turns);
+  if (!f.turns.length) return "";
+  let s = `キャッシュ書込が発生したターン: ${f.turns.join("・")}`;
+  if (f.maxLater) s += `。初回ターン以外で最大の書込はターン${f.maxLater.turn}（${fmt(f.maxLater.tokens)} トークン）です`;
+  return s;
+}
+
+/** Kiro: セッション開始時点の文脈使用率（contextUsage の最初のスナップショット） */
+export function firstContextUsageRatio(series?: { ratio: number }[] | null): number | null {
+  return series && series.length ? series[0].ratio : null;
+}
+
 /** 用語の説明（用語集 v0.1）。レポート末尾の表と、文書コピーの用語表で共有する。
  *  用語が増えたら、ここだけをメンテする */
 export const GLOSSARY: [string, string][] = [

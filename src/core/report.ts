@@ -5,7 +5,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, Trace, TraceNode } from "./trace";
 import { formatLocalDateTime } from "./sessions";
-import { esc, fmt, fmtCredits, usedToolsSummary, GLOSSARY } from "./common";
+import { esc, fmt, fmtCredits, usedToolsSummary, inputSplit, cacheWriteObservation, firstContextUsageRatio, GLOSSARY } from "./common";
 import { renderSessionMarkdown, renderSessionHtmlFragment, renderSkillMarkdown, renderSkillHtmlFragment } from "./document";
 export { esc, fmt };
 
@@ -233,23 +233,25 @@ function promptBlock(preview: string, truncated: boolean): string {
 function tokenTable(turns: Trace["turns"], totals: Trace["totals"]): string {
   const turnRows = turns.map(r =>
     `<tr><td>${r.turn + 1}</td><td>${fmt(r.inputTokens)}</td><td>${fmt(r.cacheReadTokens)}</td><td>${fmt(r.cacheWriteTokens)}</td><td>${fmt(r.outputTokens)}</td><td>${fmt(r.reasoningTokens)}</td></tr>`).join("");
+  const obs = cacheWriteObservation(turns);
   return `<table class="tokens"><tr><th>ターン</th><th>入力</th><th>キャッシュ読取</th><th>キャッシュ書込</th><th>出力</th><th>推論</th></tr>${turnRows}
 <tr><th>合計</th><th>${fmt(totals.inputTokens)}</th><th>${fmt(totals.cacheReadTokens)}</th><th>${fmt(totals.cacheWriteTokens)}</th><th>${fmt(totals.outputTokens)}</th><th>${fmt(totals.reasoningTokens)}</th></tr></table>
-${inputBreakdown(totals)}`;
+${inputBreakdown(totals)}${obs ? `\n<p class="tok">${esc(obs)}</p>` : ""}`;
 }
 
-// 入力トークンの内訳（キャッシュ再利用分と新規分）を帯グラフで示す。
+// 入力トークンの内訳（新規入力 / キャッシュ読取 / キャッシュ書込の3分解）を帯グラフで示す。
+// 「入力」はキャッシュ分を含む総数なので、書込を新規入力に埋もれさせない（Issue #9）。
 // コンテキスト（上限のある器）とは別物であることが見て分かるようにする
 function inputBreakdown(totals: Trace["totals"]): string {
   const input = totals.inputTokens;
   if (!input) return "";
-  const cache = Math.min(totals.cacheReadTokens, input);
-  const fresh = input - cache;
+  const { fresh, cacheRead, cacheWrite } = inputSplit(totals);
   const W = 520;
-  const cw = Math.round((W * cache) / input);
+  const rw = Math.round((W * cacheRead) / input);
+  const ww = Math.round((W * cacheWrite) / input);
   return `<p style="margin:12px 0 4px">入力トークンの内訳（合計 ${fmt(input)}）</p>
-<svg width="${W}" height="16"><rect x="0" y="0" width="${cw}" height="16" fill="#3a6ea5"/><rect x="${cw}" y="0" width="${W - cw}" height="16" fill="#b9c0c7"/></svg>
-<p class="bar-legend"><span style="color:#3a6ea5">■</span> キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(cache)} ／ <span style="color:#9aa3ab">■</span> 新規入力 ${fmt(fresh)}。キャッシュはコンテキストの大きさとは別の話です（用語の説明の「キャッシュ」参照）。</p>`;
+<svg width="${W}" height="16"><rect x="0" y="0" width="${rw}" height="16" fill="#3a6ea5"/><rect x="${rw}" y="0" width="${ww}" height="16" fill="#d97b29"/><rect x="${rw + ww}" y="0" width="${W - rw - ww}" height="16" fill="#b9c0c7"/></svg>
+<p class="bar-legend"><span style="color:#3a6ea5">■</span> キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(cacheRead)} ／ <span style="color:#d97b29">■</span> キャッシュ書込（将来の再利用のための保存） ${fmt(cacheWrite)} ／ <span style="color:#9aa3ab">■</span> 新規入力 ${fmt(fresh)}。キャッシュはコンテキストの大きさとは別の話です（用語の説明の「キャッシュ」参照）。</p>`;
 }
 
 function gradeCounts(nodes: TraceNode[]): Record<string, number> {
@@ -364,7 +366,8 @@ ${healthWarn(st.health)}
 <table class="skills"><tr><th>スキル</th><th>最初の到達順</th><th>到達の内訳（確度別）</th><th>記録なし</th><th>全ファイル</th><th>到達分の推定トークン合計</th><th>スキル全体の推定トークン合計</th></tr>${skillRows}</table>
 ${st.skills.length ? `<p class="tok">スキルごとの詳しい内訳は、ツリーでスキルを選んで「このスキルのサマリ」を開いてください。</p>` : `<p>このセッションではスキル起動は検出されませんでした。</p>`}
 ${st.contextLoads?.length ? `<h2>常時文脈（コンテキストへの読み込み）</h2>
-<ul>${st.contextLoads.map(l => `<li>${esc(l.path)}${l.at ? `（${esc(formatLocalDateTime(l.at))}）` : ""}</li>`).join("")}</ul>
+<ul>${st.contextLoads.map(l => `<li>${esc(l.path)}${l.at ? `（${esc(formatLocalDateTime(l.at))}）` : ""}</li>`).join("")}</ul>${firstContextUsageRatio(st.contextUsageSeries) !== null ? `
+<p class="tok">セッション開始時点のコンテキストウィンドウ使用率: ${(firstContextUsageRatio(st.contextUsageSeries)! * 100).toFixed(1)}%（最初の記録。会話が始まる前に、常時文脈だけで窓がどれだけ埋まっていたかの目安です）</p>` : ""}
 <p class="tok">スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。</p>` : ""}
 ${usageBlock(st)}
 <h2>到達の流れ</h2>

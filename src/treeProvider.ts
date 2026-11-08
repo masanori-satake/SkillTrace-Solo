@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { GraphNode } from "./core/graph";
 import type { SessionTrace, SkillPart } from "./core/trace";
 import { gradeCertaintyLabel } from "./core/trace";
+import { firstContextUsageRatio } from "./core/common";
 import type { SessionInfo } from "./core/sessions";
 
 // ツリーの階層（0.4.0）: セッション履歴 ＞ セッション ＞ 発動スキル ＞ 参照ツリー。
@@ -12,7 +13,7 @@ export interface SkillEl { kind: "skill"; session: SessionInfo; part: SkillPart 
 export interface NodeEl { kind: "node"; session: SessionInfo; part: SkillPart; gnode: GraphNode }
 export interface OutsideGroupEl { kind: "outsideGroup"; session: SessionInfo; reads: SessionTrace["outsideReads"] }
 export interface OutsideEl { kind: "outside"; session: SessionInfo; read: SessionTrace["outsideReads"][number] }
-export interface ContextGroupEl { kind: "contextGroup"; session: SessionInfo; loads: NonNullable<SessionTrace["contextLoads"]> }
+export interface ContextGroupEl { kind: "contextGroup"; session: SessionInfo; loads: NonNullable<SessionTrace["contextLoads"]>; startRatio?: number | null }
 export interface ContextFileEl { kind: "contextFile"; session: SessionInfo; load: NonNullable<SessionTrace["contextLoads"]>[number] }
 export interface NoteEl { kind: "note"; session: SessionInfo; text: string }
 export type El = SessionEl | SkillEl | NodeEl | OutsideGroupEl | OutsideEl | ContextGroupEl | ContextFileEl | NoteEl;
@@ -276,8 +277,12 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       }
       case "contextGroup": {
         item.label = "常時文脈";
-        item.description = `${element.loads.length} 件`;
-        item.tooltip = "スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）";
+        item.description = element.startRatio !== null && element.startRatio !== undefined
+          ? `${element.loads.length} 件 ・ 開始時 ${(element.startRatio * 100).toFixed(1)}%`
+          : `${element.loads.length} 件`;
+        item.tooltip = "スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）"
+          + (element.startRatio !== null && element.startRatio !== undefined
+            ? `\nセッション開始時点のコンテキストウィンドウ使用率: ${(element.startRatio * 100).toFixed(1)}%（常時文脈の重さの目安）` : "");
         item.iconPath = new vscode.ThemeIcon("folder");
         item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
         item.contextValue = "skilltraceContextGroup";
@@ -332,7 +337,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         const trace = await this.getOrBuildTrace(element.session);
         if (!trace) return [{ kind: "note", session: element.session, text: "このセッションではスキル起動を検出できませんでした" } as NoteEl];
         const out: El[] = trace.skills.map(part => ({ kind: "skill", session: element.session, part } as SkillEl));
-        if (trace.contextLoads?.length) out.push({ kind: "contextGroup", session: element.session, loads: trace.contextLoads } as ContextGroupEl);
+        if (trace.contextLoads?.length) out.push({ kind: "contextGroup", session: element.session, loads: trace.contextLoads, startRatio: firstContextUsageRatio(trace.contextUsageSeries) } as ContextGroupEl);
         if (trace.outsideReads.length) out.push({ kind: "outsideGroup", session: element.session, reads: trace.outsideReads } as OutsideGroupEl);
         return out;
       }
@@ -375,7 +380,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       }
       case "contextFile": {
         const trace = this.traces.get(element.session.id);
-        return trace?.contextLoads ? { kind: "contextGroup", session: element.session, loads: trace.contextLoads } : { kind: "session", session: element.session };
+        return trace?.contextLoads ? { kind: "contextGroup", session: element.session, loads: trace.contextLoads, startRatio: firstContextUsageRatio(trace.contextUsageSeries) } : { kind: "session", session: element.session };
       }
       case "node": {
         if (element.gnode.id === element.part.graph.rootId) {

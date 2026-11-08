@@ -167,6 +167,21 @@ test("session summary renders the per-skill digest and timeline", () => {
   assert.ok(html.includes('data-order="1"'));
 });
 
+test("input split is three-way and cache-write turns are observed (Issue #9)", async () => {
+  const { inputSplit, cacheWriteObservation } = await import("../core/common.js");
+  const { st } = fixtureSessionTrace();
+  // フィクスチャ正解値: 入力 34,900 = 読取 29,400 + 書込 470 + 新規 5,030
+  assert.deepEqual(inputSplit(st.totals), { fresh: 5030, cacheRead: 29400, cacheWrite: 470 });
+  // 書込は全ターンに発生し、初回以外ではターン2（100）が最大
+  assert.equal(cacheWriteObservation(st.turns),
+    "キャッシュ書込が発生したターン: 1・2・3・4。初回ターン以外で最大の書込はターン2（100 トークン）です");
+  assert.equal(cacheWriteObservation([]), "");
+  const html = renderSessionHtml(st);
+  assert.ok(html.includes("キャッシュ書込（将来の再利用のための保存） 470"));
+  assert.ok(html.includes("新規入力 5,030"));
+  assert.ok(html.includes("キャッシュ書込が発生したターン: 1・2・3・4"));
+});
+
 test("document: session markdown and html fragment", async () => {
   const { renderSessionMarkdown, renderSessionHtmlFragment } = await import("../core/document.js");
   const { st } = fixtureSessionTrace();
@@ -176,6 +191,9 @@ test("document: session markdown and html fragment", async () => {
   assert.ok(md.includes("- SKILL.md"));
   assert.ok(md.includes("[確度高 #2]"));
   assert.ok(md.includes("入力トークンの内訳"));
+  assert.ok(md.includes("キャッシュ書込（将来の再利用のための保存） 470"));
+  assert.ok(md.includes("新規入力 5,030"));
+  assert.ok(md.includes("キャッシュ書込が発生したターン: 1・2・3・4"));
   // 既定では「読み方の注意」と「用語の説明」は文書に入らない（貼り付け後の編集を軽くするため）
   assert.ok(!md.includes("## 用語の説明"));
   assert.ok(!md.includes("## 読み方の注意"));
