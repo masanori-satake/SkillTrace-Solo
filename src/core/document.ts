@@ -6,7 +6,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, TraceNode } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
-import { esc, fmt, fmtCredits, usedToolsSummary, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, GLOSSARY } from "./common";
+import { esc, fmt, fmtCredits, countTools, toolColumns, toolGroupsPresent, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, GLOSSARY } from "./common";
 import { formatLocalDateTime } from "./sessions";
 
 function unicodeBar(ratio: number | null | undefined, width = 20): string {
@@ -97,9 +97,23 @@ function mdCell(s: string): string {
 
 function measuredMd(st: SessionTrace): string {
   if (st.source === "kiro") {
-    const rows = (st.creditTurns ?? []).map(t =>
-      `| ${t.turn + 1} | ${fmtCredits(t.credits)} | ${mdCell(usedToolsSummary(t.usedTools))} |`).join("\n");
-    return `| ターン | クレジット | 使用したツール |\n| --- | ---: | --- |\n${rows}\n| 合計 | ${fmtCredits(st.creditsTotal)} |  |\n\nKiro の実測はトークンではなくクレジットで記録されます（usage_summary の積算）。`;
+    const turns = st.creditTurns ?? [];
+    const cols = toolColumns(turns);
+    const note = `\n\nKiro の実測はトークンではなくクレジットで記録されます（usage_summary の積算）。`;
+    if (!cols.length) {
+      const rows = turns.map(t => `| ${t.turn + 1} | ${fmtCredits(t.credits)} |  |`).join("\n");
+      return `| ターン | クレジット | 使用したツール |\n| --- | ---: | --- |\n${rows}\n| 合計 | ${fmtCredits(st.creditsTotal)} |  |${note}`;
+    }
+    // ツールごとの列を持つマトリクス（Markdown では列またがりと色は表現できないため、
+    // 列の並び順でグループが分かる形にする。並びはグループ→合計の多い順）
+    const header = `| ターン | クレジット | ${cols.map(c => mdCell(c.name)).join(" | ")} |`;
+    const sep = `| --- | ---: | ${cols.map(() => "---:").join(" | ")} |`;
+    const rows = turns.map(t => {
+      const counts = countTools(t.usedTools);
+      return `| ${t.turn + 1} | ${fmtCredits(t.credits)} | ${cols.map(c => counts.get(c.name) ?? "").join(" | ")} |`;
+    }).join("\n");
+    const total = `| 合計 | ${fmtCredits(st.creditsTotal)} | ${cols.map(c => c.total).join(" | ")} |`;
+    return `${header}\n${sep}\n${rows}\n${total}${note}`;
   }
   const rows = st.turns.map(r =>
     `| ${r.turn + 1} | ${fmt(r.inputTokens)} | ${fmt(r.cacheReadTokens)} | ${fmt(r.cacheWriteTokens)} | ${fmt(r.outputTokens)} | ${fmt(r.reasoningTokens)} |`).join("\n");
@@ -259,11 +273,28 @@ function metaHtml(st: SessionTrace): string {
 
 function measuredHtml(st: SessionTrace): string {
   if (st.source === "kiro") {
-    const rows = (st.creditTurns ?? []).map(t =>
-      `<tr><td style="${H.cell}">${t.turn + 1}</td><td style="${H.cellR}">${fmtCredits(t.credits)}</td><td style="${H.cell}">${esc(usedToolsSummary(t.usedTools))}</td></tr>`).join("");
-    return `<table style="${H.table}"><tr><th style="${H.cell}">ターン</th><th style="${H.cell}">クレジット</th><th style="${H.cell}">使用したツール</th></tr>${rows}
+    const turns = st.creditTurns ?? [];
+    const cols = toolColumns(turns);
+    const note = `<p>Kiro の実測はトークンではなくクレジットで記録されます（usage_summary の積算）。</p>`;
+    if (!cols.length) {
+      const rows = turns.map(t => `<tr><td style="${H.cell}">${t.turn + 1}</td><td style="${H.cellR}">${fmtCredits(t.credits)}</td><td style="${H.cell}"></td></tr>`).join("");
+      return `<table style="${H.table}"><tr><th style="${H.cell}">ターン</th><th style="${H.cell}">クレジット</th><th style="${H.cell}">使用したツール</th></tr>${rows}
 <tr><th style="${H.cell}">合計</th><th style="${H.cellR}">${fmtCredits(st.creditsTotal)}</th><td style="${H.cell}"></td></tr></table>
-<p>Kiro の実測はトークンではなくクレジットで記録されます（usage_summary の積算）。</p>`;
+${note}`;
+    }
+    // ツールごとの列を持つマトリクス: セルはそのターンの呼び出し回数だけ。
+    // 列見出しはグループ色で塗り、対応は表の下の凡例で示す
+    const headRows = `<tr><th style="${H.cell}" rowspan="2">ターン</th><th style="${H.cell}" rowspan="2">クレジット</th><th style="${H.cell}" colspan="${cols.length}">使用したツール</th></tr><tr>${cols.map(c => `<th style="${H.cell};background:${c.group.color};color:#222">${esc(c.name)}</th>`).join("")}</tr>`;
+    const rows = turns.map(t => {
+      const counts = countTools(t.usedTools);
+      return `<tr><td style="${H.cell}">${t.turn + 1}</td><td style="${H.cellR}">${fmtCredits(t.credits)}</td>${cols.map(c => `<td style="${H.cellR}">${counts.get(c.name) ?? ""}</td>`).join("")}</tr>`;
+    }).join("");
+    const totalRow = `<tr><th style="${H.cell}">合計</th><th style="${H.cellR}">${fmtCredits(st.creditsTotal)}</th>${cols.map(c => `<th style="${H.cellR}">${c.total}</th>`).join("")}</tr>`;
+    const legend = `<p style="font-size:12px;color:#666;margin:4px 0">凡例（ツールのグループ）: ${toolGroupsPresent(cols).map(g => `<span style="display:inline-block;width:10px;height:10px;background:${g.color};border:1px solid #bbbbbb;border-radius:2px;margin:0 4px 0 12px;vertical-align:-1px"></span>${esc(g.label)}`).join("")}</p>`;
+    return `<div style="overflow-x:auto"><table style="${H.table}">${headRows}${rows}
+${totalRow}</table></div>
+${legend}
+${note}`;
   }
   const rows = st.turns.map(r =>
     `<tr><td style="${H.cell}">${r.turn + 1}</td><td style="${H.cellR}">${fmt(r.inputTokens)}</td><td style="${H.cellR}">${fmt(r.cacheReadTokens)}</td><td style="${H.cellR}">${fmt(r.cacheWriteTokens)}</td><td style="${H.cellR}">${fmt(r.outputTokens)}</td><td style="${H.cellR}">${fmt(r.reasoningTokens)}</td></tr>`).join("");

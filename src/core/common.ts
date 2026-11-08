@@ -7,11 +7,66 @@ export const fmt = (n: number | null | undefined): string => (n === null || n ==
 /** Kiro のクレジット実測の表示（小数2桁。Kiro の画面表示に合わせる） */
 export const fmtCredits = (v: number | null | undefined): string => (v === null || v === undefined ? "—" : v.toFixed(2));
 
-/** 使用したツールの一覧を、重複を数えて短くまとめる（例: read_file ×3） */
-export function usedToolsSummary(tools: string[]): string {
+/** ツール名の一覧を数える */
+export function countTools(tools: string[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const t of tools) counts.set(t, (counts.get(t) ?? 0) + 1);
-  return [...counts.entries()].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n)).join(", ");
+  return counts;
+}
+
+/**
+ * ツールのグループ分け（クレジット実測のマトリクス表の列の並びと色づけ用）。
+ * 似た役割のツールを近くに置き、グループごとに列見出しの色を揃える。
+ * 分類はツール名に含まれるキーワードで行い、どれにも当てはまらなければ
+ * 「その他」。キーワードの判定順が分類を決めるため、配列の順序が意味を持つ
+ * （例: invoke_sub_agent は sub_agent を含むので、他の語より先に判定する）
+ */
+export interface ToolGroupDef { id: string; label: string; color: string; keywords: string[] }
+export const TOOL_GROUPS: ToolGroupDef[] = [
+  { id: "read", label: "読み取り・探索", color: "#dbeafe", keywords: ["read", "list", "grep", "search", "glob"] },
+  { id: "write", label: "書き込み・編集", color: "#dcfce7", keywords: ["write", "replace", "edit", "create", "patch", "insert", "delete"] },
+  { id: "exec", label: "実行", color: "#ede9fe", keywords: ["execute", "run", "command", "shell", "terminal", "pwsh", "bash"] },
+  { id: "subagent", label: "サブエージェント", color: "#ffedd5", keywords: ["sub_agent", "subagent"] },
+  { id: "interact", label: "進行・対話", color: "#fce7f3", keywords: ["progress", "user_input", "input", "ask"] },
+  { id: "other", label: "その他", color: "#e5e7eb", keywords: [] },
+];
+const TOOL_GROUP_ORDER = ["subagent", "read", "write", "exec", "interact", "other"];
+const TOOL_GROUP_BY_ID = new Map(TOOL_GROUPS.map(g => [g.id, g]));
+const TOOL_GROUP_CHECK_ORDER = TOOL_GROUP_ORDER.map(id => TOOL_GROUP_BY_ID.get(id)!).filter(g => g.keywords.length);
+
+export function toolGroupOf(name: string): ToolGroupDef {
+  const n = name.toLowerCase();
+  for (const g of TOOL_GROUP_CHECK_ORDER) {
+    if (g.keywords.some(k => n.includes(k))) return g;
+  }
+  return TOOL_GROUP_BY_ID.get("other")!;
+}
+
+export interface ToolColumn { name: string; group: ToolGroupDef; total: number }
+
+/**
+ * マトリクス表の列モデル: セッション全体で使われたツールを列にする。
+ * 並びはグループ順（TOOL_GROUPS の定義順）→ グループ内は合計回数の多い順
+ * → 同数は名前順。全ターンで同じ列順になるため、行同士を比べられる
+ */
+export function toolColumns(turns: { usedTools: string[] }[]): ToolColumn[] {
+  const totals = new Map<string, number>();
+  for (const t of turns) for (const [name, c] of countTools(t.usedTools)) totals.set(name, (totals.get(name) ?? 0) + c);
+  const groupRank = new Map(TOOL_GROUPS.map((g, i) => [g.id, i]));
+  return [...totals.entries()]
+    .map(([name, total]) => ({ name, group: toolGroupOf(name), total }))
+    .sort((a, b) =>
+      (groupRank.get(a.group.id)! - groupRank.get(b.group.id)!) ||
+      (b.total - a.total) ||
+      (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/** 列モデルに現れるグループだけを、列と同じ順で返す（凡例用） */
+export function toolGroupsPresent(columns: ToolColumn[]): ToolGroupDef[] {
+  const seen = new Set<string>();
+  const out: ToolGroupDef[] = [];
+  for (const c of columns) if (!seen.has(c.group.id)) { seen.add(c.group.id); out.push(c.group); }
+  return out;
 }
 
 /** 入力トークンの3分解。Copilot の記録では「入力」はキャッシュ読取・書込を含む総数のため、

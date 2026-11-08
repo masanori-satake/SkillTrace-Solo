@@ -187,6 +187,27 @@ test("input split is three-way and cache-write turns are observed (Issue #9)", a
   assert.ok(renderSessionHtml(broken).includes("3分解できません"));
 });
 
+test("tool matrix columns are grouped and ordered by totals", async () => {
+  const { toolColumns, toolGroupOf, toolGroupsPresent } = await import("../core/common.js");
+  const turns = [
+    { usedTools: ["read_file", "read_file", "invoke_sub_agent", "validate_spec_format"] },
+    { usedTools: ["read_file", "fs_write", "grep_search", "report_progress"] },
+  ];
+  const cols = toolColumns(turns);
+  // グループ順（読み取り・探索→書き込み・編集→サブエージェント→進行・対話→その他）、
+  // グループ内は合計の多い順
+  assert.deepEqual(cols.map(c => c.name), ["read_file", "grep_search", "fs_write", "invoke_sub_agent", "report_progress", "validate_spec_format"]);
+  assert.deepEqual(cols.map(c => c.total), [3, 1, 1, 1, 1, 1]);
+  assert.deepEqual(toolGroupsPresent(cols).map(g => g.id), ["read", "write", "subagent", "interact", "other"]);
+  // 分類: キーワード判定とフォールバック
+  assert.equal(toolGroupOf("invoke_sub_agent").id, "subagent");
+  assert.equal(toolGroupOf("subagent_response").id, "subagent");
+  assert.equal(toolGroupOf("execute_pwsh").id, "exec");
+  assert.equal(toolGroupOf("user_input").id, "interact");
+  assert.equal(toolGroupOf("prework").id, "other");
+  assert.deepEqual(toolColumns([]), []);
+});
+
 test("document: session markdown and html fragment", async () => {
   const { renderSessionMarkdown, renderSessionHtmlFragment } = await import("../core/document.js");
   const { st } = fixtureSessionTrace();
