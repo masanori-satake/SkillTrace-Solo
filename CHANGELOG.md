@@ -2,7 +2,21 @@
 
 ## [1.3.0] - 2026-11-08
 
+### Changed
+
+- **Reworked the Kiro credit table's "tools used" into a turn × tool
+  matrix.** Each tool gets its own column and each cell holds only that
+  turn's call count (blank when zero), so rows and columns compare at a
+  glance. Columns are ordered by role group (read/explore, write/edit,
+  execute, sub-agents, progress/dialogue, other), then by session total;
+  HTML views colour the column headers by group and add a legend below
+  the table, and a totals row follows the last turn. Applies to the
+  on-screen summary and both document copies (Markdown / HTML); Markdown
+  cannot express the spanning header or colours, so grouping is conveyed
+  by column order there.
+
 ### 変更 (Changed)
+
 - **Kiro のクレジット実測の「使用したツール」を、ターン×ツールの
   マトリクス表に変更。** これまではターンごとに「read_file ×56」のような
   文字列が並び、行同士の比較が難しかった。ツールごとに列を立て、セルには
@@ -14,16 +28,6 @@
   画面サマリと文書コピー（Markdown / HTML）のすべてに適用。Markdown
   では列またがりと色が表現できないため、列の並び順でグループが分かる
   形にしている。
-- **Reworked the Kiro credit table's "tools used" into a turn × tool
-  matrix.** Each tool gets its own column and each cell holds only that
-  turn's call count (blank when zero), so rows and columns compare at a
-  glance. Columns are ordered by role group (read/explore, write/edit,
-  execute, sub-agents, progress/dialogue, other), then by session total;
-  HTML views colour the column headers by group and add a legend below
-  the table, and a totals row follows the last turn. Applies to the
-  on-screen summary and both document copies (Markdown / HTML); Markdown
-  cannot express the spanning header or colours, so grouping is conveyed
-  by column order there.
 
 ## [1.2.4] - 2026-11-08
 
