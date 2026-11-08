@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.2.4] - 2026-11-08
+
+### 修正 (Fixed)
+- **トレースが無いセッション（スキル起動なし）を、項目のボタンで閉じられ
+  なかった問題を修正。** 表示中セッションは開いて描かれるのに、展開状態の
+  記録がトレース構築時にしか作られなかったため、開閉ボタンが常に「開く」
+  側に倒れ続けていた。開閉の記録をトレースの有無から切り離し、開く処理も
+  トレースが無くてもセッション自体は開くようにした。「すべて折りたたむ」
+  でも、各セッションの項目を作り直して畳んだ状態が確実に反映されるように
+  した。
+- **ビューの「すべてのセッションを展開／折りたたむ」トグルを、「すべて
+  展開」と「すべて折りたたむ」の2つのボタンに分離。** 閉じたいつもりで
+  押すと、時間のかかる「すべて展開」が走ることがあった。押した結果は
+  常にボタンどおりの動作になる。タイトルは nls で表示言語に追随する
+  （英語: Expand All Sessions / Collapse All Sessions、日本語:
+  すべてのセッションを展開 / すべてのセッションを折りたたむ）。
+- **Fixed sessions without a trace (no skill activation) being impossible
+  to close from the item button.** A displayed session is drawn expanded,
+  but the expansion record was only seeded when a trace was built, so the
+  toggle always fell to the "expand" side. Expansion bookkeeping is now
+  independent of trace existence, expanding works for trace-less sessions,
+  and "collapse all" recreates items so the collapsed state always lands.
+- **Split the "Expand/Collapse All Sessions" toggle into two buttons,
+  "Expand All Sessions" and "Collapse All Sessions",** placed side by
+  side. Pressing the old toggle intending to close could trigger the
+  expensive expand-all instead; each button now always does what it says.
+  Titles follow the display language via nls.
+
 ## [1.2.3] - 2026-11-08
 
 ### 追加 (Added)

@@ -289,7 +289,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const expandSession = async (session: SessionInfo): Promise<void> => {
     const trace = await provider.getOrBuildTrace(session);
-    if (!trace) return;
+    // トレースが無いセッション（スキル起動なし）でも、セッション自体は
+    // 開ける（子は注記項目）。ここで何もしないと、表示中で開いて描かれて
+    // いるセッションを項目側トグルで閉じることが永久にできなくなる
     provider.clearCollapsed(session.id);
     // まずセッション自体とスキルを開く。子ノードの reveal だけに頼ると、
     // 参照のない SKILL.md（開く対象のノードがない）のときにセッションが
@@ -299,6 +301,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await treeView.reveal(sessionEl, { expand: true, select: false, focus: false });
       provider.setExpanded(elementKey(sessionEl), true);
     } catch { /* ビューに見えていないときは記録もしない（次の操作で再試行できる） */ }
+    if (!trace) return;
     for (const part of trace.skills) {
       const skillEl: El = { kind: "skill", session, part };
       try {
@@ -352,16 +355,19 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("skilltrace.toggleAutoFollow", async () => { await setAutoFollow(!autoFollow); }),
     vscode.commands.registerCommand("skilltrace.enableAutoFollow", async () => { await setAutoFollow(true); }),
     vscode.commands.registerCommand("skilltrace.pauseAutoFollow", async () => { await setAutoFollow(false); }),
-    // タイトルバーのトグル: 履歴の全セッションを対象にする（0.4.6）。
-    // 項目側のトグルと同じ $(unfold) グリフで、表示中セッションだけを
-    // 対象にしていた旧 expandAll / collapseAll を置き換えた
-    vscode.commands.registerCommand("skilltrace.toggleExpandCollapseAllSessions", () => {
-      const on = !provider.isAllSessionsExpanded();
-      provider.setAllSessionsExpanded(on);
-      // オフは「すべて折りたたむ」として扱い、表示中セッションも含めて畳む。
-      // 以前は通常状態（表示中だけ展開）に戻るだけだったため、1つだけ
-      // 開いたまま残って見えた（2026-11-07 の不具合報告）
-      if (!on) provider.collapseAllSessions();
+    // タイトルバーの「すべて展開」「すべて折りたたむ」: 履歴の全セッションを
+    // 対象にする。かつては1つのトグルボタンだったが、閉じたいつもりで押して
+    // 高コストな「すべて展開」が走る事故があったため、2ボタンに分離した
+    // （2026-11-08 の要望）。押した結果は常にボタンどおりの動作になる
+    vscode.commands.registerCommand("skilltrace.expandAllSessions", () => {
+      provider.setAllSessionsExpanded(true);
+    }),
+    vscode.commands.registerCommand("skilltrace.collapseAllSessions", () => {
+      provider.setAllSessionsExpanded(false);
+      // 「すべて折りたたむ」は表示中セッションも含めて明示的に畳む。
+      // 通常状態（表示中だけ展開）に戻すだけでは、1つだけ開いたまま
+      // 残って見える（2026-11-07 の不具合報告）
+      provider.collapseAllSessions();
     }),
     vscode.commands.registerCommand("skilltrace.toggleExpandCollapse", async (arg?: unknown) => {
       const session = sessionFromArg(arg);

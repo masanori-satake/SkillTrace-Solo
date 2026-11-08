@@ -88,9 +88,15 @@
       },
       {
         "category": "SkillTrace",
-        "command": "skilltrace.toggleExpandCollapseAllSessions",
-        "icon": "$(unfold)",
-        "title": "%command.toggleExpandCollapseAllSessions%"
+        "command": "skilltrace.expandAllSessions",
+        "icon": "$(expand-all)",
+        "title": "%command.expandAllSessions%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.collapseAllSessions",
+        "icon": "$(collapse-all)",
+        "title": "%command.collapseAllSessions%"
       },
       {
         "category": "SkillTrace",
@@ -152,9 +158,15 @@
           "when": "view == skilltrace-tree"
         },
         {
-          "command": "skilltrace.toggleExpandCollapseAllSessions",
+          "command": "skilltrace.expandAllSessions",
           "group": "navigation@8",
           "order": 8,
+          "when": "view == skilltrace-tree"
+        },
+        {
+          "command": "skilltrace.collapseAllSessions",
+          "group": "navigation@9",
+          "order": 9,
           "when": "view == skilltrace-tree"
         }
       ],
@@ -254,6 +266,6 @@
     "check-version-bump": "node scripts/check-version.js --check-bump",
     "update-version": "node scripts/update-version.js"
   },
-  "version": "1.2.3",
+  "version": "1.2.4",
   "icon": "icon.png"
 }
