@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.1] - 2026-11-08
+
+### Fixed
+
+- **Tool grouping in the credit-usage matrix: `fs_append` is now in the
+  "Write / edit" group** (it was classified as "Other"). Appending to a
+  file changes its content, so it belongs with the write operations;
+  "append" was added to that group's keywords.
+
+### 修正 (Fixed)
+
+- **クレジット実測のマトリクスで、`fs_append` を「書き込み・編集」
+  グループに分類するよう直した**（従来は「その他」だった）。
+  ファイルへの追記は内容の変更なので書き込み系が適切で、同グループの
+  キーワードに「append」を追加した。
+
 ## [1.4.0] - 2026-11-08
 
 ### Added
@@ -28,20 +44,6 @@
   考え方）。日本語の表示は従来どおりで変わらない。
 - **学習ドキュメントは日本語のみのまま。** 同梱の学習ドキュメント
   （docs/learning）は今回の版では翻訳していない。
-
-### Changed
-
-- **Tool grouping in the credit-usage matrix: `fs_append` is now in the
-  "Write / edit" group** (it was classified as "Other"). Appending to a
-  file changes its content, so it belongs with the write operations;
-  "append" was added to that group's keywords.
-
-### 変更 (Changed)
-
-- **クレジット実測のマトリクスで、`fs_append` を「書き込み・編集」
-  グループに分類するよう変更した**（従来は「その他」だった）。
-  ファイルへの追記は内容の変更なので書き込み系が適切で、同グループの
-  キーワードに「append」を追加した。
 
 ## [1.3.0] - 2026-11-08
 
