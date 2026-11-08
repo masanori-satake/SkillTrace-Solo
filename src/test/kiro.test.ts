@@ -190,6 +190,9 @@ test("kiro english rendering: summary, matrix legend, markdown and copy are in E
   assert.ok(html.includes("Legend (tool groups): "));
   assert.ok(html.includes("Read / explore"));
   assert.ok(!html.includes("クレジット実測"));
+  // ツリー内の確度バッジも英語になる（gradeBadge へ lang を渡す）
+  assert.ok(html.includes('badge bA">High'));
+  assert.ok(!html.includes("確度高"));
   const md = renderSessionMarkdown(trace, { lang: "en", includeNotes: true });
   assert.ok(md.includes("# Session summary"));
   assert.ok(md.includes("## Credit usage"));

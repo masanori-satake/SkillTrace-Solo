@@ -79,7 +79,7 @@ function renderTreeHtml(nodes: TraceNode[], graph: Graph, lang: Lang = "ja"): st
       seen.add(id);
       if (gn.children.length) children = `<ul>${gn.children.map(c => walk(c, seen)).join("")}</ul>`;
     }
-    return `<li><span class="node" data-order="${tn?.order ?? ""}"${ev}>${gradeBadge(grade)} ${esc(gn.relToSkill)}${gn.title ? ` <span class="tit">${esc(gn.title)}</span>` : ""}${bnd}${miss}${cyc} ${orderBadge} <span class="tok">~${fmt(gn.estTokens)} ${en ? "tokens" : "トークン"}</span></span>${children}</li>`;
+    return `<li><span class="node" data-order="${tn?.order ?? ""}"${ev}>${gradeBadge(grade, lang)} ${esc(gn.relToSkill)}${gn.title ? ` <span class="tit">${esc(gn.title)}</span>` : ""}${bnd}${miss}${cyc} ${orderBadge} <span class="tok">~${fmt(gn.estTokens)} ${en ? "tokens" : "トークン"}</span></span>${children}</li>`;
   };
   return `<ul class="tree">${walk(root.id, new Set())}</ul>`;
 }
