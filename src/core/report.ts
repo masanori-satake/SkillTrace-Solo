@@ -245,7 +245,12 @@ ${inputBreakdown(totals)}${obs ? `\n<p class="tok">${esc(obs)}</p>` : ""}`;
 function inputBreakdown(totals: Trace["totals"]): string {
   const input = totals.inputTokens;
   if (!input) return "";
-  const { fresh, cacheRead, cacheWrite } = inputSplit(totals);
+  const split = inputSplit(totals);
+  if (!split) {
+    return `<p style="margin:12px 0 4px">入力トークンの内訳（合計 ${fmt(input)}）</p>
+<p class="tok">キャッシュ読取と書込の合計が入力の合計を超えているため、内訳を3分解できません（記録の不整合）。合計表の値が実測です。</p>`;
+  }
+  const { fresh, cacheRead, cacheWrite } = split;
   const W = 520;
   const rw = Math.round((W * cacheRead) / input);
   const ww = Math.round((W * cacheWrite) / input);
@@ -367,7 +372,7 @@ ${healthWarn(st.health)}
 ${st.skills.length ? `<p class="tok">スキルごとの詳しい内訳は、ツリーでスキルを選んで「このスキルのサマリ」を開いてください。</p>` : `<p>このセッションではスキル起動は検出されませんでした。</p>`}
 ${st.contextLoads?.length ? `<h2>常時文脈（コンテキストへの読み込み）</h2>
 <ul>${st.contextLoads.map(l => `<li>${esc(l.path)}${l.at ? `（${esc(formatLocalDateTime(l.at))}）` : ""}</li>`).join("")}</ul>${firstContextUsageRatio(st.contextUsageSeries) !== null ? `
-<p class="tok">最初に記録されたコンテキストウィンドウ使用率: ${(firstContextUsageRatio(st.contextUsageSeries)! * 100).toFixed(1)}%（セッションの早い段階の記録です。その時点では窓の中身の中心は常時文脈のため、常時文脈の重さの目安になります）</p>` : ""}
+<p class="tok">最初に記録されたコンテキストウィンドウ使用率: ${(firstContextUsageRatio(st.contextUsageSeries)! * 100).toFixed(1)}%（セッションの早い段階の記録です。プロンプトや読み込まれたファイルも含まれるため常時文脈だけの使用率は分かりませんが、常時文脈の重さを見る手がかりになります）</p>` : ""}
 <p class="tok">スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。</p>` : ""}
 ${usageBlock(st)}
 <h2>到達の流れ</h2>

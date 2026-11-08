@@ -180,6 +180,11 @@ test("input split is three-way and cache-write turns are observed (Issue #9)", a
   assert.ok(html.includes("キャッシュ書込（将来の再利用のための保存） 470"));
   assert.ok(html.includes("新規入力 5,030"));
   assert.ok(html.includes("キャッシュ書込が発生したターン: 1・2・3・4"));
+  // 不整合な記録（キャッシュ合計 > 入力合計）では実測値を切り詰めず、3分解できないと表示する
+  assert.equal(inputSplit({ inputTokens: 100, cacheReadTokens: 80, cacheWriteTokens: 50 }), null);
+  const broken = fixtureSessionTrace().st;
+  broken.totals = { inputTokens: 100, cacheReadTokens: 80, cacheWriteTokens: 50, outputTokens: 0, reasoningTokens: 0 };
+  assert.ok(renderSessionHtml(broken).includes("3分解できません"));
 });
 
 test("document: session markdown and html fragment", async () => {

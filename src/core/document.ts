@@ -104,16 +104,18 @@ function measuredMd(st: SessionTrace): string {
   const rows = st.turns.map(r =>
     `| ${r.turn + 1} | ${fmt(r.inputTokens)} | ${fmt(r.cacheReadTokens)} | ${fmt(r.cacheWriteTokens)} | ${fmt(r.outputTokens)} | ${fmt(r.reasoningTokens)} |`).join("\n");
   const t = st.totals;
-  const { fresh, cacheRead, cacheWrite } = inputSplit(t);
-  const cacheBar = t.inputTokens ? ` ${unicodeBar(cacheRead / t.inputTokens)}` : "";
+  const split = inputSplit(t);
   const obs = cacheWriteObservation(st.turns);
-  return `| ターン | 入力 | キャッシュ読取 | キャッシュ書込 | 出力 | 推論 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n${rows}\n| 合計 | ${fmt(t.inputTokens)} | ${fmt(t.cacheReadTokens)} | ${fmt(t.cacheWriteTokens)} | ${fmt(t.outputTokens)} | ${fmt(t.reasoningTokens)} |\n\n入力トークンの内訳（合計 ${fmt(t.inputTokens)}）: キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(cacheRead)}${cacheBar} ／ キャッシュ書込（将来の再利用のための保存） ${fmt(cacheWrite)} ／ 新規入力 ${fmt(fresh)}${obs ? `\n\n${obs}` : ""}`;
+  const breakdown = split
+    ? `入力トークンの内訳（合計 ${fmt(t.inputTokens)}）: キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(split.cacheRead)}${t.inputTokens ? ` ${unicodeBar(split.cacheRead / t.inputTokens)}` : ""} ／ キャッシュ書込（将来の再利用のための保存） ${fmt(split.cacheWrite)} ／ 新規入力 ${fmt(split.fresh)}`
+    : `入力トークンの内訳: キャッシュ読取と書込の合計が入力の合計を超えているため、3分解できません（記録の不整合）。合計表の値が実測です。`;
+  return `| ターン | 入力 | キャッシュ読取 | キャッシュ書込 | 出力 | 推論 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n${rows}\n| 合計 | ${fmt(t.inputTokens)} | ${fmt(t.cacheReadTokens)} | ${fmt(t.cacheWriteTokens)} | ${fmt(t.outputTokens)} | ${fmt(t.reasoningTokens)} |\n\n${breakdown}${obs ? `\n\n${obs}` : ""}`;
 }
 
 /** 常時文脈の節に併記する「最初に記録された使用率」（Kiro の最初の contextUsage） */
 function startUsageText(st: SessionTrace): string {
   const r = firstContextUsageRatio(st.contextUsageSeries);
-  return r === null ? "" : `最初に記録されたコンテキストウィンドウ使用率: ${(r * 100).toFixed(1)}%（セッションの早い段階の記録です。その時点では窓の中身の中心は常時文脈のため、常時文脈の重さの目安になります）`;
+  return r === null ? "" : `最初に記録されたコンテキストウィンドウ使用率: ${(r * 100).toFixed(1)}%（セッションの早い段階の記録です。プロンプトや読み込まれたファイルも含まれるため常時文脈だけの使用率は分かりませんが、常時文脈の重さを見る手がかりになります）`;
 }
 
 function contextMd(st: SessionTrace): string {
@@ -266,11 +268,14 @@ function measuredHtml(st: SessionTrace): string {
   const rows = st.turns.map(r =>
     `<tr><td style="${H.cell}">${r.turn + 1}</td><td style="${H.cellR}">${fmt(r.inputTokens)}</td><td style="${H.cellR}">${fmt(r.cacheReadTokens)}</td><td style="${H.cellR}">${fmt(r.cacheWriteTokens)}</td><td style="${H.cellR}">${fmt(r.outputTokens)}</td><td style="${H.cellR}">${fmt(r.reasoningTokens)}</td></tr>`).join("");
   const t = st.totals;
-  const { fresh, cacheRead, cacheWrite } = inputSplit(t);
+  const split = inputSplit(t);
   const obs = cacheWriteObservation(st.turns);
+  const breakdown = split
+    ? `<p>入力トークンの内訳（合計 ${fmt(t.inputTokens)}）: キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(split.cacheRead)} <span style="${H.mono}">${unicodeBar(t.inputTokens ? split.cacheRead / t.inputTokens : 0)}</span> ／ キャッシュ書込（将来の再利用のための保存） ${fmt(split.cacheWrite)} ／ 新規入力 ${fmt(split.fresh)}</p>`
+    : `<p>入力トークンの内訳: キャッシュ読取と書込の合計が入力の合計を超えているため、3分解できません（記録の不整合）。合計表の値が実測です。</p>`;
   return `<table style="${H.table}"><tr><th style="${H.cell}">ターン</th><th style="${H.cell}">入力</th><th style="${H.cell}">キャッシュ読取</th><th style="${H.cell}">キャッシュ書込</th><th style="${H.cell}">出力</th><th style="${H.cell}">推論</th></tr>${rows}
 <tr><th style="${H.cell}">合計</th><th style="${H.cellR}">${fmt(t.inputTokens)}</th><th style="${H.cellR}">${fmt(t.cacheReadTokens)}</th><th style="${H.cellR}">${fmt(t.cacheWriteTokens)}</th><th style="${H.cellR}">${fmt(t.outputTokens)}</th><th style="${H.cellR}">${fmt(t.reasoningTokens)}</th></tr></table>
-<p>入力トークンの内訳（合計 ${fmt(t.inputTokens)}）: キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(cacheRead)} <span style="${H.mono}">${unicodeBar(t.inputTokens ? cacheRead / t.inputTokens : 0)}</span> ／ キャッシュ書込（将来の再利用のための保存） ${fmt(cacheWrite)} ／ 新規入力 ${fmt(fresh)}</p>${obs ? `<p>${esc(obs)}</p>` : ""}`;
+${breakdown}${obs ? `<p>${esc(obs)}</p>` : ""}`;
 }
 
 function contextHtml(st: SessionTrace): string {

@@ -282,7 +282,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
           : `${element.loads.length} 件`;
         item.tooltip = "スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）"
           + (element.startRatio !== null && element.startRatio !== undefined
-            ? `\n最初に記録されたコンテキストウィンドウ使用率: ${(element.startRatio * 100).toFixed(1)}%（常時文脈の重さの目安）` : "");
+            ? `\n最初に記録されたコンテキストウィンドウ使用率: ${(element.startRatio * 100).toFixed(1)}%（プロンプト等も含むため、常時文脈だけの使用率は分かりません）` : "");
         item.iconPath = new vscode.ThemeIcon("folder");
         item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
         item.contextValue = "skilltraceContextGroup";

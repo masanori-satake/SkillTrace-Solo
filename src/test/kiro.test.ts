@@ -5,7 +5,7 @@ import test from "node:test";
 import { buildGraph } from "../core/graph";
 import { buildKiroSessionTrace, listKiroSessions, parseKiroMessages } from "../core/kiro";
 import { renderSessionHtml } from "../core/report";
-import { renderSessionMarkdown } from "../core/document";
+import { renderSessionMarkdown, renderSessionHtmlFragment } from "../core/document";
 
 // フィクスチャは実機プローブ（2026-11-07/08、kiro-probe）の本物の記録。
 // 正解値: 起動=kiro-probe、読み取り=SKILL.md → level1 → level2、
@@ -112,7 +112,10 @@ test("kiro trace: a session without skill activation still shows context loads a
   assert.ok(html.includes("19.88"));
   assert.ok(html.includes("スキル起動は検出されませんでした"));
   // 最初に記録された使用率（最初の contextUsage = 12.5%）が常時文脈の節に併記される（Issue #9）
-  assert.ok(html.includes("最初に記録されたコンテキストウィンドウ使用率: 12.5%"));
+  // 画面サマリには文書コピー用の Markdown が script 内に埋め込まれるため、可視部分と断片を分けて検証する
+  const visibleHtml = html.replace(/<script>[\s\S]*?<\/script>/g, "");
+  assert.ok(visibleHtml.includes("最初に記録されたコンテキストウィンドウ使用率: 12.5%"));
+  assert.ok(renderSessionHtmlFragment(trace).includes("最初に記録されたコンテキストウィンドウ使用率: 12.5%"));
   const md = renderSessionMarkdown(trace);
   assert.ok(md.includes("最初に記録されたコンテキストウィンドウ使用率: 12.5%"));
 });

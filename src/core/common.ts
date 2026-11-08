@@ -15,11 +15,14 @@ export function usedToolsSummary(tools: string[]): string {
 }
 
 /** 入力トークンの3分解。Copilot の記録では「入力」はキャッシュ読取・書込を含む総数のため、
- *  新規入力は差し引いて求める（Issue #9: 消費の構造を見せる） */
-export function inputSplit(t: { inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }): { fresh: number; cacheRead: number; cacheWrite: number } {
+ *  新規入力は差し引いて求める（Issue #9: 消費の構造を見せる）。
+ *  キャッシュ合計が入力合計を超える不整合な記録では、実測値を切り詰めて見せたりせず、
+ *  null を返して「3分解できない」ことを表示側に伝える */
+export function inputSplit(t: { inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }): { fresh: number; cacheRead: number; cacheWrite: number } | null {
   const input = Math.max(0, t.inputTokens);
-  const cacheRead = Math.min(Math.max(0, t.cacheReadTokens), input);
-  const cacheWrite = Math.min(Math.max(0, t.cacheWriteTokens), input - cacheRead);
+  const cacheRead = Math.max(0, t.cacheReadTokens);
+  const cacheWrite = Math.max(0, t.cacheWriteTokens);
+  if (cacheRead + cacheWrite > input) return null;
   return { fresh: input - cacheRead - cacheWrite, cacheRead, cacheWrite };
 }
 
