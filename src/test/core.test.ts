@@ -6,7 +6,7 @@ import { buildGraph } from "../core/graph";
 import { parseEventsText } from "../core/events";
 import { buildSessionTrace, buildTrace, firstHeading, gradeCertaintyLabel } from "../core/trace";
 import { formatLocalDateTime } from "../core/sessions";
-import { langFromEnv } from "../core/common";
+import { langFromEnv, sanitizeFilenamePart } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
 
 const root = join(__dirname, "..", "..", "test-fixtures");
@@ -294,4 +294,21 @@ test("english rendering (copilot): token usage, breakdown, glossary and labels s
   const copyEn = renderSessionCopy(st, { kind: "all" }, "en");
   assert.ok(copyEn.includes("SkillTrace session summary"));
   assert.ok(copyEn.includes("High"));
+});
+
+test("sanitizeFilenamePart sanitizes path traversal and invalid characters", () => {
+  // 正常なセッションID
+  assert.equal(sanitizeFilenamePart("sess_6d826121-2e9a-4628"), "sess_6d826121-2e9a-4628");
+  // パストラバーサル試行（相対パス・親ディレクトリ指定）
+  assert.equal(sanitizeFilenamePart("../../evil_session"), "evil_session");
+  assert.equal(sanitizeFilenamePart("..\\..\\evil_session"), "evil_session");
+  // スラッシュや記号が含まれる場合
+  assert.equal(sanitizeFilenamePart("foo/bar/baz"), "foo_bar_baz");
+  assert.equal(sanitizeFilenamePart("session:id?*<>|"), "session_id");
+  // 空文字やnull/undefined、記号のみの場合のフォールバック
+  assert.equal(sanitizeFilenamePart(""), "session");
+  assert.equal(sanitizeFilenamePart(null), "session");
+  assert.equal(sanitizeFilenamePart(undefined), "session");
+  assert.equal(sanitizeFilenamePart("../.."), "session");
+  assert.equal(sanitizeFilenamePart("///"), "session");
 });

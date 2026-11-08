@@ -13,6 +13,21 @@ export function langFromEnv(language: string | undefined): Lang {
 export function esc(s: unknown): string {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
+
+/**
+ * ファイル名として安全な文字列にサニタイズする。
+ * セッションID等、外部ファイルや記録由来の文字列をファイル名の一部（例: 一時ファイル）として
+ * 結合する際、パストラバーサル（../ や区切り文字）や予期しない特殊文字によるファイル破損・
+ * 任意ファイル上書きを防ぐための防御的サニタイズ。
+ */
+export function sanitizeFilenamePart(name: string | null | undefined): string {
+  if (!name) return "session";
+  // 英数字・ハイフン・アンダースコアのみを許可し、それ以外をアンダースコアに置換
+  const sanitized = String(name).replace(/[^a-zA-Z0-9_-]/g, "_");
+  // 連続するアンダースコアの圧縮と両端のトリム
+  const trimmed = sanitized.replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  return trimmed.length > 0 ? trimmed : "session";
+}
 export const fmt = (n: number | null | undefined): string => (n === null || n === undefined ? "—" : n.toLocaleString("en-US"));
 
 /** Kiro のクレジット実測の表示（小数2桁。Kiro の画面表示に合わせる） */

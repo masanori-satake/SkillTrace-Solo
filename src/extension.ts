@@ -12,7 +12,7 @@ import { detectSkillsForSession } from "./core/autodetect";
 import { renderSessionCopy } from "./core/copy";
 import { renderSessionMarkdown, renderSkillMarkdown } from "./core/document";
 import { TraceTreeProvider, elementKey, type El, type NodeEl, type SkillEl } from "./treeProvider";
-import { langFromEnv, type Lang } from "./core/common";
+import { langFromEnv, sanitizeFilenamePart, type Lang } from "./core/common";
 
 // 0.4.0 の状態モデル:
 // - セッションは「取り込む」ものではなく、履歴として常時並ぶ（手動取り込みは廃止）
@@ -416,7 +416,10 @@ export function activate(context: vscode.ExtensionContext): void {
       try {
         const resolved = await traceFromArg(arg);
         if (!resolved) { void vscode.window.showWarningMessage(L("SkillTrace: 対象セッションでスキル起動を検出できませんでした。", "SkillTrace: No skill activation was detected in the target session.")); return; }
-        const file = join(tmpdir(), `skilltrace-session-${resolved.trace.session.id}.html`);
+        // セッションIDにパストラバーサル文字や不正文字が含まれることによる
+        // 一時ディレクトリ外への書き込みを防ぐため、ファイル名部品を安全にサニタイズする
+        const safeSessionId = sanitizeFilenamePart(resolved.trace.session.id);
+        const file = join(tmpdir(), `skilltrace-session-${safeSessionId}.html`);
         writeFileSync(file, renderSessionHtml(resolved.trace, docOptions()), "utf8");
         await vscode.env.openExternal(vscode.Uri.file(file));
       } catch (err) {
