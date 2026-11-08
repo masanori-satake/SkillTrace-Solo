@@ -35,7 +35,7 @@ export function countTools(tools: string[]): Map<string, number> {
 export interface ToolGroupDef { id: string; label: string; labelEn: string; color: string; keywords: string[] }
 export const TOOL_GROUPS: ToolGroupDef[] = [
   { id: "read", label: "読み取り・探索", labelEn: "Read / explore", color: "#dbeafe", keywords: ["read", "list", "grep", "search", "glob"] },
-  { id: "write", label: "書き込み・編集", labelEn: "Write / edit", color: "#dcfce7", keywords: ["write", "replace", "edit", "create", "patch", "insert", "delete"] },
+  { id: "write", label: "書き込み・編集", labelEn: "Write / edit", color: "#dcfce7", keywords: ["write", "replace", "edit", "create", "patch", "insert", "delete", "append"] },
   { id: "exec", label: "実行", labelEn: "Execute", color: "#ede9fe", keywords: ["execute", "run", "command", "shell", "terminal", "pwsh", "bash"] },
   { id: "subagent", label: "サブエージェント", labelEn: "Sub-agents", color: "#ffedd5", keywords: ["sub_agent", "subagent"] },
   { id: "interact", label: "進行・対話", labelEn: "Progress / dialogue", color: "#fce7f3", keywords: ["progress", "user_input", "input", "ask"] },

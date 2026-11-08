@@ -202,6 +202,7 @@ test("tool matrix columns are grouped and ordered by totals", async () => {
   assert.deepEqual(cols.map(c => c.total), [3, 1, 1, 1, 1, 1]);
   assert.deepEqual(toolGroupsPresent(cols).map(g => g.id), ["read", "write", "subagent", "interact", "other"]);
   // 分類: キーワード判定とフォールバック
+  assert.equal(toolGroupOf("fs_append").id, "write");
   assert.equal(toolGroupOf("invoke_sub_agent").id, "subagent");
   assert.equal(toolGroupOf("subagent_response").id, "subagent");
   assert.equal(toolGroupOf("execute_pwsh").id, "exec");
