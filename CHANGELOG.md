@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.1] - 2026-11-08
+
+### 追加 (Added)
+- **学習ドキュメントの索引に「実例の出どころ」を追加。** 全編の実例である
+  phase0-probe / kiro-probe は著者の検証用ダミースキルであり、この
+  リポジトリに含まれないことを一か所に明記し、各文書（01〜04）の冒頭から
+  参照するようにした（PR #10 のマージに間に合わなかった追補）。
+- **Added a "Where the examples come from" section to the learning-doc
+  index.** The running examples, phase0-probe / kiro-probe, are the author's
+  own verification dummy skills and are not part of this repository; each
+  document (01–04) now points to that single explanation. (Follow-up that
+  missed the PR #10 merge.)
+
 ## [1.2.0] - 2026-11-08
 
 ### 追加 (Added)
