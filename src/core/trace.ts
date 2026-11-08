@@ -291,6 +291,10 @@ export interface SessionTrace {
   lastContextUsageRatio?: number | null;
   /** Kiro: 常時文脈としてコンテキストに読み込まれた文書（steering_inclusion 等の documents） */
   contextLoads?: { path: string; at: string | null }[];
+  /** 記録では起動が確認できたが、現在のワークスペースで見つからなかったスキル名。
+   *  起動の判定を「発見できたスキル」との照合だけで行うと、移動・改名・削除された
+   *  スキルの起動が記録から消えてしまうため、名前だけでも残す（2026-11-08 の不具合対応） */
+  undiscoveredSkills?: string[];
   health: ParsedEvents["health"];
   contextCurrentSeries: { at: string; tokens: number }[];
   lastContextCurrentTokens: number | null;

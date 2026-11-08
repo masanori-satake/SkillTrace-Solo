@@ -339,6 +339,15 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         const out: El[] = trace.skills.map(part => ({ kind: "skill", session: element.session, part } as SkillEl));
         if (trace.contextLoads?.length) out.push({ kind: "contextGroup", session: element.session, loads: trace.contextLoads, startRatio: firstContextUsageRatio(trace.contextUsageSeries) } as ContextGroupEl);
         if (trace.outsideReads.length) out.push({ kind: "outsideGroup", session: element.session, reads: trace.outsideReads } as OutsideGroupEl);
+        // 記録では起動が確認できたのに、現在のワークスペースで見つからないスキル。
+        // 何も出さないと「開いたのに空」という無言の失敗になるため、注記として出す
+        for (const name of trace.undiscoveredSkills ?? []) {
+          out.push({ kind: "note", session: element.session, text: `起動したスキル「${name}」は現在のワークスペースで見つかりませんでした` } as NoteEl);
+        }
+        // トレースはあるのに表示できる項目が無い場合も、空の展開で終わらせない
+        if (!out.length) {
+          out.push({ kind: "note", session: element.session, text: "このセッションには表示できる項目がありません（スキル起動・常時文脈・読み取りの記録なし）" } as NoteEl);
+        }
         return out;
       }
       case "skill": {

@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.2.2] - 2026-11-08
+
+### 修正 (Fixed)
+- **Kiro のセッションで、起動したスキルが現在のワークスペースで見つからない
+  場合に、ツリーが無言で空になり、起動スキルが「未判定」になっていた問題を
+  修正。** 起動の判定が「発見できたスキル」との照合だけだったため、移動・
+  改名・削除されたスキルの起動が記録から消えていた。記録にある起動名は
+  そのまま残し、ツリーとサマリ（文書コピー含む）に「現在のワークスペースでは
+  見つかりませんでした」と注記するようにした。表示できる項目が無いセッション
+  でも、空の展開ではなく理由を注記する。セッションのツールチップでも、候補が
+  無い場合に「未判定」とせず記録の起動名を示す。
+- **Fixed Kiro sessions whose activated skills are no longer in the workspace
+  rendering as a silently empty tree with skills shown as "undetermined".**
+  Activation was judged only against skills discoverable in the current
+  workspace, so activations of moved, renamed or deleted skills vanished
+  from the record. Activated names are now kept from the record itself and
+  noted in the tree and summaries (including document copies) as not found
+  in the current workspace; a session with nothing to show explains why
+  instead of expanding to nothing.
+
 ## [1.2.1] - 2026-11-08
 
 ### 追加 (Added)

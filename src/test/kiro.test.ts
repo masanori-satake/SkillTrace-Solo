@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { buildGraph } from "../core/graph";
-import { buildKiroSessionTrace, listKiroSessions, parseKiroMessages } from "../core/kiro";
+import { buildKiroSessionTrace, listKiroSessions, parseKiroMessages, scanKiroActivationNames, scanKiroInvokedSkillNames } from "../core/kiro";
 import { renderSessionHtml } from "../core/report";
 import { renderSessionMarkdown, renderSessionHtmlFragment } from "../core/document";
 
@@ -66,6 +66,34 @@ test("kiro trace: grades and arrival order match the probe ground truth", () => 
   assert.ok(Math.abs((trace.creditsTotal ?? 0) - 0.8200442711442787) < 1e-12);
   assert.ok(Math.abs((trace.lastContextUsageRatio ?? 0) - 0.042921) < 1e-6);
   assert.equal(trace.outsideReads.length, 0);
+});
+
+test("kiro trace: activated but undiscovered skills are named instead of vanishing", () => {
+  const parsed = parseKiroMessages(messagesText());
+  // スキルが現在のワークスペースで見つからない（parts が空）場合でも、
+  // 起動の事実は名前とともに残り、「検出されませんでした」にはならない
+  const trace = buildKiroSessionTrace(parsed, [], {
+    sessionId: "sess_6d826121-2e9a-4628-a998-cefab29517dd",
+    workspaceAbs: kiroWorkspace,
+  });
+  assert.equal(trace.skills.length, 0);
+  assert.deepEqual(trace.undiscoveredSkills, ["kiro-probe"]);
+  const html = renderSessionHtml(trace);
+  assert.ok(html.includes("現在のワークスペースでは見つかりませんでした"));
+  assert.ok(!html.includes("スキル起動は検出されませんでした"));
+  const md = renderSessionMarkdown(trace);
+  assert.ok(md.includes("現在のワークスペースでは見つかりませんでした"));
+  assert.ok(md.includes("kiro-probe"));
+  // スキルが見つかる通常ケースでは未発見は空
+  const graph = buildGraph(kiroSkillDir, kiroWorkspace);
+  const found = buildKiroSessionTrace(parsed, [{ graph, skillDirAbs: kiroSkillDir, disclosed: true }], {
+    sessionId: "sess_6d826121-2e9a-4628-a998-cefab29517dd",
+    workspaceAbs: kiroWorkspace,
+  });
+  assert.deepEqual(found.undiscoveredSkills, []);
+  // ラベル用スキャン: 候補なしでも記録の起動名は拾える。候補照合版は従来どおり null
+  assert.deepEqual(scanKiroActivationNames(join(root, "kiro-messages.jsonl")), ["kiro-probe"]);
+  assert.equal(scanKiroInvokedSkillNames(join(root, "kiro-messages.jsonl"), []), null);
 });
 
 test("kiro summaries render credits and usage ratio instead of token tables", () => {

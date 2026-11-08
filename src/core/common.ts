@@ -44,6 +44,13 @@ export function cacheWriteObservation(turns: { turn: number; cacheWriteTokens: n
   return s;
 }
 
+/** 記録で起動が確認できたが、現在のワークスペースで見つからなかったスキルへの注記文（無ければ空文字列） */
+export function undiscoveredSkillsNote(names: string[] | undefined): string {
+  return names?.length
+    ? `記録では次のスキルが起動していますが、現在のワークスペースでは見つかりませんでした（移動・改名・削除された可能性があります）: ${names.join(", ")}`
+    : "";
+}
+
 /** Kiro: 最初に記録された文脈使用率（contextUsage の最初のスナップショット。
  *  最初のターンの途中で記録されるため「開始前」の値ではない。常時文脈の重さの目安として使う） */
 export function firstContextUsageRatio(series?: { ratio: number }[] | null): number | null {

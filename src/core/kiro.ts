@@ -125,13 +125,12 @@ export function isKiroToolSuccess(payload: Record<string, unknown>): boolean {
   return true;
 }
 
-/** 履歴ラベル用の軽量スキャン: disclose_context の行だけを解析し、
- *  起動したスキル名を返す。候補が無い・読めない場合は null（未判定） */
-export function scanKiroInvokedSkillNames(eventsPath: string, candidates: { name: string; dir: string }[]): string[] | null {
-  if (!candidates.length) return null;
+/** 記録にある disclose_context の起動名を、候補と照合せずすべて拾う軽量スキャン。
+ *  読めない場合は null。スキルが現在のワークスペースで見つからない場合でも、
+ *  「記録では起動していた」こと自体は分かるようにするためのもの */
+export function scanKiroActivationNames(eventsPath: string): string[] | null {
   let text: string;
   try { text = readFileSync(eventsPath, "utf8"); } catch { return null; }
-  const candNames = new Set(candidates.map(c => c.name));
   const names: string[] = [];
   for (const line of text.split(/\r?\n/)) {
     if (!line.includes("disclose_context")) continue;
@@ -140,12 +139,22 @@ export function scanKiroInvokedSkillNames(eventsPath: string, candidates: { name
       const p = env.payload;
       if (!p || p.type !== "tool_call" || p.actionType !== "disclose_context") continue;
       const args = p.args as Record<string, unknown> | undefined;
-      if (args && typeof args.name === "string" && candNames.has(args.name) && !names.includes(args.name)) {
+      if (args && typeof args.name === "string" && !names.includes(args.name)) {
         names.push(args.name);
       }
     } catch { /* 壊れた行は読み飛ばす */ }
   }
   return names;
+}
+
+/** 履歴ラベル用の軽量スキャン: disclose_context の行だけを解析し、
+ *  起動したスキル名を返す。候補が無い・読めない場合は null（未判定） */
+export function scanKiroInvokedSkillNames(eventsPath: string, candidates: { name: string; dir: string }[]): string[] | null {
+  if (!candidates.length) return null;
+  const all = scanKiroActivationNames(eventsPath);
+  if (all === null) return null;
+  const candNames = new Set(candidates.map(c => c.name));
+  return all.filter(n => candNames.has(n));
 }
 
 export async function parseKiroMessagesFile(path: string): Promise<KiroParsed> {
@@ -419,6 +428,11 @@ export function buildKiroSessionTrace(
     n.order = n.grade ? (orderById.get(n.id) ?? null) : null;
   }
 
+  // 記録では起動が確認できたが、発見できたスキルに含まれないもの（移動・改名・削除など）。
+  // 起動の事実が表示から消えないよう、名前を残す
+  const discoveredNames = new Set(parts.map(p => basename(resolve(p.skillDirAbs))));
+  const undiscoveredSkills = [...new Set(parsed.activations.map(a => a.name))].filter(n => !discoveredNames.has(n));
+
   const lastUsage = parsed.contextUsageSeries.length ? parsed.contextUsageSeries[parsed.contextUsageSeries.length - 1] : null;
   return {
     source: "kiro",
@@ -444,5 +458,6 @@ export function buildKiroSessionTrace(
     contextUsageSeries: parsed.contextUsageSeries,
     lastContextUsageRatio: lastUsage ? lastUsage.ratio : null,
     contextLoads,
+    undiscoveredSkills,
   };
 }
