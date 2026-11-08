@@ -79,6 +79,13 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
 
   /** 展開状態の初期化（シード）済みのセッション */
   private seeded = new Set<string>();
+  /**
+   * セッション自体の展開キーを初期表示として記録済みのセッション。
+   * トレース再構築のたびに無条件で記録し直すと、ツリーの矢印で手動で
+   * 閉じた状態（collapsedFlag は立たない）を上書きしてしまうため、
+   * 「この表示期間では初期化済み」をこちらで覚える。再構築では消えない
+   */
+  private keySeeded = new Set<string>();
   /** 「すべて折りたたむ」の実装用: 世代を上げると項目を作り直させて畳んだ状態で再描画できる */
   private collapseEpoch = new Map<string, number>();
   private collapsedFlag = new Set<string>();
@@ -115,6 +122,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       this.collapseEpoch.set(s.id, (this.collapseEpoch.get(s.id) ?? 0) + 1);
       this.collapsedFlag.add(s.id);
       this.seeded.delete(s.id);
+      this.keySeeded.delete(s.id);
       for (const key of [...this.expanded]) {
         if (key === `s:${s.id}` || key.startsWith(`k:${s.id}:`) || key.startsWith(`n:${s.id}:`) || key.startsWith(`o:${s.id}`) || key.startsWith(`c:${s.id}`)) {
           this.expanded.delete(key);
@@ -131,8 +139,13 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       if (session.id === this.displayedId && !this.collapsedFlag.has(session.id)) {
         // 表示中セッションは開いて描かれるため、セッション自体の展開は
         // トレースの有無によらず記録する。記録が無いと、項目側トグルが
-        // 「閉じている」と誤判定し、トレース無しセッションを閉じられなくなる
-        this.expanded.add(`s:${session.id}`);
+        // 「閉じている」と誤判定し、トレース無しセッションを閉じられなくなる。
+        // ただし記録は表示期間の初期化として1回だけ: 再構築のたびに
+        // 記録し直すと、矢印で手動で閉じた状態を上書きしてしまう
+        if (!this.keySeeded.has(session.id)) {
+          this.keySeeded.add(session.id);
+          this.expanded.add(`s:${session.id}`);
+        }
         // 子（スキル／ルートノード）のシードはトレースがあって初めてできる。
         // seeded は「子までシード済み」の印として、セッション自体の記録とは
         // 分ける（構築前に完了扱いにすると、構築後も子がシードされず、
@@ -164,10 +177,12 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
   resetExpandedFor(sessionId: string): void {
     this.expanded = new Set();
     this.seeded.delete(sessionId);
+    this.keySeeded.delete(sessionId);
     if (!this.collapsedFlag.has(sessionId)) {
       // トレースの有無によらず、表示中セッション自体の展開は記録する
       // （getOrBuildTrace 側と同じ理由）。子のシードは seeded で別に管理し、
       // トレースがまだ無い場合は構築後に getOrBuildTrace が行う
+      this.keySeeded.add(sessionId);
       this.expanded.add(`s:${sessionId}`);
       const trace = this.traces.get(sessionId);
       if (trace) { this.seeded.add(sessionId); this.seedExpanded(sessionId, trace); }
@@ -193,6 +208,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       }
     }
     this.seeded.delete(sessionId);
+    this.keySeeded.delete(sessionId);
     this._onDidChange.fire(undefined);
   }
   /** ユーザーが手で開いたら、折りたたみフラグはそのセッションについて解除する */
