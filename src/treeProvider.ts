@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { GraphNode } from "./core/graph";
 import type { SessionTrace, SkillPart } from "./core/trace";
 import { gradeCertaintyLabel } from "./core/trace";
-import { firstContextUsageRatio } from "./core/common";
+import { firstContextUsageRatio, type Lang } from "./core/common";
 import type { SessionInfo } from "./core/sessions";
 
 // ツリーの階層（0.4.0）: セッション履歴 ＞ セッション ＞ 発動スキル ＞ 参照ツリー。
@@ -41,12 +41,12 @@ function baseName(p: string | null): string {
   return parts.length ? parts[parts.length - 1] : p;
 }
 
-function timeLabel(mtimeMs: number): string {
+function timeLabel(mtimeMs: number, lang: Lang = "ja"): string {
   const d = new Date(mtimeMs);
   const now = new Date();
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
-  if (d.toDateString() === now.toDateString()) return `今日 ${hh}:${mm}`;
+  if (d.toDateString() === now.toDateString()) return lang === "en" ? `Today ${hh}:${mm}` : `今日 ${hh}:${mm}`;
   return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`;
 }
 
@@ -64,7 +64,13 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
   constructor(
     private readonly ensureTrace: (session: SessionInfo) => Promise<SessionTrace | null>,
     private readonly invokedLabel: (session: SessionInfo) => string[] | null,
+    private readonly lang: Lang = "ja",
   ) {}
+
+  /** 表示言語で出し分ける短いラベル */
+  private L(ja: string, en: string): string {
+    return this.lang === "en" ? en : ja;
+  }
 
   // --- 状態の受け渡し ---
   setSessions(sessions: SessionInfo[], displayedId: string | null): void {
@@ -236,23 +242,23 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         const s = element.session;
         const isLatest = this.sessions[0]?.id === s.id;
         const isDisplayed = this.displayedId === s.id;
-        item.label = `${timeLabel(s.mtimeMs)} ${baseName(s.workspaceHint)}`.trim();
+        item.label = `${timeLabel(s.mtimeMs, this.lang)} ${baseName(s.workspaceHint)}`.trim();
         const invoked = this.invokedLabel(s);
         // 行は短く保つ（ホバー時のボタンを収めるため）。発動スキルは子項目とツールチップで示す
         const parts: string[] = [];
         if (s.source === "kiro") parts.push("Kiro");
-        if (isDisplayed) parts.push("表示中");
-        if (isLatest) parts.push("最新");
-        if (invoked !== null && invoked.length === 0) parts.push("スキル未使用");
-        item.description = parts.join(" ・ ");
+        if (isDisplayed) parts.push(this.L("表示中", "Showing"));
+        if (isLatest) parts.push(this.L("最新", "Latest"));
+        if (invoked !== null && invoked.length === 0) parts.push(this.L("スキル未使用", "No skill used"));
+        item.description = parts.join(this.lang === "en" ? " · " : " ・ ");
         item.tooltip = new vscode.MarkdownString([
-          `**セッション ${s.id}**`,
+          `**${this.L("セッション", "Session")} ${s.id}**`,
           "",
-          s.title ? `タイトル: ${s.title}` : "",
-          `最終更新: ${new Date(s.mtimeMs).toLocaleString()}`,
-          s.source === "kiro" ? "記録: Kiro" : "記録: Copilot",
-          s.workspaceHint ? `ワークスペース: ${s.workspaceHint}` : "",
-          `起動したスキル: ${invoked === null ? "未判定" : invoked.length ? invoked.join(", ") : "なし"}`,
+          s.title ? `${this.L("タイトル", "Title")}: ${s.title}` : "",
+          `${this.L("最終更新", "Last updated")}: ${new Date(s.mtimeMs).toLocaleString(this.lang === "en" ? "en-US" : "ja-JP")}`,
+          s.source === "kiro" ? `${this.L("記録", "Record")}: Kiro` : `${this.L("記録", "Record")}: Copilot`,
+          s.workspaceHint ? `${this.L("ワークスペース", "Workspace")}: ${s.workspaceHint}` : "",
+          `${this.L("起動したスキル", "Activated skills")}: ${invoked === null ? this.L("未判定", "undetermined") : invoked.length ? invoked.join(", ") : this.L("なし", "none")}`,
         ].filter(Boolean).join("\n"));
         item.iconPath = new vscode.ThemeIcon(isDisplayed ? "eye" : "history");
         item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded
@@ -268,7 +274,9 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         const reached = element.part.nodes.filter(n => n.order !== null);
         const firstOrder = reached.length ? Math.min(...reached.map(n => n.order!)) : null;
         item.label = element.part.skillName;
-        item.description = `確度高 ${counts.A} ・ 確度中 ${counts.B} ・ 確度低 ${counts.C} ・ 記録なし ${counts.N}${firstOrder !== null ? ` ・ 最初の到達 #${firstOrder}` : ""}`;
+        item.description = this.lang === "en"
+          ? `High ${counts.A} · Medium ${counts.B} · Low ${counts.C} · No record ${counts.N}${firstOrder !== null ? ` · first arrival #${firstOrder}` : ""}`
+          : `確度高 ${counts.A} ・ 確度中 ${counts.B} ・ 確度低 ${counts.C} ・ 記録なし ${counts.N}${firstOrder !== null ? ` ・ 最初の到達 #${firstOrder}` : ""}`;
         item.tooltip = new vscode.MarkdownString(`**${element.part.skillName}**\n\n${element.part.skillDir}`);
         item.iconPath = new vscode.ThemeIcon("extensions");
         item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded
@@ -281,21 +289,21 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         const tn = element.part.nodes.find(n => n.id === gn.id);
         const grade = tn?.grade ?? null;
         const parts: string[] = [];
-        parts.push(grade ? gradeCertaintyLabel(grade) : "記録なし");
+        parts.push(grade ? gradeCertaintyLabel(grade, this.lang) : this.L("記録なし", "No record"));
         if (tn?.order !== null && tn?.order !== undefined) parts.push(`#${tn.order}`);
-        if (gn.boundary) parts.push("スキル外");
-        if (gn.missing) parts.push("参照先なし");
-        if (gn.cycle) parts.push("循環");
-        parts.push(`~${gn.estTokens} トークン`);
+        if (gn.boundary) parts.push(this.L("スキル外", "outside skill"));
+        if (gn.missing) parts.push(this.L("参照先なし", "missing target"));
+        if (gn.cycle) parts.push(this.L("循環", "cycle"));
+        parts.push(this.L(`~${gn.estTokens} トークン`, `~${gn.estTokens} tokens`));
         item.label = gn.relToSkill;
-        item.description = parts.join(" ・ ");
+        item.description = parts.join(this.lang === "en" ? " · " : " ・ ");
         item.tooltip = new vscode.MarkdownString([
           `**${gn.relToSkill}**`,
           "",
-          gn.title ? `タイトル: ${gn.title}` : "",
-          tn ? `根拠: ${tn.evidence}` : "根拠: 対応付けなし",
-          tn?.firstAt ? `初出: ${tn.firstAt}` : "",
-          `推定トークン: ${gn.estTokens} ／ サイズ: ${gn.sizeBytes} bytes`,
+          gn.title ? `${this.L("タイトル", "Title")}: ${gn.title}` : "",
+          tn ? `${this.L("根拠", "Evidence")}: ${tn.evidence}` : this.L("根拠: 対応付けなし", "Evidence: no match"),
+          tn?.firstAt ? `${this.L("初出", "First seen")}: ${tn.firstAt}` : "",
+          this.L(`推定トークン: ${gn.estTokens} ／ サイズ: ${gn.sizeBytes} bytes`, `Est. tokens: ${gn.estTokens} / size: ${gn.sizeBytes} bytes`),
         ].filter(Boolean).join("\n"));
         item.iconPath = new vscode.ThemeIcon(
           gn.missing ? "warning" : grade === "A" ? "verified-filled" : grade === "B" ? "file-code" : grade === "C" ? "question" : "circle-outline",
@@ -310,21 +318,21 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         break;
       }
       case "outsideGroup": {
-        item.label = "スキル外の読み取り";
-        item.description = `${element.reads.length} 件`;
+        item.label = this.L("スキル外の読み取り", "Reads outside the skill");
+        item.description = this.L(`${element.reads.length} 件`, `${element.reads.length} items`);
         item.iconPath = new vscode.ThemeIcon("folder");
         item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
         item.contextValue = "skilltraceOutsideGroup";
         break;
       }
       case "contextGroup": {
-        item.label = "常時文脈";
+        item.label = this.L("常時文脈", "Always-loaded context");
         item.description = element.startRatio !== null && element.startRatio !== undefined
-          ? `${element.loads.length} 件 ・ 最初の記録 ${(element.startRatio * 100).toFixed(1)}%`
-          : `${element.loads.length} 件`;
-        item.tooltip = "スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）"
+          ? this.L(`${element.loads.length} 件 ・ 最初の記録 ${(element.startRatio * 100).toFixed(1)}%`, `${element.loads.length} items · first record ${(element.startRatio * 100).toFixed(1)}%`)
+          : this.L(`${element.loads.length} 件`, `${element.loads.length} items`);
+        item.tooltip = this.L("スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）", "Documents that are always loaded as the session's context, apart from skill activation (such as steering)")
           + (element.startRatio !== null && element.startRatio !== undefined
-            ? `\n最初に記録されたコンテキストウィンドウ使用率: ${(element.startRatio * 100).toFixed(1)}%（プロンプト等も含むため、常時文脈だけの使用率は分かりません）` : "");
+            ? this.L(`\n最初に記録されたコンテキストウィンドウ使用率: ${(element.startRatio * 100).toFixed(1)}%（プロンプト等も含むため、常時文脈だけの使用率は分かりません）`, `\nFirst recorded context window usage: ${(element.startRatio * 100).toFixed(1)}% (includes the prompt and other content, so the share of the always-loaded context alone is unknown)`) : "");
         item.iconPath = new vscode.ThemeIcon("folder");
         item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
         item.contextValue = "skilltraceContextGroup";
@@ -347,7 +355,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       case "outside": {
         const r = element.read;
         item.label = r.path.split(/[/\\]/).filter(Boolean).pop() ?? r.path;
-        item.description = [r.title ?? "", r.tool, r.failed ? "読取失敗" : ""].filter(Boolean).join(" ・ ");
+        item.description = [r.title ?? "", r.tool, r.failed ? this.L("読取失敗", "read failed") : ""].filter(Boolean).join(this.lang === "en" ? " · " : " ・ ");
         item.tooltip = `${r.path}\n${r.at ?? ""}`;
         item.iconPath = new vscode.ThemeIcon(r.failed ? "error" : "file");
         item.collapsibleState = vscode.TreeItemCollapsibleState.None;
@@ -377,18 +385,18 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
     switch (element.kind) {
       case "session": {
         const trace = await this.getOrBuildTrace(element.session);
-        if (!trace) return [{ kind: "note", session: element.session, text: "このセッションではスキル起動を検出できませんでした" } as NoteEl];
+        if (!trace) return [{ kind: "note", session: element.session, text: this.L("このセッションではスキル起動を検出できませんでした", "No skill activation was detected in this session") } as NoteEl];
         const out: El[] = trace.skills.map(part => ({ kind: "skill", session: element.session, part } as SkillEl));
         if (trace.contextLoads?.length) out.push({ kind: "contextGroup", session: element.session, loads: trace.contextLoads, startRatio: firstContextUsageRatio(trace.contextUsageSeries) } as ContextGroupEl);
         if (trace.outsideReads.length) out.push({ kind: "outsideGroup", session: element.session, reads: trace.outsideReads } as OutsideGroupEl);
         // 記録では起動が確認できたのに、現在のワークスペースで見つからないスキル。
         // 何も出さないと「開いたのに空」という無言の失敗になるため、注記として出す
         for (const name of trace.undiscoveredSkills ?? []) {
-          out.push({ kind: "note", session: element.session, text: `起動したスキル「${name}」は現在のワークスペースで見つかりませんでした` } as NoteEl);
+          out.push({ kind: "note", session: element.session, text: this.L(`起動したスキル「${name}」は現在のワークスペースで見つかりませんでした`, `The activated skill "${name}" was not found in the current workspace`) } as NoteEl);
         }
         // トレースはあるのに表示できる項目が無い場合も、空の展開で終わらせない
         if (!out.length) {
-          out.push({ kind: "note", session: element.session, text: "このセッションには表示できる項目がありません（スキル起動・常時文脈・読み取りの記録なし）" } as NoteEl);
+          out.push({ kind: "note", session: element.session, text: this.L("このセッションには表示できる項目がありません（スキル起動・常時文脈・読み取りの記録なし）", "Nothing to show in this session (no records of skill activation, always-loaded context, or reads)") } as NoteEl);
         }
         return out;
       }

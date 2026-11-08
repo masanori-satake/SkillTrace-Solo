@@ -4,7 +4,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { buildGraph } from "../core/graph";
 import { parseEventsText } from "../core/events";
-import { buildSessionTrace, buildTrace, firstHeading } from "../core/trace";
+import { buildSessionTrace, buildTrace, firstHeading, gradeCertaintyLabel } from "../core/trace";
+import { formatLocalDateTime } from "../core/sessions";
+import { langFromEnv } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
 
 const root = join(__dirname, "..", "..", "test-fixtures");
@@ -269,4 +271,26 @@ test("copy: all / visible / subtree (session scope)", async () => {
   assert.ok(sub.startsWith("references/beta.md"));
   assert.ok(sub.includes("probe-note.md"));
   assert.ok(!sub.includes("alpha.md"));
+});
+
+test("english rendering (copilot): token usage, breakdown, glossary and labels switch to English", async () => {
+  const { renderSessionCopy } = await import("../core/copy.js");
+  const { st } = fixtureSessionTrace();
+  const html = renderSessionHtml(st, { lang: "en" });
+  assert.ok(html.includes("Token usage"));
+  assert.ok(html.includes("Input token breakdown"));
+  assert.ok(html.includes("Cache read (reuse of input shared with previous turns)"));
+  assert.ok(html.includes("Arrival certainty (high / medium / low)"));
+  assert.ok(html.includes("Turns with cache writes:"));
+  assert.ok(!html.includes("トークン実測"));
+  assert.equal(gradeCertaintyLabel("A", "en"), "High");
+  assert.equal(gradeCertaintyLabel(null as never, "en"), "No record");
+  assert.equal(gradeCertaintyLabel("A"), "確度高");
+  assert.equal(langFromEnv("ja"), "ja");
+  assert.equal(langFromEnv("en-US"), "en");
+  assert.equal(langFromEnv("fr"), "en");
+  assert.ok(formatLocalDateTime("2026-11-08T01:02:03", "en").startsWith("2026-11-08"));
+  const copyEn = renderSessionCopy(st, { kind: "all" }, "en");
+  assert.ok(copyEn.includes("SkillTrace session summary"));
+  assert.ok(copyEn.includes("High"));
 });

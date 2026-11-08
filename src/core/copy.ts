@@ -8,19 +8,21 @@ import type { Graph, GraphNode } from "./graph";
 import type { SessionTrace, SkillPart, TraceNode } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
 import { formatLocalDateTime } from "./sessions";
+import type { Lang } from "./common";
 
 const GLYPHS = { branch: "├─ ", last: "└─ ", vert: "│  ", blank: "   " } as const;
 
-function nodeDescription(nodes: TraceNode[], gn: GraphNode): string {
+function nodeDescription(nodes: TraceNode[], gn: GraphNode, lang: Lang = "ja"): string {
+  const en = lang === "en";
   const tn = nodes.find(n => n.id === gn.id);
   const parts: string[] = [];
-  if (gn.missing) parts.push("[参照先なし]");
-  else if (tn?.grade) parts.push(`[${gradeCertaintyLabel(tn.grade)}${tn.order ? ` #${tn.order}` : ""}]`);
-  else parts.push("[記録なし]");
-  if (gn.boundary) parts.push("スキル外");
-  if (gn.cycle) parts.push("循環");
-  if (tn?.failed) parts.push("読取失敗あり");
-  parts.push(`~${gn.estTokens} トークン`);
+  if (gn.missing) parts.push(en ? "[missing target]" : "[参照先なし]");
+  else if (tn?.grade) parts.push(`[${gradeCertaintyLabel(tn.grade, lang)}${tn.order ? ` #${tn.order}` : ""}]`);
+  else parts.push(en ? "[no record]" : "[記録なし]");
+  if (gn.boundary) parts.push(en ? "outside skill" : "スキル外");
+  if (gn.cycle) parts.push(en ? "cycle" : "循環");
+  if (tn?.failed) parts.push(en ? "read failed" : "読取失敗あり");
+  parts.push(en ? `~${gn.estTokens} tokens` : `~${gn.estTokens} トークン`);
   return parts.join(" ");
 }
 
@@ -29,7 +31,7 @@ export type SessionCopyMode =
   | { kind: "visible"; isExpanded: (skillName: string, absId: string) => boolean }
   | { kind: "subtree"; part: SkillPart; rootId: string };
 
-function renderPartLines(part: SkillPart, mode: SessionCopyMode, lines: string[]): void {
+function renderPartLines(part: SkillPart, mode: SessionCopyMode, lines: string[], lang: Lang = "ja"): void {
   const byId: Map<string, GraphNode> = part.graph.nodes;
   const renderChildren = (parent: GraphNode, prefix: string, seen: Set<string>): void => {
     const kids = parent.children
@@ -37,7 +39,7 @@ function renderPartLines(part: SkillPart, mode: SessionCopyMode, lines: string[]
       .filter((n): n is GraphNode => !!n);
     kids.forEach((kid, i) => {
       const isLast = i === kids.length - 1;
-      lines.push(prefix + (isLast ? GLYPHS.last : GLYPHS.branch) + `${kid.relToSkill}  ${nodeDescription(part.nodes, kid)}`);
+      lines.push(prefix + (isLast ? GLYPHS.last : GLYPHS.branch) + `${kid.relToSkill}  ${nodeDescription(part.nodes, kid, lang)}`);
       const includeKids = kid.children.length > 0 && !kid.cycle && !seen.has(kid.id)
         && (mode.kind !== "visible" || mode.isExpanded(part.skillName, kid.id));
       if (includeKids) {
@@ -48,26 +50,27 @@ function renderPartLines(part: SkillPart, mode: SessionCopyMode, lines: string[]
   };
   const root = byId.get(part.graph.rootId);
   if (!root) return;
-  lines.push(`${root.relToSkill}  ${nodeDescription(part.nodes, root)}`);
+  lines.push(`${root.relToSkill}  ${nodeDescription(part.nodes, root, lang)}`);
   const rootIncluded = mode.kind !== "visible" || mode.isExpanded(part.skillName, root.id);
   if (rootIncluded && !root.cycle) renderChildren(root, "", new Set([root.id]));
 }
 
-export function renderSessionCopy(st: SessionTrace, mode: SessionCopyMode): string {
+export function renderSessionCopy(st: SessionTrace, mode: SessionCopyMode, lang: Lang = "ja"): string {
+  const en = lang === "en";
   const lines: string[] = [];
 
   if (mode.kind === "subtree") {
     const byId: Map<string, GraphNode> = mode.part.graph.nodes;
     const root = byId.get(mode.rootId);
     if (!root) return "";
-    lines.push(`${root.relToSkill}  ${nodeDescription(mode.part.nodes, root)}`);
+    lines.push(`${root.relToSkill}  ${nodeDescription(mode.part.nodes, root, lang)}`);
     if (!root.cycle) {
       const seen = new Set([root.id]);
       const renderChildren = (parent: GraphNode, prefix: string): void => {
         const ks = parent.children.map(id => byId.get(id)).filter((n): n is GraphNode => !!n);
         ks.forEach((kid, i) => {
           const isLast = i === ks.length - 1;
-          lines.push(prefix + (isLast ? GLYPHS.last : GLYPHS.branch) + `${kid.relToSkill}  ${nodeDescription(mode.part.nodes, kid)}`);
+          lines.push(prefix + (isLast ? GLYPHS.last : GLYPHS.branch) + `${kid.relToSkill}  ${nodeDescription(mode.part.nodes, kid, lang)}`);
           if (kid.children.length > 0 && !kid.cycle && !seen.has(kid.id)) {
             seen.add(kid.id);
             renderChildren(kid, prefix + (isLast ? GLYPHS.blank : GLYPHS.vert));
@@ -89,19 +92,21 @@ export function renderSessionCopy(st: SessionTrace, mode: SessionCopyMode): stri
   const counts = { A: 0, B: 0, C: 0, N: 0 } as Record<string, number>;
   for (const g of bestGrade.values()) counts[g || "N"]++;
   const skillNames = st.skills.map(p => p.skillName).join(", ");
-  lines.push(`SkillTrace セッションサマリ`);
-  lines.push(`ワークスペース: ${st.session.workspace}`);
-  lines.push(`開始: ${st.session.startedAt ? formatLocalDateTime(st.session.startedAt) : "不明"}`);
-  lines.push(`セッション: ${st.session.id}`);
-  lines.push(`スキル: ${skillNames} ／ 確度高 ${counts.A} ・ 確度中 ${counts.B} ・ 確度低 ${counts.C} ・ 記録なし ${counts.N}`);
+  lines.push(en ? `SkillTrace session summary` : `SkillTrace セッションサマリ`);
+  lines.push(`${en ? "Workspace" : "ワークスペース"}: ${st.session.workspace}`);
+  lines.push(`${en ? "Started" : "開始"}: ${st.session.startedAt ? formatLocalDateTime(st.session.startedAt, lang) : en ? "unknown" : "不明"}`);
+  lines.push(`${en ? "Session" : "セッション"}: ${st.session.id}`);
+  lines.push(en
+    ? `Skills: ${skillNames} / High ${counts.A} · Medium ${counts.B} · Low ${counts.C} · No record ${counts.N}`
+    : `スキル: ${skillNames} ／ 確度高 ${counts.A} ・ 確度中 ${counts.B} ・ 確度低 ${counts.C} ・ 記録なし ${counts.N}`);
 
   for (const part of st.skills) {
     lines.push(`== ${part.skillName} ==`);
-    renderPartLines(part, mode, lines);
+    renderPartLines(part, mode, lines, lang);
   }
   if (st.outsideReads.length) {
-    lines.push("== スキル外の読み取り ==");
-    for (const r of st.outsideReads) lines.push(`- ${r.path}（${r.tool}${r.failed ? "・読取失敗" : ""}）${r.title ? ` — ${r.title}` : ""}`);
+    lines.push(en ? "== Reads outside the skill ==" : "== スキル外の読み取り ==");
+    for (const r of st.outsideReads) lines.push(en ? `- ${r.path} (${r.tool}${r.failed ? " · read failed" : ""})${r.title ? ` — ${r.title}` : ""}` : `- ${r.path}（${r.tool}${r.failed ? "・読取失敗" : ""}）${r.title ? ` — ${r.title}` : ""}`);
   }
   return lines.join("\n");
 }
