@@ -110,10 +110,10 @@ function measuredMd(st: SessionTrace): string {
   return `| ターン | 入力 | キャッシュ読取 | キャッシュ書込 | 出力 | 推論 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n${rows}\n| 合計 | ${fmt(t.inputTokens)} | ${fmt(t.cacheReadTokens)} | ${fmt(t.cacheWriteTokens)} | ${fmt(t.outputTokens)} | ${fmt(t.reasoningTokens)} |\n\n入力トークンの内訳（合計 ${fmt(t.inputTokens)}）: キャッシュ読取（前のターンと共通する入力の再利用） ${fmt(cacheRead)}${cacheBar} ／ キャッシュ書込（将来の再利用のための保存） ${fmt(cacheWrite)} ／ 新規入力 ${fmt(fresh)}${obs ? `\n\n${obs}` : ""}`;
 }
 
-/** 常時文脈の節に併記する「セッション開始時点の使用率」（Kiro の最初の contextUsage） */
+/** 常時文脈の節に併記する「最初に記録された使用率」（Kiro の最初の contextUsage） */
 function startUsageText(st: SessionTrace): string {
   const r = firstContextUsageRatio(st.contextUsageSeries);
-  return r === null ? "" : `セッション開始時点のコンテキストウィンドウ使用率: ${(r * 100).toFixed(1)}%（最初の記録。会話が始まる前に、常時文脈だけで窓がどれだけ埋まっていたかの目安です）`;
+  return r === null ? "" : `最初に記録されたコンテキストウィンドウ使用率: ${(r * 100).toFixed(1)}%（セッションの早い段階の記録です。その時点では窓の中身の中心は常時文脈のため、常時文脈の重さの目安になります）`;
 }
 
 function contextMd(st: SessionTrace): string {

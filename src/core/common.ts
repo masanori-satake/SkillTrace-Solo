@@ -41,7 +41,8 @@ export function cacheWriteObservation(turns: { turn: number; cacheWriteTokens: n
   return s;
 }
 
-/** Kiro: セッション開始時点の文脈使用率（contextUsage の最初のスナップショット） */
+/** Kiro: 最初に記録された文脈使用率（contextUsage の最初のスナップショット。
+ *  最初のターンの途中で記録されるため「開始前」の値ではない。常時文脈の重さの目安として使う） */
 export function firstContextUsageRatio(series?: { ratio: number }[] | null): number | null {
   return series && series.length ? series[0].ratio : null;
 }

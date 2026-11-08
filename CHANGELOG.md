@@ -8,18 +8,18 @@
   （従来は2分解で、キャッシュ書込が新規入力の中に埋もれていた）。
   あわせて、キャッシュ書込が発生したターンを観測として示す（初回ターン
   以外で最大の書込も併記）。Kiro では、常時文脈の節（サマリ）とツリーの
-  常時文脈グループに、セッション開始時点のコンテキストウィンドウ使用率
+  常時文脈グループに、最初に記録されたコンテキストウィンドウ使用率
   （常時文脈の重さの目安）を併記する。表示するのは実測とその構成比のみで、
   単価・換算値は扱わない。
 - **学習ドキュメント 04「サマリの読み方 — 『どこに払っているか』を読む」を
-  追加。** 3分解と書込の発生ターンの読み方、Kiro の開始時使用率が示す
+  追加。** 3分解と書込の発生ターンの読み方、Kiro の最初の記録の使用率が示す
   常時文脈の重さなど、サマリの実測の読み解きを担う。
 - **Show the "structure of consumption" in summaries (Issue #9).** Copilot's
   input breakdown is now three-way (new input / cache read / cache write;
   cache writes used to be lumped into "new input"), and the turns in which
   cache writes occurred are shown as an observation. For Kiro, the
   always-loaded context section (and the tree group) now also shows the
-  context-window usage at the start of the session, as a measure of how
+  first recorded context-window usage, as a guide to how
   heavy the always-loaded context is. Only measured values and their
   proportions are shown — no rates or converted values. Learning
   document 04, "Reading the summary", covers how to interpret them.
