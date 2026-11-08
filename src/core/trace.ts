@@ -6,15 +6,18 @@ import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
 import { findNumber, findString, type ParsedEvents } from "./events";
+import type { Lang } from "./common";
 
 export type Grade = "A" | "B" | "C" | null;
 
 /** 到達の確度（表示用）: 内部の A/B/C を、読む人にそのまま伝わる言葉に置く */
-export function gradeWord(grade: Grade): string {
+export function gradeWord(grade: Grade, lang: Lang = "ja"): string {
+  if (lang === "en") return grade === "A" ? "High" : grade === "B" ? "Medium" : grade === "C" ? "Low" : "";
   return grade === "A" ? "高" : grade === "B" ? "中" : grade === "C" ? "低" : "";
 }
-export function gradeCertaintyLabel(grade: Grade): string {
-  const w = gradeWord(grade);
+export function gradeCertaintyLabel(grade: Grade, lang: Lang = "ja"): string {
+  const w = gradeWord(grade, lang);
+  if (lang === "en") return w ? w : "No record";
   return w ? `確度${w}` : "記録なし";
 }
 export interface TraceNode {
@@ -74,7 +77,8 @@ const TOKEN_KEYS = ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWrit
 type TokenKey = (typeof TOKEN_KEYS)[number];
 type UsageRec = { at: string | null; contextCurrentTokens?: number } & Partial<Record<TokenKey, number>>;
 
-export function buildTrace(parsed: ParsedEvents, graph: Graph, opts: { sessionId: string; workspaceAbs: string; skillDirAbs: string; rootHeading: string | null }): Trace {
+export function buildTrace(parsed: ParsedEvents, graph: Graph, opts: { sessionId: string; workspaceAbs: string; skillDirAbs: string; rootHeading: string | null; lang?: Lang }): Trace {
+  const en = opts.lang === "en";
   const { events } = parsed;
   const nodesById = graph.nodes;
 
@@ -199,24 +203,24 @@ export function buildTrace(parsed: ParsedEvents, graph: Graph, opts: { sessionId
 
   const traceNodes: TraceNode[] = graph.order.map(gn => {
     let grade: Grade = null;
-    let evidence = "イベントに対応付けなし";
+    let evidence = en ? "No matching event" : "イベントに対応付けなし";
     let firstAt: string | null = null;
     if (delivered.has(gn.id)) {
       grade = "A";
-      evidence = "skill.context_delivered_ref で言及（内容がコンテキストへ読み込まれた）";
+      evidence = en ? "Mentioned in skill.context_delivered_ref (content loaded into context)" : "skill.context_delivered_ref で言及（内容がコンテキストへ読み込まれた）";
       firstAt = deliveredAt.get(gn.id) ?? null;
     } else if (readBy.has(gn.id)) {
       grade = "B";
-      evidence = `tool.execution_complete 成功 (${readBy.get(gn.id)!.tool})`;
+      evidence = en ? `tool.execution_complete succeeded (${readBy.get(gn.id)!.tool})` : `tool.execution_complete 成功 (${readBy.get(gn.id)!.tool})`;
       firstAt = readBy.get(gn.id)!.at;
     } else if (inferred.has(gn.id)) {
       grade = "C";
-      evidence = `${inferred.get(gn.id)!.via} での言及のみ`;
+      evidence = en ? `Mention only in ${inferred.get(gn.id)!.via}` : `${inferred.get(gn.id)!.via} での言及のみ`;
       firstAt = inferred.get(gn.id)!.at;
     }
     if (gn.id === graph.rootId && rootInvokedA && grade !== "A") {
       grade = "A";
-      evidence = "skill.invoked 内に SKILL.md の見出しを確認（起動時に本文が読み込まれた）";
+      evidence = en ? "SKILL.md heading found in skill.invoked (body loaded on activation)" : "skill.invoked 内に SKILL.md の見出しを確認（起動時に本文が読み込まれた）";
       firstAt = rootInvokedA.at;
     }
     return {
@@ -310,10 +314,10 @@ export interface SessionTrace {
 export function buildSessionTrace(
   parsed: ParsedEvents,
   parts: { graph: Graph; skillDirAbs: string; rootHeading: string | null }[],
-  opts: { sessionId: string; workspaceAbs: string },
+  opts: { sessionId: string; workspaceAbs: string; lang?: Lang },
 ): SessionTrace {
   const traces = parts.map(p => buildTrace(parsed, p.graph, {
-    sessionId: opts.sessionId, workspaceAbs: opts.workspaceAbs, skillDirAbs: p.skillDirAbs, rootHeading: p.rootHeading,
+    sessionId: opts.sessionId, workspaceAbs: opts.workspaceAbs, skillDirAbs: p.skillDirAbs, rootHeading: p.rootHeading, lang: opts.lang,
   }));
 
   // 到達順の通し番号化: ファイル（ノード id）ごとに最も早い初出時刻で一意に採番する

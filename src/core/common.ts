@@ -1,4 +1,15 @@
 // レポート（report.ts）と文書コピー（document.ts）で共有する小さな部品。
+
+/** 表示言語。拡張はホスト（VS Code / Kiro）の表示言語から決めて各レンダラへ渡す。
+ *  core は vscode に依存しないため、言語は引数で受け取る。既定は "ja" で、
+ *  言語を指定しない呼び出し（テスト含む）は従来どおり日本語になる */
+export type Lang = "ja" | "en";
+
+/** ホストの表示言語（vscode.env.language）から Lang を決める。日本語以外は英語に寄せる
+ *  （VS Code の nls フォールバックと同じ考え方） */
+export function langFromEnv(language: string | undefined): Lang {
+  return language && language.toLowerCase().startsWith("ja") ? "ja" : "en";
+}
 export function esc(s: unknown): string {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
@@ -21,14 +32,14 @@ export function countTools(tools: string[]): Map<string, number> {
  * 「その他」。キーワードの判定順が分類を決めるため、配列の順序が意味を持つ
  * （例: invoke_sub_agent は sub_agent を含むので、他の語より先に判定する）
  */
-export interface ToolGroupDef { id: string; label: string; color: string; keywords: string[] }
+export interface ToolGroupDef { id: string; label: string; labelEn: string; color: string; keywords: string[] }
 export const TOOL_GROUPS: ToolGroupDef[] = [
-  { id: "read", label: "読み取り・探索", color: "#dbeafe", keywords: ["read", "list", "grep", "search", "glob"] },
-  { id: "write", label: "書き込み・編集", color: "#dcfce7", keywords: ["write", "replace", "edit", "create", "patch", "insert", "delete"] },
-  { id: "exec", label: "実行", color: "#ede9fe", keywords: ["execute", "run", "command", "shell", "terminal", "pwsh", "bash"] },
-  { id: "subagent", label: "サブエージェント", color: "#ffedd5", keywords: ["sub_agent", "subagent"] },
-  { id: "interact", label: "進行・対話", color: "#fce7f3", keywords: ["progress", "user_input", "input", "ask"] },
-  { id: "other", label: "その他", color: "#e5e7eb", keywords: [] },
+  { id: "read", label: "読み取り・探索", labelEn: "Read / explore", color: "#dbeafe", keywords: ["read", "list", "grep", "search", "glob"] },
+  { id: "write", label: "書き込み・編集", labelEn: "Write / edit", color: "#dcfce7", keywords: ["write", "replace", "edit", "create", "patch", "insert", "delete"] },
+  { id: "exec", label: "実行", labelEn: "Execute", color: "#ede9fe", keywords: ["execute", "run", "command", "shell", "terminal", "pwsh", "bash"] },
+  { id: "subagent", label: "サブエージェント", labelEn: "Sub-agents", color: "#ffedd5", keywords: ["sub_agent", "subagent"] },
+  { id: "interact", label: "進行・対話", labelEn: "Progress / dialogue", color: "#fce7f3", keywords: ["progress", "user_input", "input", "ask"] },
+  { id: "other", label: "その他", labelEn: "Other", color: "#e5e7eb", keywords: [] },
 ];
 const TOOL_GROUP_ORDER = ["subagent", "read", "write", "exec", "interact", "other"];
 const TOOL_GROUP_BY_ID = new Map(TOOL_GROUPS.map(g => [g.id, g]));
@@ -61,6 +72,11 @@ export function toolColumns(turns: { usedTools: string[] }[]): ToolColumn[] {
       (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
+/** グループの表示名（言語で出し分ける） */
+export function toolGroupLabel(g: ToolGroupDef, lang: Lang = "ja"): string {
+  return lang === "en" ? g.labelEn : g.label;
+}
+
 /** 列モデルに現れるグループだけを、列と同じ順で返す（凡例用） */
 export function toolGroupsPresent(columns: ToolColumn[]): ToolGroupDef[] {
   const seen = new Set<string>();
@@ -91,19 +107,25 @@ export function cacheWriteFacts(turns: { turn: number; cacheWriteTokens: number 
 }
 
 /** キャッシュ書込の発生ターンを観測として述べる一文（発生がなければ空文字） */
-export function cacheWriteObservation(turns: { turn: number; cacheWriteTokens: number }[]): string {
+export function cacheWriteObservation(turns: { turn: number; cacheWriteTokens: number }[], lang: Lang = "ja"): string {
   const f = cacheWriteFacts(turns);
   if (!f.turns.length) return "";
+  if (lang === "en") {
+    let s = `Turns with cache writes: ${f.turns.join(", ")}`;
+    if (f.maxLater) s += `. The largest write after the first turn was in turn ${f.maxLater.turn} (${fmt(f.maxLater.tokens)} tokens)`;
+    return s;
+  }
   let s = `キャッシュ書込が発生したターン: ${f.turns.join("・")}`;
   if (f.maxLater) s += `。初回ターン以外で最大の書込はターン${f.maxLater.turn}（${fmt(f.maxLater.tokens)} トークン）です`;
   return s;
 }
 
 /** 記録で起動が確認できたが、現在のワークスペースで見つからなかったスキルへの注記文（無ければ空文字列） */
-export function undiscoveredSkillsNote(names: string[] | undefined): string {
-  return names?.length
-    ? `記録では次のスキルが起動していますが、現在のワークスペースでは見つかりませんでした（移動・改名・削除された可能性があります）: ${names.join(", ")}`
-    : "";
+export function undiscoveredSkillsNote(names: string[] | undefined, lang: Lang = "ja"): string {
+  if (!names?.length) return "";
+  return lang === "en"
+    ? `The record shows these skills were activated, but they were not found in the current workspace (they may have been moved, renamed or deleted): ${names.join(", ")}`
+    : `記録では次のスキルが起動していますが、現在のワークスペースでは見つかりませんでした（移動・改名・削除された可能性があります）: ${names.join(", ")}`;
 }
 
 /** Kiro: 最初に記録された文脈使用率（contextUsage の最初のスナップショット。
@@ -130,3 +152,26 @@ export const GLOSSARY: [string, string][] = [
   ["セッション／ターン", "セッションは1つのチャット（会話）全体、ターンはその中でのユーザーとエージェントの往復1回を指します。"],
   ["正本（canonical）", ".agents / .github / .kiro の3か所すべてに同じスキルがある場合に、.agents 側を正本（編集の元）とみなす運用を指します。3つ揃わない場合は正本扱いしません（SkillMap-Solo の用語）。"],
 ];
+
+/** 用語の説明（英語版）。GLOSSARY と同じ用語・同じ並びで対訳にする */
+export const GLOSSARY_EN: [string, string][] = [
+  ["Arrival certainty (high / medium / low)", "How certain the record lets us be that a file was actually read (reached). High: the record confirms the content was loaded into the model's context. Medium: a tool call that reads the file succeeded, but the record does not by itself prove the content entered the context. Low: the file is only mentioned in the conversation or the record, with no read recorded (whether it was read cannot be determined)."],
+  ["No record", "No record about that file was found. It does not mean the file was not read (records cover a limited scope)."],
+  ["Arrival / arrival order", "A file being loaded into the context (or read) is called its arrival. The arrival order is the sequence of arrivals, numbered across the whole session."],
+  ["Skill activation", "A request matches a skill's description (or the skill is invoked by a slash command) and the SKILL.md body is loaded into the context. Skills are read by progressive disclosure: only the name and description (metadata) are always in context; the body (instructions) loads on activation, and bundled resources load when referenced."],
+  ["Context", "Everything the model can refer to in a turn (system instructions, conversation history, loaded files, and so on). Its limit is the context window; near the limit, older content may be summarised or dropped."],
+  ["Cache", "A mechanism that reuses the part of the input shared with previous turns. Cache reads are input served by reuse; cache writes are input stored for future reuse. Caching does not enlarge the context window; it reduces the cost and time of sending the same content repeatedly."],
+  ["Context window usage / usage ratio", "How much of the context window was in use at the session's last turn. Usage is a token count; the ratio is its proportion of the limit."],
+  ["Credit", "The unit of usage in Kiro. Not a token count: usage is charged and recorded per request (turn) in the session record's usage_summary. For Kiro sessions, SkillTrace shows this measured credit usage (no token breakdown is recorded)."],
+  ["Estimated tokens", "A token count estimated from a file's character count. It differs from actual consumption and is meant as a size guide."],
+  ["Measured usage", "Values aggregated from the usage records left in the session record. Input is what was sent to the model, output is what was generated, and reasoning is what the model's internal reasoning used. For caching, see the Cache entry."],
+  ["Outside the skill", "A file that a skill references but that does not live inside a skill location (under the skills folders of .github / .kiro / .agents) — for example documents under .kiro/steering/ shared by several skills."],
+  ["Reads outside the skill", "Records of the agent reading files outside this skill's reference chain (from SKILL.md). Entries marked as failed reads are records of attempted reads that failed."],
+  ["Session / turn", "A session is one whole chat (conversation); a turn is one user–agent round trip within it."],
+  ["Canonical", "When the same skill exists in all three locations (.agents / .github / .kiro), the .agents copy is treated as the canonical source for editing. If the three are not all present, no canonical treatment applies (a SkillMap-Solo term)."],
+];
+
+/** 言語に応じた用語集を返す */
+export function glossaryFor(lang: Lang = "ja"): [string, string][] {
+  return lang === "en" ? GLOSSARY_EN : GLOSSARY;
+}

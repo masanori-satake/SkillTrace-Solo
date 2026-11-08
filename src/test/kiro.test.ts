@@ -170,3 +170,32 @@ test("kiro trace: steering_inclusion documents give grade A", () => {
   const byName = new Map(trace.skills[0].nodes.map(n => [n.name, n]));
   assert.equal(byName.get("level2.md")?.grade, "A");
 });
+
+test("kiro english rendering: summary, matrix legend, markdown and copy are in English", () => {
+  const parsed = parseKiroMessages(messagesText());
+  const graph = buildGraph(kiroSkillDir, kiroWorkspace);
+  const trace = buildKiroSessionTrace(parsed, [{ graph, skillDirAbs: kiroSkillDir, disclosed: true }], {
+    sessionId: "sess_6d826121-2e9a-4628-a998-cefab29517dd",
+    workspaceAbs: kiroWorkspace,
+    lang: "en",
+  });
+  // 根拠も英語で組み立てられる
+  const skillNode = trace.skills[0].nodes.find(n => n.name === "SKILL.md");
+  assert.ok(skillNode?.evidence.startsWith("Skill activation via disclose_context"));
+  const html = renderSessionHtml(trace, { lang: "en" });
+  assert.ok(html.includes('<html lang="en">'));
+  assert.ok(html.includes("Session summary"));
+  assert.ok(html.includes("Credit usage"));
+  assert.ok(html.includes("Tools used"));
+  assert.ok(html.includes("Legend (tool groups): "));
+  assert.ok(html.includes("Read / explore"));
+  assert.ok(!html.includes("クレジット実測"));
+  const md = renderSessionMarkdown(trace, { lang: "en", includeNotes: true });
+  assert.ok(md.includes("# Session summary"));
+  assert.ok(md.includes("## Credit usage"));
+  assert.ok(md.includes("## Glossary"));
+  assert.ok(md.includes("Arrival certainty (high / medium / low)"));
+  const frag = renderSessionHtmlFragment(trace, { lang: "en" });
+  assert.ok(frag.includes("Legend (tool groups): "));
+  assert.ok(!frag.includes("凡例"));
+});

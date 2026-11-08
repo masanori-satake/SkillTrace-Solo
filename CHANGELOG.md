@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.4.0] - 2026-11-08
+
+### Added
+
+- **English display support.** All user-facing text now follows the host's
+  display language: the session tree (labels, descriptions, tooltips), the
+  summaries (webview pages and browser output), document copies
+  (Markdown / HTML), tree text copies, the status bar, and messages.
+  Summaries include the glossary, the tool-matrix legend (tool groups),
+  evidence strings, and observations such as cache-write turns, all in
+  English. Languages other than Japanese fall back to English, matching
+  how VS Code resolves extension display languages. Japanese rendering is
+  unchanged.
+- **The bundled learning documents remain Japanese only.** They are
+  not translated in this release.
+
+### 追加 (Added)
+
+- **英語表示に対応した。** 利用者が目にする文言のすべてが、ホスト
+  （VS Code / Kiro）の表示言語に追随する: セッションツリー（ラベル・
+  説明・ツールチップ）、サマリ（Webview と ブラウザ出力）、文書コピー
+  （Markdown / HTML）、ツリーのテキストコピー、ステータスバー、
+  各種メッセージ。用語集、ツールマトリクスの凡例（ツールのグループ）、
+  根拠の文、キャッシュ書込の発生ターンなどの観測文も英語になる。
+  日本語以外の言語では英語に寄せる（VS Code の表示言語の解決と同じ
+  考え方）。日本語の表示は従来どおりで変わらない。
+- **学習ドキュメントは日本語のみのまま。** 同梱の学習ドキュメント
+  （docs/learning）は今回の版では翻訳していない。
+
 ## [1.3.0] - 2026-11-08
 
 ### Changed

@@ -9,6 +9,7 @@ import { basename, join, resolve } from "node:path";
 import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
 import { collectStrings, type ParseHealth } from "./events";
 import { firstHeading, type Grade, type OutsideRead, type SessionTrace, type TraceNode } from "./trace";
+import type { Lang } from "./common";
 
 /** 起動（disclose_context）したスキルの SKILL.md の確度。
  *  開示は「文脈へ読み込む」仕組みそのものなので確度高とする（2026-11-08 決定） */
@@ -295,8 +296,9 @@ export interface KiroSkillPartInput {
 export function buildKiroSessionTrace(
   parsed: KiroParsed,
   parts: KiroSkillPartInput[],
-  opts: { sessionId: string; workspaceAbs: string },
+  opts: { sessionId: string; workspaceAbs: string; lang?: Lang },
 ): SessionTrace {
+  const en = opts.lang === "en";
   // 供給源をまたいだ証拠の収集（seq は到達順の土台）
   const includedPaths = new Map<string, { at: string | null; seq: number }>(); // normPath → 初出
   const readPaths = new Map<string, { at: string | null; seq: number; success: boolean }>();
@@ -363,7 +365,7 @@ export function buildKiroSessionTrace(
     const nodesById = part.graph.nodes;
     const nodes: TraceNode[] = part.graph.order.map(gn => {
       let grade: Grade = null;
-      let evidence = "イベントに対応付けなし";
+      let evidence = en ? "No matching event" : "イベントに対応付けなし";
       let firstAt: string | null = null;
       let firstSeq: number | null = null;
       // このノードに対応する read_files（失敗の有無の判定にも使う）
@@ -376,20 +378,20 @@ export function buildKiroSessionTrace(
       for (const [p, inc] of includedPaths) {
         if (matchNodes(p, nodesById).some(h => h.id === gn.id)) {
           grade = "A";
-          evidence = "documents に列挙（内容がコンテキストへ読み込まれた）";
+          evidence = en ? "Listed in documents (content loaded into context)" : "documents に列挙（内容がコンテキストへ読み込まれた）";
           firstAt = inc.at; firstSeq = inc.seq;
           break;
         }
       }
       if (grade === null && part.disclosed && gn.id === part.graph.rootId && DISCLOSED_ROOT_GRADE) {
         grade = DISCLOSED_ROOT_GRADE;
-        evidence = "disclose_context によるスキル起動（内容がコンテキストへ開示された）";
+        evidence = en ? "Skill activation via disclose_context (content disclosed into context)" : "disclose_context によるスキル起動（内容がコンテキストへ開示された）";
         const act = parsed.activations.find(a => a.name === basename(resolve(part.skillDirAbs)));
         firstAt = act?.at ?? null; firstSeq = act?.seq ?? null;
       }
       if (grade === null && rd?.success) {
         grade = "B";
-        evidence = "read_files の読み取り成功";
+        evidence = en ? "Successful read via read_files" : "read_files の読み取り成功";
         firstAt = rd.at; firstSeq = rd.seq;
       }
       if (grade === null) {
@@ -397,7 +399,7 @@ export function buildKiroSessionTrace(
         for (const ev of parsed.events) {
           if (ev.strings.some(s => matchNodes(s, nodesById).some(h => h.id === gn.id))) {
             grade = "C";
-            evidence = `${ev.type} での言及のみ`;
+            evidence = en ? `Mention only in ${ev.type}` : `${ev.type} での言及のみ`;
             firstAt = ev.at; firstSeq = ev.seq;
             break;
           }

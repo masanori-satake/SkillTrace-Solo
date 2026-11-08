@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { normPath } from "./graph";
 import { collectStrings } from "./events";
+import type { Lang } from "./common";
 
 export interface SessionInfo {
   id: string;
@@ -26,11 +27,12 @@ export function defaultSessionStateDir(): string {
 
 /** ISO 文字列を、読む人のローカル時刻で「2026年11月7日 13:59:34」と表示する。
  *  タイムゾーン名は付けない（表示するマシンのローカル時刻であることが前提） */
-export function formatLocalDateTime(iso: string | null | undefined): string {
+export function formatLocalDateTime(iso: string | null | undefined, lang: Lang = "ja"): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const p = (n: number) => String(n).padStart(2, "0");
+  if (lang === "en") return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
