@@ -7,7 +7,7 @@ import { parseEventsFile } from "./core/events";
 import { buildSessionTrace, firstHeading, type SessionTrace } from "./core/trace";
 import { renderSessionHtml, renderSkillHtml } from "./core/report";
 import { defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
-import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames, scanKiroInvokedSkillNames } from "./core/kiro";
+import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames } from "./core/kiro";
 import { detectSkillsForSession } from "./core/autodetect";
 import { renderSessionCopy } from "./core/copy";
 import { renderSessionMarkdown, renderSkillMarkdown } from "./core/document";
@@ -100,11 +100,11 @@ export function activate(context: vscode.ExtensionContext): void {
     if (hit !== undefined) return hit;
     let result: string[] | null = null;
     if (session.source === "kiro") {
-      const cands = kiroSkillCandidates(session);
-      if (cands.length) result = scanKiroInvokedSkillNames(session.eventsPath, cands);
-      // 候補（現在のワークスペースで見つかるスキル）が無い場合でも、記録にある
-      // 起動名そのものは拾える。「未判定」にせず、記録の事実として示す
-      else result = scanKiroActivationNames(session.eventsPath);
+      // ラベルは「記録で何が起動したか」を示すものなので、候補（現在のワーク
+      // スペースで見つかるスキル）の有無に左右されず、記録の起動名をそのまま使う。
+      // 候補で絞ると、無関係なスキルが1つでも発見できる環境で、未発見スキルの
+      // 起動だけがあるセッションが「スキル未使用」と食い違って表示される
+      result = scanKiroActivationNames(session.eventsPath);
     } else if (session.workspaceHint && existsSync(session.workspaceHint)) {
       result = scanInvokedSkillNames(session.eventsPath, discoverSkills(session.workspaceHint));
     }
