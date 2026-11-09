@@ -111,26 +111,31 @@ function mdCell(s: string): string {
   return s.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
+/** クレジット実測の表（ターン×ツールのマトリクス。Markdown では列またがりと色は
+ *  表現できないため、列の並び順でグループが分かる形にする。並びはグループ→合計の多い順） */
+function creditsMd(st: SessionTrace, lang: Lang = "ja"): string {
+  const en = lang === "en";
+  const turns = st.creditTurns ?? [];
+  const cols = toolColumns(turns);
+  if (!cols.length) {
+    const rows = turns.map(t => `| ${t.turn + 1} | ${fmtCredits(t.credits)} |  |`).join("\n");
+    return `| ${en ? "Turn" : "ターン"} | ${en ? "Credits" : "クレジット"} | ${en ? "Tools used" : "使用したツール"} |\n| --- | ---: | --- |\n${rows}\n| ${en ? "Total" : "合計"} | ${fmtCredits(st.creditsTotal)} |  |`;
+  }
+  const header = `| ${en ? "Turn" : "ターン"} | ${en ? "Credits" : "クレジット"} | ${cols.map(c => mdCell(c.name)).join(" | ")} |`;
+  const sep = `| --- | ---: | ${cols.map(() => "---:").join(" | ")} |`;
+  const rows = turns.map(t => {
+    const counts = countTools(t.usedTools);
+    return `| ${t.turn + 1} | ${fmtCredits(t.credits)} | ${cols.map(c => counts.get(c.name) ?? "").join(" | ")} |`;
+  }).join("\n");
+  const total = `| ${en ? "Total" : "合計"} | ${fmtCredits(st.creditsTotal)} | ${cols.map(c => c.total).join(" | ")} |`;
+  return `${header}\n${sep}\n${rows}\n${total}`;
+}
+
 function measuredMd(st: SessionTrace, lang: Lang = "ja"): string {
   const en = lang === "en";
   if (st.source === "kiro") {
-    const turns = st.creditTurns ?? [];
-    const cols = toolColumns(turns);
     const note = en ? `\n\nKiro records credits, not tokens (summed from usage_summary).` : `\n\nKiro の実測はトークンではなくクレジットで記録されます（usage_summary の積算）。`;
-    if (!cols.length) {
-      const rows = turns.map(t => `| ${t.turn + 1} | ${fmtCredits(t.credits)} |  |`).join("\n");
-      return `| ${en ? "Turn" : "ターン"} | ${en ? "Credits" : "クレジット"} | ${en ? "Tools used" : "使用したツール"} |\n| --- | ---: | --- |\n${rows}\n| ${en ? "Total" : "合計"} | ${fmtCredits(st.creditsTotal)} |  |${note}`;
-    }
-    // ツールごとの列を持つマトリクス（Markdown では列またがりと色は表現できないため、
-    // 列の並び順でグループが分かる形にする。並びはグループ→合計の多い順）
-    const header = `| ${en ? "Turn" : "ターン"} | ${en ? "Credits" : "クレジット"} | ${cols.map(c => mdCell(c.name)).join(" | ")} |`;
-    const sep = `| --- | ---: | ${cols.map(() => "---:").join(" | ")} |`;
-    const rows = turns.map(t => {
-      const counts = countTools(t.usedTools);
-      return `| ${t.turn + 1} | ${fmtCredits(t.credits)} | ${cols.map(c => counts.get(c.name) ?? "").join(" | ")} |`;
-    }).join("\n");
-    const total = `| ${en ? "Total" : "合計"} | ${fmtCredits(st.creditsTotal)} | ${cols.map(c => c.total).join(" | ")} |`;
-    return `${header}\n${sep}\n${rows}\n${total}${note}`;
+    return `${creditsMd(st, lang)}${note}`;
   }
   const rows = st.turns.map(r =>
     `| ${r.turn + 1} | ${fmt(r.inputTokens)} | ${fmt(r.cacheReadTokens)} | ${fmt(r.cacheWriteTokens)} | ${fmt(r.outputTokens)} | ${fmt(r.reasoningTokens)} |`).join("\n");
@@ -144,9 +149,15 @@ function measuredMd(st: SessionTrace, lang: Lang = "ja"): string {
     : (en
       ? `Input token breakdown: cache reads and writes together exceed the total input, so the three-way breakdown is unavailable (inconsistent record). The totals table shows the measured values.`
       : `入力トークンの内訳: キャッシュ読取と書込の合計が入力の合計を超えているため、3分解できません（記録の不整合）。合計表の値が実測です。`);
-  return en
+  const tokenMd = en
     ? `| Turn | Input | Cache read | Cache write | Output | Reasoning |\n| --- | ---: | ---: | ---: | ---: | ---: |\n${rows}\n| Total | ${fmt(t.inputTokens)} | ${fmt(t.cacheReadTokens)} | ${fmt(t.cacheWriteTokens)} | ${fmt(t.outputTokens)} | ${fmt(t.reasoningTokens)} |\n\n${breakdown}${obs ? `\n\n${obs}` : ""}`
     : `| ターン | 入力 | キャッシュ読取 | キャッシュ書込 | 出力 | 推論 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n${rows}\n| 合計 | ${fmt(t.inputTokens)} | ${fmt(t.cacheReadTokens)} | ${fmt(t.cacheWriteTokens)} | ${fmt(t.outputTokens)} | ${fmt(t.reasoningTokens)} |\n\n${breakdown}${obs ? `\n\n${obs}` : ""}`;
+  // VS Code の記録にはクレジット実測（各リクエストの copilotCredits）も残るため併記する
+  if (st.source === "vscode" && (st.creditsTotal ?? 0) > 0) {
+    const note = en ? `\n\nVS Code also records credit usage (each request's copilotCredits).` : `\n\nVS Code の記録にはクレジット実測（各リクエストの copilotCredits）も残ります。`;
+    return `${tokenMd}\n\n${en ? "Credit usage" : "クレジット実測"}:\n\n${creditsMd(st, lang)}${note}`;
+  }
+  return tokenMd;
 }
 
 /** 常時文脈の節に併記する「最初に記録された使用率」（Kiro の最初の contextUsage） */
@@ -317,30 +328,34 @@ function metaHtml(st: SessionTrace, lang: Lang = "ja"): string {
   return metaLines(st, lang).map(([k, v]) => `<div><span style="color:#888888">${k}:</span> ${esc(v)}</div>`).join("");
 }
 
+/** クレジット実測の表（ターン×ツールのマトリクス: セルはそのターンの呼び出し回数だけ。
+ *  列見出しはグループ色で塗り、対応は表の下の凡例で示す） */
+function creditsHtml(st: SessionTrace, lang: Lang = "ja"): string {
+  const en = lang === "en";
+  const turns = st.creditTurns ?? [];
+  const cols = toolColumns(turns);
+  if (!cols.length) {
+    const rows = turns.map(t => `<tr><td style="${H.cell}">${t.turn + 1}</td><td style="${H.cellR}">${fmtCredits(t.credits)}</td><td style="${H.cell}"></td></tr>`).join("");
+    return `<table style="${H.table}"><tr><th style="${H.cell}">${en ? "Turn" : "ターン"}</th><th style="${H.cell}">${en ? "Credits" : "クレジット"}</th><th style="${H.cell}">${en ? "Tools used" : "使用したツール"}</th></tr>${rows}
+<tr><th style="${H.cell}">${en ? "Total" : "合計"}</th><th style="${H.cellR}">${fmtCredits(st.creditsTotal)}</th><td style="${H.cell}"></td></tr></table>`;
+  }
+  const headRows = `<tr><th style="${H.cell}" rowspan="2">${en ? "Turn" : "ターン"}</th><th style="${H.cell}" rowspan="2">${en ? "Credits" : "クレジット"}</th><th style="${H.cell}" colspan="${cols.length}">${en ? "Tools used" : "使用したツール"}</th></tr><tr>${cols.map(c => `<th style="${H.cell};background:${c.group.color};color:#222">${esc(c.name)}</th>`).join("")}</tr>`;
+  const rows = turns.map(t => {
+    const counts = countTools(t.usedTools);
+    return `<tr><td style="${H.cell}">${t.turn + 1}</td><td style="${H.cellR}">${fmtCredits(t.credits)}</td>${cols.map(c => `<td style="${H.cellR}">${counts.get(c.name) ?? ""}</td>`).join("")}</tr>`;
+  }).join("");
+  const totalRow = `<tr><th style="${H.cell}">${en ? "Total" : "合計"}</th><th style="${H.cellR}">${fmtCredits(st.creditsTotal)}</th>${cols.map(c => `<th style="${H.cellR}">${c.total}</th>`).join("")}</tr>`;
+  const legend = `<p style="font-size:12px;color:#666;margin:4px 0">${en ? "Legend (tool groups): " : "凡例（ツールのグループ）: "}${toolGroupsPresent(cols).map(g => `<span style="display:inline-block;width:10px;height:10px;background:${g.color};border:1px solid #bbbbbb;border-radius:2px;margin:0 4px 0 12px;vertical-align:-1px"></span>${esc(toolGroupLabel(g, lang))}`).join("")}</p>`;
+  return `<div style="overflow-x:auto"><table style="${H.table}">${headRows}${rows}
+${totalRow}</table></div>
+${legend}`;
+}
+
 function measuredHtml(st: SessionTrace, lang: Lang = "ja"): string {
   const en = lang === "en";
   if (st.source === "kiro") {
-    const turns = st.creditTurns ?? [];
-    const cols = toolColumns(turns);
     const note = en ? `<p>Kiro records credits, not tokens (summed from usage_summary).</p>` : `<p>Kiro の実測はトークンではなくクレジットで記録されます（usage_summary の積算）。</p>`;
-    if (!cols.length) {
-      const rows = turns.map(t => `<tr><td style="${H.cell}">${t.turn + 1}</td><td style="${H.cellR}">${fmtCredits(t.credits)}</td><td style="${H.cell}"></td></tr>`).join("");
-      return `<table style="${H.table}"><tr><th style="${H.cell}">${en ? "Turn" : "ターン"}</th><th style="${H.cell}">${en ? "Credits" : "クレジット"}</th><th style="${H.cell}">${en ? "Tools used" : "使用したツール"}</th></tr>${rows}
-<tr><th style="${H.cell}">${en ? "Total" : "合計"}</th><th style="${H.cellR}">${fmtCredits(st.creditsTotal)}</th><td style="${H.cell}"></td></tr></table>
-${note}`;
-    }
-    // ツールごとの列を持つマトリクス: セルはそのターンの呼び出し回数だけ。
-    // 列見出しはグループ色で塗り、対応は表の下の凡例で示す
-    const headRows = `<tr><th style="${H.cell}" rowspan="2">${en ? "Turn" : "ターン"}</th><th style="${H.cell}" rowspan="2">${en ? "Credits" : "クレジット"}</th><th style="${H.cell}" colspan="${cols.length}">${en ? "Tools used" : "使用したツール"}</th></tr><tr>${cols.map(c => `<th style="${H.cell};background:${c.group.color};color:#222">${esc(c.name)}</th>`).join("")}</tr>`;
-    const rows = turns.map(t => {
-      const counts = countTools(t.usedTools);
-      return `<tr><td style="${H.cell}">${t.turn + 1}</td><td style="${H.cellR}">${fmtCredits(t.credits)}</td>${cols.map(c => `<td style="${H.cellR}">${counts.get(c.name) ?? ""}</td>`).join("")}</tr>`;
-    }).join("");
-    const totalRow = `<tr><th style="${H.cell}">${en ? "Total" : "合計"}</th><th style="${H.cellR}">${fmtCredits(st.creditsTotal)}</th>${cols.map(c => `<th style="${H.cellR}">${c.total}</th>`).join("")}</tr>`;
-    const legend = `<p style="font-size:12px;color:#666;margin:4px 0">${en ? "Legend (tool groups): " : "凡例（ツールのグループ）: "}${toolGroupsPresent(cols).map(g => `<span style="display:inline-block;width:10px;height:10px;background:${g.color};border:1px solid #bbbbbb;border-radius:2px;margin:0 4px 0 12px;vertical-align:-1px"></span>${esc(toolGroupLabel(g, lang))}`).join("")}</p>`;
-    return `<div style="overflow-x:auto"><table style="${H.table}">${headRows}${rows}
-${totalRow}</table></div>
-${legend}
+    return `${creditsHtml(st, lang)}
 ${note}`;
   }
   const rows = st.turns.map(r =>
@@ -355,9 +370,18 @@ ${note}`;
     : (en
       ? `<p>Input token breakdown: cache reads and writes together exceed the total input, so the three-way breakdown is unavailable (inconsistent record). The totals table shows the measured values.</p>`
       : `<p>入力トークンの内訳: キャッシュ読取と書込の合計が入力の合計を超えているため、3分解できません（記録の不整合）。合計表の値が実測です。</p>`);
-  return `<table style="${H.table}"><tr><th style="${H.cell}">${en ? "Turn" : "ターン"}</th><th style="${H.cell}">${en ? "Input" : "入力"}</th><th style="${H.cell}">${en ? "Cache read" : "キャッシュ読取"}</th><th style="${H.cell}">${en ? "Cache write" : "キャッシュ書込"}</th><th style="${H.cell}">${en ? "Output" : "出力"}</th><th style="${H.cell}">${en ? "Reasoning" : "推論"}</th></tr>${rows}
+  const tokenHtml = `<table style="${H.table}"><tr><th style="${H.cell}">${en ? "Turn" : "ターン"}</th><th style="${H.cell}">${en ? "Input" : "入力"}</th><th style="${H.cell}">${en ? "Cache read" : "キャッシュ読取"}</th><th style="${H.cell}">${en ? "Cache write" : "キャッシュ書込"}</th><th style="${H.cell}">${en ? "Output" : "出力"}</th><th style="${H.cell}">${en ? "Reasoning" : "推論"}</th></tr>${rows}
 <tr><th style="${H.cell}">${en ? "Total" : "合計"}</th><th style="${H.cellR}">${fmt(t.inputTokens)}</th><th style="${H.cellR}">${fmt(t.cacheReadTokens)}</th><th style="${H.cellR}">${fmt(t.cacheWriteTokens)}</th><th style="${H.cellR}">${fmt(t.outputTokens)}</th><th style="${H.cellR}">${fmt(t.reasoningTokens)}</th></tr></table>
 ${breakdown}${obs ? `<p>${esc(obs)}</p>` : ""}`;
+  // VS Code の記録にはクレジット実測（各リクエストの copilotCredits）も残るため併記する
+  if (st.source === "vscode" && (st.creditsTotal ?? 0) > 0) {
+    const note = en ? `<p>VS Code also records credit usage (each request's copilotCredits).</p>` : `<p>VS Code の記録にはクレジット実測（各リクエストの copilotCredits）も残ります。</p>`;
+    return `${tokenHtml}
+<h3>${en ? "Credit usage" : "クレジット実測"}</h3>
+${creditsHtml(st, lang)}
+${note}`;
+  }
+  return tokenHtml;
 }
 
 function contextHtml(st: SessionTrace, lang: Lang = "ja"): string {

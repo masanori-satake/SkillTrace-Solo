@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.5.0] - 2026-11-09
+
+### Added
+
+- **Sessions from VS Code's built-in Copilot Chat now appear in the
+  history** (Issue #22). VS Code stores chat sessions as a delta log
+  under the user data folder's `workspaceStorage/<hash>/chatSessions/`;
+  SkillTrace replays the log, recovers each request's tool calls, and
+  traces skill usage from the recorded file reads. A SKILL.md recorded
+  as a skill read (`vscodeLinkType=skill`) counts as certainty High;
+  other recorded reads count as Medium. The records carry both token
+  usage (prompt / completion per request) and Copilot credits
+  (`copilotCredits` per request), and both are shown. Sessions are
+  labelled "VS Code" in the history and capped per source like the
+  other sources.
+
+### 追加 (Added)
+
+- **VS Code 標準の Copilot チャットのセッションが履歴に並ぶように
+  なった**（Issue #22）。VS Code はチャットのセッションを差分ログ
+  としてユーザーデータフォルダ配下の
+  `workspaceStorage/<ハッシュ>/chatSessions/` に保存する。
+  SkillTrace はそのログを再生して各リクエストのツール呼び出しを
+  復元し、記録されたファイル読み取りからスキルの辿りを組み立てる。
+  「スキルとして読み込まれた」記録（`vscodeLinkType=skill`）のある
+  SKILL.md は到達の確度「高」、その他の読み取りは「中」とする。
+  記録にはトークン実測（リクエストごとの prompt / completion）と
+  Copilot クレジット（`copilotCredits`）の両方が残るため、両方を
+  表示する。履歴では「VS Code」と表示し、表示上限は他の供給源と
+  同じく供給源ごとに数える。
+
 ## [1.4.4] - 2026-11-09
 
 ### Changed
