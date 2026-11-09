@@ -22,5 +22,9 @@
   "command.toggleExpandCollapse": "Expand/Collapse All",
   "skilltrace.description": "See which skill files GitHub Copilot or Amazon Kiro actually loaded. SkillTrace overlays Copilot / Kiro session records onto a skill's reference graph and shows, per file, how certain its arrival is, the measured usage, and how full the context window became. 100% local, no tracking — a measurement tool and learning aid for Agent Skills.",
   "command.showSkillTotals": "Show Skill Totals",
-  "command.showFileUsage": "Show per-file reach"
+  "command.showFileUsage": "Show per-file reach",
+  "config.filterToCurrentWorkspace": "Show only sessions related to the currently open workspace folders in the history. Sessions whose workspace cannot be determined from their records are hidden while this is on. Can also be toggled with the filter button in the history view title bar.",
+  "command.toggleWorkspaceFilter": "Toggle Workspace Filter",
+  "command.enableWorkspaceFilter": "Filter History to Current Workspace",
+  "command.disableWorkspaceFilter": "Show All Sessions (Workspace Filter Off)"
 }

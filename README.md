@@ -1,6 +1,6 @@
 # SkillTrace-Solo
 
-[![Version](https://img.shields.io/badge/version-v1.11.0-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-v1.12.0-blue.svg)](package.json)
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/masanori-satake.skilltrace-solo.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)
 [![Open VSX](https://img.shields.io/open-vsx/v/masanori-satake/skilltrace-solo?label=Open%20VSX)](https://open-vsx.org/extension/masanori-satake/skilltrace-solo)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/masanori-satake/SkillTrace-Solo)](https://github.com/masanori-satake/SkillTrace-Solo/releases)
@@ -18,7 +18,7 @@
 
 When GitHub Copilot or Amazon Kiro runs a skill, it follows references from `SKILL.md` into `references/` and beyond — but nothing on screen tells you how far it really got, what it cost, or how full the context window became. SkillTrace overlays the session records the agents already write (Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`; Kiro: `~/.kiro/sessions/<bucket>/sess_<uuid>/`; VS Code chat: `workspaceStorage/<hash>/chatSessions/<id>.jsonl`) onto the skill's reference graph, and reports, per file, the certainty that it arrived, the measured usage (tokens for Copilot, credits for Kiro), and the context window usage. No setup is required: the records are written by default, and past sessions can be analysed retroactively.
 
-Current version: **v1.11.0**
+Current version: **v1.12.0**
 
 ---
 
@@ -82,7 +82,7 @@ Current version: **v1.11.0**
 
 - From the Visual Studio Marketplace: search for **SkillTrace-Solo**, or install from the [Marketplace page](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo). Updates arrive through VS Code as usual.
 - From a VSIX file:
-  1. Download `skilltrace-solo-1.11.0.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
+  1. Download `skilltrace-solo-1.12.0.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
   2. In VS Code, run "Extensions: Install from VSIX..." from the Command Palette and select the file.
 
 ---
@@ -131,6 +131,7 @@ Current version: **v1.11.0**
 | Setting | Default | Description |
 |---|---|---|
 | `skilltrace.autoFollowLatest` | `true` | Keep the newest session in view and update live (follow-tail: viewing a past session is never interrupted) |
+| `skilltrace.filterToCurrentWorkspace` | `false` | Show only sessions related to the currently open workspace in the history (sessions whose workspace is unknown are hidden while on; toggle button in the view title bar) |
 | `skilltrace.documentIncludeNotes` | `false` | Include the "how to read" notes and the glossary in document copies (Markdown / HTML) |
 | `skilltrace.sessionStateDir` | (auto) | Override the Copilot CLI session-state directory |
 
@@ -203,7 +204,7 @@ MIT — see [LICENSE](LICENSE).
 
 GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` から `references/` やその先へ参照を辿ります。しかし画面のどこを見ても、実際にどこまで辿り着いたか、いくら消費したか、コンテキストウィンドウがどれだけ埋まったかは分かりません。SkillTrace は、エージェントが標準で書き出しているセッション記録（Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`、Kiro: `~/.kiro/sessions/<バケット>/sess_<UUID>/`、VS Code チャット: `workspaceStorage/<ハッシュ>/chatSessions/<ID>.jsonl`）をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測（Copilot はトークン、Kiro はクレジット）、コンテキストウィンドウ使用量を表示します。設定は不要で、記録は標準で書かれるため、過去のセッションも後から分析できます。
 
-現在のバージョン: **v1.11.0**
+現在のバージョン: **v1.12.0**
 
 ---
 
@@ -267,7 +268,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 
 - Visual Studio Marketplace から: **SkillTrace-Solo** で検索するか、[Marketplace のページ](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)からインストールしてください。更新は通常どおり VS Code 経由で届きます。
 - VSIX ファイルから:
-  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.11.0.vsix` をダウンロードする
+  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.12.0.vsix` をダウンロードする
   2. VS Code のコマンドパレットで「Extensions: Install from VSIX...」を実行し、ファイルを選ぶ
 
 ---
@@ -316,6 +317,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 | 設定 | 既定値 | 説明 |
 |---|---|---|
 | `skilltrace.autoFollowLatest` | `true` | 最新のセッションを表示し続け、記録の追記にライブで反応する（follow-tail 方式: 過去のセッションを見ている間は差し替えない） |
+| `skilltrace.filterToCurrentWorkspace` | `false` | 履歴を現在のワークスペースに関連するセッションだけに絞る（ワークスペース不明のセッションはオンの間は非表示。ビューのタイトルバーのボタンでも切替可） |
 | `skilltrace.documentIncludeNotes` | `false` | サマリの文書コピー（Markdown / HTML）に「読み方の注意」と「用語の説明」を含める |
 | `skilltrace.sessionStateDir` | （自動） | Copilot CLI のセッション記録フォルダを上書きする |
 

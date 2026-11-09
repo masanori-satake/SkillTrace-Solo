@@ -62,6 +62,40 @@ export function listSessions(baseDir: string): SessionInfo[] {
  *  合算で絞ると、件数の多い供給源（Kiro は数百件になりうる）が他方を
  *  全部押し出してしまう。入力は新しい順に整列済みである前提で、
  *  全体の並び順は保ったまま供給源ごとの件数だけを数える */
+/** セッションの記録に残るワークスペースのパス候補（判定の材料） */
+export function sessionWorkspacePaths(s: SessionInfo): string[] {
+  const out: string[] = [];
+  if (s.workspaceHint) out.push(s.workspaceHint);
+  for (const p of s.workspacePaths ?? []) if (p && !out.includes(p)) out.push(p);
+  return out;
+}
+
+/** パスの関係: 一致、または一方が他方の配下にある */
+function pathRelated(a: string, b: string): boolean {
+  return a === b || a.startsWith(b + "/") || b.startsWith(a + "/");
+}
+
+/**
+ * セッションが、開いているワークスペースに確実に関係するかを判定する（Issue #44）。
+ * 記録からワークスペースが分からないセッションは「確実」とは言えないため false。
+ */
+export function sessionMatchesWorkspace(s: SessionInfo, roots: string[]): boolean {
+  const rootsNorm = roots.map(r => normPath(r)).filter(Boolean);
+  if (!rootsNorm.length) return false;
+  return sessionWorkspacePaths(s).some(p => {
+    const pn = normPath(p);
+    return pn.length > 0 && rootsNorm.some(r => pathRelated(pn, r));
+  });
+}
+
+/**
+ * 現在のワークスペースに関連するセッションだけに絞る（Issue #44）。
+ * 上限（供給源ごとに新しい順30件）の適用より前に絞る前提の関数。
+ */
+export function filterSessionsToWorkspace(list: SessionInfo[], roots: string[]): SessionInfo[] {
+  return list.filter(s => sessionMatchesWorkspace(s, roots));
+}
+
 export function capSessionsBySource(sessions: SessionInfo[], perSource: number): SessionInfo[] {
   const counts = new Map<string, number>();
   const out: SessionInfo[] = [];

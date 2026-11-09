@@ -124,6 +124,24 @@
         "command": "skilltrace.toggleExpandCollapse",
         "icon": "$(unfold)",
         "title": "%command.toggleExpandCollapse%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.toggleWorkspaceFilter",
+        "icon": "$(filter)",
+        "title": "%command.toggleWorkspaceFilter%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.enableWorkspaceFilter",
+        "icon": "$(filter-filled)",
+        "title": "%command.enableWorkspaceFilter%"
+      },
+      {
+        "category": "SkillTrace",
+        "command": "skilltrace.disableWorkspaceFilter",
+        "icon": "$(filter)",
+        "title": "%command.disableWorkspaceFilter%"
       }
     ],
     "configuration": {
@@ -142,6 +160,11 @@
           "type": "boolean",
           "default": false,
           "description": "%config.documentIncludeNotes%"
+        },
+        "skilltrace.filterToCurrentWorkspace": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.filterToCurrentWorkspace%"
         }
       },
       "title": "SkillTrace-Solo"
@@ -177,6 +200,18 @@
           "group": "navigation@9",
           "order": 9,
           "when": "view == skilltrace-tree"
+        },
+        {
+          "command": "skilltrace.disableWorkspaceFilter",
+          "group": "navigation@2",
+          "order": 2,
+          "when": "view == skilltrace-tree && skilltrace.workspaceFilter"
+        },
+        {
+          "command": "skilltrace.enableWorkspaceFilter",
+          "group": "navigation@2",
+          "order": 2,
+          "when": "view == skilltrace-tree && !skilltrace.workspaceFilter"
         }
       ],
       "view/item/context": [
@@ -281,6 +316,6 @@
     "check-version-bump": "node scripts/check-version.js --check-bump",
     "update-version": "node scripts/update-version.js"
   },
-  "version": "1.11.0",
+  "version": "1.12.0",
   "icon": "icon.png"
 }

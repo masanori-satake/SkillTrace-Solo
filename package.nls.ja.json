@@ -22,5 +22,9 @@
   "command.toggleExpandCollapse": "すべて展開／折りたたむ",
   "skilltrace.description": "GitHub Copilot と Amazon Kiro がスキル実行時に実際に読み込んだファイルを可視化します。Copilot / Kiro のセッション記録をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測、コンテキストウィンドウ使用量を表示します。100%ローカル処理、トラッキングなし。Agent Skills の計測ツール兼学習補助ツールです。",
   "command.showSkillTotals": "スキル別集計を表示",
-  "command.showFileUsage": "ファイル別の到達を見る"
+  "command.showFileUsage": "ファイル別の到達を見る",
+  "config.filterToCurrentWorkspace": "履歴を、現在開いているワークスペースフォルダーに関連するセッションだけに絞ります。ワークスペースが記録から分からないセッションは、オンの間は表示されません。履歴ビューのタイトルバーのフィルターボタンでも切り替えできます。",
+  "command.toggleWorkspaceFilter": "ワークスペース絞り込みを切り替え",
+  "command.enableWorkspaceFilter": "履歴を現在のワークスペースに絞る",
+  "command.disableWorkspaceFilter": "全セッションを表示（絞り込みオフ）"
 }
