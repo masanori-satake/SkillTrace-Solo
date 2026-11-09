@@ -160,6 +160,14 @@ function appendAtPath(state: unknown, path: unknown[], value: unknown, indexHint
   else target.push(value);
 }
 
+/** URI オブジェクトの path は既にデコード済みの文字列表記なので、
+ *  パーセントデコードで文字を壊さず、そのまま表示用表記へ寄せる */
+function uriObjectPath(p: string): string {
+  let s = String(p).replace(/\\/g, "/");
+  if (/^\/[a-zA-Z]:/.test(s)) s = s.slice(1);
+  return s;
+}
+
 /** ツール呼び出しパートから、読み取り対象のパスと「スキル読み取り」かを取り出す */
 function extractRead(part: Json): { readPath: string | null; skillRead: boolean } {
   const msg = isObj(part.invocationMessage) ? part.invocationMessage : isObj(part.pastTenseMessage) ? part.pastTenseMessage : null;
@@ -170,7 +178,7 @@ function extractRead(part: Json): { readPath: string | null; skillRead: boolean 
   if (isObj(msg.uris)) {
     for (const u of Object.values(msg.uris)) {
       if (isObj(u) && typeof u.path === "string") {
-        readPath = vsDisplayPath(u.path);
+        readPath = uriObjectPath(u.path);
         if (u.query === "vscodeLinkType=skill") skillRead = true;
         break;
       }
@@ -179,7 +187,8 @@ function extractRead(part: Json): { readPath: string | null; skillRead: boolean 
   if (!readPath) {
     // uris が無い表記のときは、メッセージ内の markdown リンク先から拾う
     const m = value.match(/\((file:\/\/[^)\s]+)\)/);
-    if (m) readPath = vsDisplayPath(m[1].replace(/\?[^)]*$/, ""));
+    // クエリとフラグメントは、デコードする前に取り除く
+    if (m) readPath = vsDisplayPath(m[1].replace(/[?#].*$/, ""));
   }
   return { readPath, skillRead };
 }

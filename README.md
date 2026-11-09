@@ -67,7 +67,7 @@ Current version: **v1.10.0**
    - The "Skill totals" entry at the top of the history aggregates the sessions shown in the history (up to 30 most recent per source) by skill: sessions, activations, and measured consumption (Kiro / Copilot Chat credits, Copilot tokens), with different units never added together. Credits and token counts are whole-session measurements, not apportioned per skill — when several skills ran in one session, the same session total counts toward each of them.
 
 7. **Per-file reach across sessions**
-   - From the skill totals, each skill opens a per-file table: across the history sessions in which the skill was activated, how many sessions read each reference file, only mentioned it, or show no recorded reach, with the last-read date. The file list comes from the skill's reference graph in the currently open workspace. This is the evidence for deciding how a skill's referenced information should be split — files nothing ever reaches are candidates to fold back, and files always read together are candidates to merge.
+   - From the skill totals, each skill opens a per-file table: across the history sessions in which the skill was activated, how many sessions read each reference file, only mentioned it, or show no recorded reach, with the last-read date. The file list comes from the skill's reference graph in the currently open workspace. This is evidence for deciding how a skill's referenced information should be split. A file with no recorded reach is not thereby unread or unneeded — it may be read in sessions outside the aggregated set — so treat it as a candidate to check individually before folding anything back. The counts are per file: whether files were read together in the same session cannot be told from this table, so check individual sessions for co-reading.
 
 8. **A learning aid, not just a meter**
    - Bundled learning docs (`docs/learning/`) explain the concepts behind the displays — "read" vs "loaded into context", token kinds and credits, and how Copilot's and Kiro's session records compare — using real session numbers. Open them from the "SkillTrace: Open Learning Docs" command.
@@ -249,7 +249,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
    - 履歴の先頭にある「スキル別集計」から、履歴に表示中のセッション（供給源ごとに新しい順30件まで）をスキル単位に集計できます。セッション数、起動回数、実測の消費（Kiro / Copilot Chat のクレジット、Copilot のトークン）で、単位の異なる値は合算しません。クレジットとトークンはセッション全体の実測で、スキルへの按分はしていません。複数のスキルが起動したセッションでは、同じセッション合計が各スキルに入ります。
 
 7. **ファイル単位の横断集計**
-   - スキル別集計から、スキルごとに参照ファイル単位の表を開けます。そのスキルが起動した履歴セッションを横断して、ファイルごとに「読み込まれた／言及のみ／到達なし」のセッション数と最終到達日を示します。ファイルの一覧は、今開いているワークスペースのスキルの参照グラフから取ります。スキルの参照情報をどう分割するかの判断材料で、到達のないファイルは畳む候補、常に一緒に読まれるファイルは統合候補になります。
+   - スキル別集計から、スキルごとに参照ファイル単位の表を開けます。そのスキルが起動した履歴セッションを横断して、ファイルごとに「読み込まれた／言及のみ／到達なし」のセッション数と最終到達日を示します。ファイルの一覧は、今開いているワークスペースのスキルの参照グラフから取ります。スキルの参照情報をどう分割するかの判断材料です。記録上「到達なし」のファイルが未読・不要という意味ではありません（集計対象外のセッションで読まれている可能性があります）。畳み戻す前に個別に確認するための候補として扱ってください。件数はファイル単位の集計で、同じセッションで一緒に読まれたかどうかはこの表からは分かりません。同時読み込みの関係は個別のセッションで確認してください。
 
 8. **計測ツールであり、学習の道具でもある**
    - 同梱の学習ドキュメント（`docs/learning/`）が、表示の背後にある概念 — 「読んだ」と「コンテキストに読み込まれた」の違い、トークンの種類とクレジット、Copilot と Kiro のセッション記録の対比 — を、実セッションの数値で解説します。「SkillTrace: 学習ドキュメントを開く」コマンドから開けます。

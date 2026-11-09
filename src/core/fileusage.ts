@@ -246,8 +246,11 @@ export function extractFileUsageVSCodeText(text: string): SessionFileUsage {
       }
       const n = normPath(t.readPath);
       for (const s of skills.values()) {
-        const rels = s.dir ? relsUnder(n, s.dir) : relsAfterSegment(n, s.name.toLowerCase());
-        for (const rel of rels) noteRead(s, rel, at);
+        // 読み取りパス同士の突き合わせは正確に行う（空白を含むパスでも
+        // 切れない）。フォルダが未確定の場合だけ名前セグメントで予備判定する
+        const rel = relExact(n, s.dir);
+        if (rel) { noteRead(s, rel, at); continue; }
+        if (!s.dir) for (const r of relsAfterSegment(n, s.name.toLowerCase())) noteRead(s, r, at);
       }
     }
   }

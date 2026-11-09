@@ -116,3 +116,34 @@ test("kiro: inclusions count as reads only for activated skills (Issue #41 revie
   // 起動も読み取りも無い other-probe は、取り込みに現れても登録されない
   assert.ok(!u.skills.some(x => x.name === "other-probe"));
 });
+
+test("vscode: read paths with spaces match the skill folder exactly (Issue #41 review)", async () => {
+  const { extractFileUsageVSCodeText } = await import("../core/fileusage.js");
+  const uri = (path: string, query?: string) => ({
+    "$mid": 1, path, scheme: "file", ...(query ? { query } : {}),
+  });
+  const part = (id: string, value: string, u: Record<string, unknown>) => ({
+    kind: "toolInvocationSerialized", toolId: "copilot_readFile", toolCallId: id,
+    startedAt: 1794200002000, isComplete: true, invocationMessage: { value, uris: u },
+  });
+  const snapshot = {
+    kind: 0,
+    v: {
+      sessionId: "space-test", creationDate: 1794200000000,
+      requests: [{
+        requestId: "r1", timestamp: 1794200001000, message: { text: "space skill を使って" },
+        response: [
+          part("t1", "Reading skill [space skill](file:///c%3A/ws/.github/skills/space%20skill/SKILL.md?vscodeLinkType%3Dskill)",
+            { "file:///c%3A/ws/.github/skills/space%20skill/SKILL.md?vscodeLinkType%3Dskill": uri("/c:/ws/.github/skills/space skill/SKILL.md", "vscodeLinkType=skill") }),
+          part("t2", "Reading file",
+            { "file:///c%3A/ws/.github/skills/space%20skill/references/a%20b.md": uri("/c:/ws/.github/skills/space skill/references/a b.md") }),
+        ],
+      }],
+    },
+  };
+  const u = extractFileUsageVSCodeText(JSON.stringify(snapshot));
+  const s = u.skills.find(x => x.name === "space skill");
+  assert.ok(s);
+  assert.ok(s.readRels.has("skill.md"));
+  assert.ok(s.readRels.has("references/a b.md"), JSON.stringify([...s.readRels.keys()]));
+});

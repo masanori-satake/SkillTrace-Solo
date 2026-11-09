@@ -393,7 +393,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       summaryPanel = vscode.window.createWebviewPanel(
         "skilltraceSummary", title, vscode.ViewColumn.Beside,
-        { enableScripts: true, enableCommandUris: true, retainContextWhenHidden: true },
+        { enableScripts: true, enableCommandUris: ["skilltrace.showSkillTotals", "skilltrace.showFileUsage"], retainContextWhenHidden: true },
       );
       summaryPanel.onDidDispose(() => { summaryPanel = null; });
       summaryPanel.webview.html = html;
