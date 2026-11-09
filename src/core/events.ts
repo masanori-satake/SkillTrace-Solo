@@ -21,6 +21,15 @@ export const KNOWN_TYPES = new Set([
   "permission.requested", "permission.completed", "hook.start", "hook.end",
   "skill.invoked", "skill.invoked_ref", "skill.context_delivered_ref",
   "session.shutdown",
+  // 2026-11-09 の実セッション採取で確認した種別。新しい Copilot ランタイムが
+  // 付けるモデル呼び出し層（model.*）と、モデル変更・通知・権限変更の通知系。
+  // 起動・読み取り・使用量の証拠は従来の種別（skill.invoked /
+  // tool.execution_* / session.usage_record）側に残るため、ここでは
+  // 「未知ではない」とだけ扱い、個別のパースはしない
+  "model.turn_started", "model.turn_ended", "model.model_call_started",
+  "model.model_call_success", "model.response", "model.message",
+  "model.messages_snapshot", "model.captured_assignment_context",
+  "session.model_change", "session.permissions_changed", "system.notification",
 ]);
 
 // 文字列を再帰的に全部集める。値だけでなくキー名も対象（参照がキー側に入る形式でも拾う）

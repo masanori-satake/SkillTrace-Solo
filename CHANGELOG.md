@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.1] - 2026-11-09
+
+### Fixed
+
+- Sessions recorded by newer Copilot runtimes no longer trigger the "unknown event types" warning: the model-call layer (`model.*`, 8 types) plus `session.model_change`, `session.permissions_changed`, and `system.notification` — 263 of 1,230 events (21%) in a sampled real session — are now recognized. Skill, read, and usage evidence continues to come from the established event types.
+
+### 修正 (Fixed)
+
+- 新しい Copilot ランタイムが記録したセッションで「未知のイベント種別」の警告が出ないようにした。モデル呼び出し層（model.* の8種）と session.model_change / session.permissions_changed / system.notification を既知に加えた（実セッションの採取では 1,230 件中 263 件・21% がこの層だった）。スキル起動・読み取り・使用量の証拠は従来の種別側に残っている。
+
 ## [1.6.0] - 2026-11-09
 
 ### Changed

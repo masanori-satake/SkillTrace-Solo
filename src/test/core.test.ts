@@ -380,3 +380,26 @@ test("copilot: history labels read invocation names from the record itself", () 
     assert.deepEqual(scanInvokedSkillNames(p, []), []);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("health: the model.* event layer of newer Copilot runtimes is known", () => {
+  // 2026-11-09 の実セッション採取（種別と件数のみ）で確認した構成。
+  // model.* 層が未知扱いだと 21% の警告が出ていた
+  const lines = [
+    { type: "session.start", data: {} },
+    { type: "model.turn_started", data: {} },
+    { type: "model.model_call_started", data: {} },
+    { type: "model.message", data: {} },
+    { type: "model.response", data: {} },
+    { type: "model.model_call_success", data: {} },
+    { type: "model.messages_snapshot", data: {} },
+    { type: "model.captured_assignment_context", data: {} },
+    { type: "model.turn_ended", data: {} },
+    { type: "session.model_change", data: {} },
+    { type: "system.notification", data: {} },
+    { type: "session.permissions_changed", data: {} },
+    { type: "session.shutdown", data: {} },
+  ];
+  const parsed = parseEventsText(lines.map(l => JSON.stringify(l)).join("\n"));
+  assert.equal(parsed.health.unknownRatio, 0);
+  assert.deepEqual(parsed.health.unknownEventTypes, {});
+});
