@@ -310,7 +310,7 @@ function workspaceHintOf(hashDir: string): string | null {
 
 /** 列挙用の軽量スキャン: 先頭 1MB だけ読み、ヘッダーと customTitle だけ拾う
  *  （chatSessions のファイルは数 MB になりうるため、履歴表示で全文は読まない） */
-function lightScan(filePath: string): { title: string | null; hasRequests: boolean } {
+function lightScan(filePath: string): { title: string | null; hasRequests: boolean } | null {
   let title: string | null = null;
   let hasRequests = false;
   try {
@@ -358,18 +358,20 @@ function lightScan(filePath: string): { title: string | null; hasRequests: boole
       }
       if (leftover) checkLine(leftover);
     } finally { closeSync(fd); }
-  } catch { /* 読めなければタイトルなし・リクエストなし */ }
+  } catch { return null; }
   return { title, hasRequests };
 }
 
 /** 列挙用タイトルのキャッシュ（ファイルパス + mtimeMs が同じなら再スキャンしない）。
  *  履歴の再描画のたびに全セッションを lightScan すると、件数が多い環境で重くなる */
 const scanCache = new Map<string, { mtimeMs: number; title: string | null; hasRequests: boolean }>();
-function cachedScan(eventsPath: string, mtimeMs: number): { title: string | null; hasRequests: boolean } {
+function cachedScan(eventsPath: string, mtimeMs: number): { title: string | null; hasRequests: boolean } | null {
   const hit = scanCache.get(eventsPath);
   if (hit && hit.mtimeMs === mtimeMs) return hit;
   const scan = lightScan(eventsPath);
-  scanCache.set(eventsPath, { mtimeMs, ...scan });
+  // 読み取り失敗はキャッシュしない（失敗を「空セッション」の確定として
+  // 保存すると、読めるようになっても mtime が変わるまで隠れたままになる）
+  if (scan) scanCache.set(eventsPath, { mtimeMs, ...scan });
   return scan;
 }
 
@@ -394,7 +396,7 @@ export function listVSCodeChatSessions(storageDir: string): SessionInfo[] {
         const scan = cachedScan(eventsPath, st.mtimeMs);
         // VS Code はチャットを開いただけでリクエストの無いセッションファイルを
         // 作る。中身の無い履歴が増えるだけなので、列挙から外す
-        if (!scan.hasRequests) continue;
+        if (!scan?.hasRequests) continue;
         out.push({
           id: f.replace(/\.jsonl$/, ""),
           dir: chatDir,
