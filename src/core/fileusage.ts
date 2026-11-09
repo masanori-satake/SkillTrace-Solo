@@ -65,6 +65,13 @@ function relsUnder(text: string, dirNorm: string): string[] {
   return out;
 }
 
+/** 正確なパス同士の突き合わせ（空白を含むパスでも切れない） */
+function relExact(pathNorm: string, dirNorm: string): string | null {
+  if (!dirNorm) return null;
+  const prefix = dirNorm.endsWith("/") ? dirNorm : dirNorm + "/";
+  return pathNorm.startsWith(prefix) ? pathNorm.slice(prefix.length) : null;
+}
+
 /** フォルダが不明な場合の予備: /スキル名/ の後ろを相対パスとして取り出す */
 function relsAfterSegment(text: string, nameLower: string): string[] {
   return relsUnder(text, "/" + nameLower);
@@ -135,34 +142,75 @@ export function extractFileUsageKiroText(text: string): SessionFileUsage {
     if (dir && !s.dir) s.dir = dir;
     return s;
   };
-  for (const a of parsed.activations) ensure(a.name, "");
-  // SKILL.md の読み取りパスからフォルダを確定する（開示だけでは名前しか無い）
+  // 起動は SKILL.md が読み込まれたことと同義（到達の確度「高」の決定どおり）
+  for (const a of parsed.activations) noteRead(ensure(a.name, ""), "skill.md", a.at);
+  // 読み取り証拠は tool_call の args.path / args.paths から取る。文字列値そのもの
+  // を使うので、空白を含むパスでも途中で切れない。文面の走査は言及の判定にだけ使う
+  const readPaths: { path: string; at: string | null }[] = [];
   for (const ev of parsed.events) {
-    for (const str of ev.strings) {
-      const n = normPath(str);
-      if (!n.endsWith("/skill.md")) continue;
-      const dir = dirOfSkillMd(n);
-      const name = dir.split("/").pop() ?? "";
-      if (name) ensure(name, dir);
+    if (ev.type !== "tool_call") continue;
+    const p = ev.payload;
+    const isRead = String(p.kind ?? "") === "read"
+      || /read/.test(String(p.toolName ?? ""))
+      || /read/.test(String(p.actionType ?? ""));
+    if (!isRead) continue;
+    const args = p.args as Record<string, unknown> | undefined;
+    if (!args) continue;
+    if (typeof args.path === "string") readPaths.push({ path: args.path, at: ev.at });
+    if (Array.isArray(args.paths)) {
+      for (const x of args.paths) if (typeof x === "string") readPaths.push({ path: x, at: ev.at });
     }
   }
-  const list = [...skills.values()];
-  if (!list.length) return { startedAt: parsed.startedAt, skills: [] };
-  const collect = (strings: string[], read: boolean, at: string | null): void => {
-    for (const s of list) {
-      if (!s.dir) continue;
-      for (const str of strings) {
-        for (const rel of relsUnder(str, s.dir)) {
-          if (read) noteRead(s, rel, at);
-          else s.mentionRels.add(rel);
-        }
+  // SKILL.md の読み取りからフォルダとスキルを確定する（言及だけでは登録しない）
+  for (const r of readPaths) {
+    const n = normPath(r.path);
+    if (!n.endsWith("/skill.md")) continue;
+    const dir = dirOfSkillMd(n);
+    const name = dir.split("/").pop() ?? "";
+    if (name) noteRead(ensure(name, dir), "skill.md", r.at);
+  }
+  // 残りの読み取りを、フォルダ配下として帰属させる。フォルダ未確定でも、
+  // 起動済みスキルの名前セグメントを含む読み取りパスからは逆引きできる
+  for (const r of readPaths) {
+    const n = normPath(r.path);
+    if (n.endsWith("/skill.md")) continue;
+    let attributed = false;
+    for (const s of skills.values()) {
+      const rel = relExact(n, s.dir);
+      if (rel) { noteRead(s, rel, r.at); attributed = true; }
+    }
+    if (attributed) continue;
+    for (const s of skills.values()) {
+      const seg = "/" + s.name.toLowerCase() + "/";
+      const idx = n.indexOf(seg);
+      if (idx < 0) continue;
+      if (!s.dir) s.dir = n.slice(0, idx + seg.length - 1);
+      noteRead(s, n.slice(idx + seg.length), r.at);
+    }
+  }
+  // 常時文脈への取り込みは、起動または読み取りで登録済みのスキルについてだけ
+  // 読み取り証拠として数える（未起動スキルの取り込みは数えない）
+  const registered = [...skills.values()];
+  for (const inc of parsed.inclusions) {
+    for (const doc of inc.documents) {
+      const n = normPath(displayPath(doc));
+      for (const s of registered) {
+        const rel = relExact(n, s.dir);
+        if (rel) { noteRead(s, rel, inc.at); continue; }
+        const seg = "/" + s.name.toLowerCase() + "/";
+        const idx = n.indexOf(seg);
+        if (idx >= 0) noteRead(s, n.slice(idx + seg.length), inc.at);
       }
     }
-  };
-  for (const ev of parsed.events) collect(ev.strings, ev.type === "tool_call", ev.at);
-  // 常時文脈への取り込みは、読み込まれたものとして数える
-  for (const inc of parsed.inclusions) {
-    for (const doc of inc.documents) collect([displayPath(doc)], true, inc.at);
+  }
+  // 言及は登録済みスキルについてだけ、文面の走査で数える
+  const withDir = registered.filter(s => s.dir);
+  for (const ev of parsed.events) {
+    for (const s of withDir) {
+      for (const str of ev.strings) {
+        for (const rel of relsUnder(str, s.dir)) s.mentionRels.add(rel);
+      }
+    }
   }
   return { startedAt: parsed.startedAt, skills: finish(skills) };
 }

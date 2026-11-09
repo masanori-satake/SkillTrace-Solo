@@ -223,6 +223,12 @@
           "command": "skilltrace.copySkillSummaryMarkdown",
           "when": "view == skilltrace-tree && viewItem == skilltraceSkill"
         }
+      ],
+      "commandPalette": [
+        {
+          "command": "skilltrace.showFileUsage",
+          "when": "false"
+        }
       ]
     },
     "views": {

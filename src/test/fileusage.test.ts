@@ -75,3 +75,44 @@ test("aggregation marks files never reached in any session (Issue #41)", async (
   // 並びは到達なしの多い順（delta が先頭側に来る）
   assert.equal(usage.rows[0].rel, "references/delta.md");
 });
+
+test("kiro: a skill only mentioned in text is not registered (Issue #41 review)", async () => {
+  const { extractFileUsageKiroText } = await import("../core/fileusage.js");
+  const line = (payload: unknown) => JSON.stringify({ id: "x", timestamp: "2026-11-10T00:00:00.000Z", payload });
+  const text = [
+    line({ type: "user", content: "ghost スキルの C:/ws/.kiro/skills/ghost/SKILL.md と references/g1.md を見ておいて" }),
+    line({ type: "assistant", content: "ghost/SKILL.md には触れていません" }),
+  ].join("\n");
+  const u = extractFileUsageKiroText(text);
+  assert.equal(u.skills.length, 0);
+});
+
+test("kiro: read paths with spaces are kept whole (Issue #41 review)", async () => {
+  const { extractFileUsageKiroText } = await import("../core/fileusage.js");
+  const line = (payload: unknown) => JSON.stringify({ id: "x", timestamp: "2026-11-10T00:00:00.000Z", payload });
+  const text = [
+    line({ type: "tool_call", toolName: "read_file", kind: "read", actionType: "read_files", args: { path: "C:/work/my skill pack/SKILL.md" } }),
+    line({ type: "tool_call", toolName: "read_file", kind: "read", actionType: "read_files", args: { path: "C:/work/my skill pack/references/a b.md" } }),
+  ].join("\n");
+  const u = extractFileUsageKiroText(text);
+  const s = u.skills.find(x => x.name === "my skill pack");
+  assert.ok(s);
+  assert.ok(s.readRels.has("skill.md"));
+  assert.ok(s.readRels.has("references/a b.md"), JSON.stringify([...s.readRels.keys()]));
+});
+
+test("kiro: inclusions count as reads only for activated skills (Issue #41 review)", async () => {
+  const { extractFileUsageKiroText } = await import("../core/fileusage.js");
+  const line = (payload: unknown) => JSON.stringify({ id: "x", timestamp: "2026-11-10T00:00:00.000Z", payload });
+  const text = [
+    line({ type: "tool_call", toolName: "disclose_context", actionType: "disclose_context", args: { name: "inc-probe" } }),
+    line({ type: "steering_inclusion", documents: ["file:///C:/ws/.kiro/skills/inc-probe/references/inc.md", "file:///C:/ws/.kiro/skills/other-probe/references/o.md"] }),
+  ].join("\n");
+  const u = extractFileUsageKiroText(text);
+  const s = u.skills.find(x => x.name === "inc-probe");
+  assert.ok(s);
+  assert.ok(s.readRels.has("skill.md"));
+  assert.ok(s.readRels.has("references/inc.md"));
+  // 起動も読み取りも無い other-probe は、取り込みに現れても登録されない
+  assert.ok(!u.skills.some(x => x.name === "other-probe"));
+});
