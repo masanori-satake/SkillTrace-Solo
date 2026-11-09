@@ -61,6 +61,27 @@ test("aggregate vscode: スキル読み取りを有無で数え、リクエス�
   assert.ok(Math.abs((u.credits ?? 0) - 0.75) < 1e-9);
 });
 
+test("aggregate vscode: 同じスキルの再読み取りでは回数は 1 のまま、lastAt は最新の読み取り時刻になる", () => {
+  const uri = "file:///c%3A/work/.github/skills/MySkill/SKILL.md?vscodeLinkType%3Dskill";
+  const part = (startedAt: number) => ({
+    kind: "toolInvocationSerialized", toolId: "copilot_readFile", toolCallId: `c${startedAt}`, isComplete: true,
+    startedAt, completedAt: startedAt + 1,
+    invocationMessage: {
+      value: `Reading skill [MySkill](${uri})`,
+      uris: { [decodeURIComponent(uri)]: { $mid: 1, path: "/c:/work/.github/skills/MySkill/SKILL.md", scheme: "file", query: "vscodeLinkType=skill" } },
+    },
+  });
+  const t1 = Date.parse("2026-11-09T02:00:00.000Z");
+  const t2 = Date.parse("2026-11-09T03:30:00.000Z");
+  const text = [
+    JSON.stringify({ kind: 0, v: { version: 3, creationDate: t1 - 1000, sessionId: "v2", requests: [] } }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r1", timestamp: t1, message: { text: "hi" }, response: [part(t1)], promptTokens: 1, completionTokens: 1, copilotCredits: 0 }] }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r2", timestamp: t2, message: { text: "again" }, response: [part(t2)], promptTokens: 1, completionTokens: 1, copilotCredits: 0 }] }),
+  ].join("\n");
+  const u = aggregateVSCodeSessionText(text, { sessionId: "v2", mtimeMs: t2 });
+  assert.deepEqual(u.skills, [{ name: "MySkill", activations: 1, lastAt: "2026-11-09T03:30:00.000Z" }]);
+});
+
 test("merge: 供給源を混ぜずに寄せ、セッション消費は各スキルにセッション合計で入る", () => {
   const rows = mergeSkillTotals([
     { sessionId: "k1", source: "kiro", at: "2026-11-09T02:00:00.000Z", mtimeMs: 2000, skills: [{ name: "alpha", activations: 2, lastAt: "2026-11-09T03:30:00.000Z" }, { name: "beta", activations: 1, lastAt: null }], credits: 0.75 },

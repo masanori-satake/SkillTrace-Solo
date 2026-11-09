@@ -188,7 +188,7 @@ function extractRead(part: Json): { readPath: string | null; skillRead: boolean 
  *  名前の大文字小文字は保持する（normPath の小文字化を通すと、発見した
  *  スキルのディレクトリ名と一致せず「未発見」の注記が誤って付くため）。
  *  "skills" と "SKILL.md" の照合だけ大文字小文字を区別しない */
-function skillNameFromPath(p: string): string | null {
+export function skillNameFromPath(p: string): string | null {
   const segs = vsDisplayPath(p).split("/").filter(x => x !== "" && x !== ".");
   const lowered = segs.map(x => x.toLowerCase());
   const i = lowered.lastIndexOf("skills");

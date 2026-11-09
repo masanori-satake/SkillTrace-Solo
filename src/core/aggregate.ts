@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { parseEventsText } from "./events";
 import { parseKiroMessages } from "./kiro";
 import type { SessionInfo } from "./sessions";
-import { parseVSCodeChatSessionText } from "./vscode";
+import { parseVSCodeChatSessionText, skillNameFromPath } from "./vscode";
 
 /** 1セッション分の、集計に必要な最小限の実測 */
 export interface SessionSkillUsage {
@@ -99,11 +99,24 @@ export function aggregateVSCodeSessionText(text: string, meta: { sessionId: stri
   const parsed = parseVSCodeChatSessionText(text);
   let credits = 0;
   for (const r of parsed.requests) credits += r.credits;
+  // スキルごとの最後の読み取り時刻は、リクエストのツール呼び出しから直接取る。
+  // parse 側の activations は「最初の起動」を保持し、トレースの到達順の
+  // 基準に使われているため、そちらは変えない
+  const lastReadAt = new Map<string, string>();
+  for (const r of parsed.requests) {
+    for (const t of r.tools) {
+      if (!t.skillRead || !t.readPath || !t.startedAt) continue;
+      const name = skillNameFromPath(t.readPath);
+      if (!name) continue;
+      const cur = lastReadAt.get(name);
+      if (!cur || t.startedAt > cur) lastReadAt.set(name, t.startedAt);
+    }
+  }
   return {
     sessionId: meta.sessionId, source: "vscode",
     at: parsed.startedAt, mtimeMs: meta.mtimeMs,
     // activations は名前ごとに重複を除いた形で返る（記録に再起動の区別が無い）
-    skills: parsed.activations.map(a => ({ name: a.name, activations: 1, lastAt: a.at })),
+    skills: parsed.activations.map(a => ({ name: a.name, activations: 1, lastAt: lastReadAt.get(a.name) ?? a.at })),
     credits,
   };
 }
