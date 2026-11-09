@@ -19,9 +19,9 @@ export interface SessionSkillUsage {
   /** セッション開始時刻（ISO。取れなければ null） */
   at: string | null;
   mtimeMs: number;
-  /** 起動したスキルと、そのセッション内での起動回数。
-   *  Copilot Chat は記録の性質上、セッション内の有無しか分からないため 1 になる */
-  skills: { name: string; activations: number }[];
+  /** 起動したスキルと、そのセッション内での起動回数と最後の起動時刻。
+   *  Copilot Chat は記録の性質上、セッション内の有無しか分からないため回数は 1 になる */
+  skills: { name: string; activations: number; lastAt: string | null }[];
   /** Kiro / Copilot Chat のクレジット実測（供給源ごとに別物として扱う） */
   credits?: number;
   /** Copilot CLI のトークン実測（usage_record の積算。入力はキャッシュ分を含む） */
@@ -49,22 +49,27 @@ export interface SkillTotal {
 
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-function countByName(names: string[]): { name: string; activations: number }[] {
-  const map = new Map<string, number>();
-  for (const n of names) map.set(n, (map.get(n) ?? 0) + 1);
-  return [...map.entries()].map(([name, activations]) => ({ name, activations }));
+function countByName(entries: { name: string; at: string | null }[]): { name: string; activations: number; lastAt: string | null }[] {
+  const map = new Map<string, { activations: number; lastAt: string | null }>();
+  for (const e of entries) {
+    const cur = map.get(e.name) ?? { activations: 0, lastAt: null };
+    cur.activations++;
+    if (e.at && (!cur.lastAt || e.at > cur.lastAt)) cur.lastAt = e.at;
+    map.set(e.name, cur);
+  }
+  return [...map.entries()].map(([name, v]) => ({ name, activations: v.activations, lastAt: v.lastAt }));
 }
 
 /** Copilot CLI の events.jsonl から集計分を取り出す */
 export function aggregateCopilotSessionText(text: string, meta: { sessionId: string; mtimeMs: number }): SessionSkillUsage {
   const parsed = parseEventsText(text);
-  const names: string[] = [];
+  const entries: { name: string; at: string | null }[] = [];
   let inputTokens = 0;
   let outputTokens = 0;
   for (const ev of parsed.events) {
     if (ev.type === "skill.invoked") {
       const n = ev.data["name"];
-      if (typeof n === "string" && n) names.push(n);
+      if (typeof n === "string" && n) entries.push({ name: n, at: ev.at });
     } else if (ev.type === "session.usage_record") {
       inputTokens += num(ev.data["inputTokens"]);
       outputTokens += num(ev.data["outputTokens"]);
@@ -73,7 +78,7 @@ export function aggregateCopilotSessionText(text: string, meta: { sessionId: str
   return {
     sessionId: meta.sessionId, source: "copilot",
     at: parsed.startedAt, mtimeMs: meta.mtimeMs,
-    skills: countByName(names),
+    skills: countByName(entries),
     inputTokens, outputTokens,
   };
 }
@@ -84,7 +89,7 @@ export function aggregateKiroSessionText(text: string, meta: { sessionId: string
   return {
     sessionId: meta.sessionId, source: "kiro",
     at: parsed.startedAt, mtimeMs: meta.mtimeMs,
-    skills: countByName(parsed.activations.map(a => a.name)),
+    skills: countByName(parsed.activations.map(a => ({ name: a.name, at: a.at }))),
     credits: parsed.creditsTotal,
   };
 }
@@ -98,7 +103,7 @@ export function aggregateVSCodeSessionText(text: string, meta: { sessionId: stri
     sessionId: meta.sessionId, source: "vscode",
     at: parsed.startedAt, mtimeMs: meta.mtimeMs,
     // activations は名前ごとに重複を除いた形で返る（記録に再起動の区別が無い）
-    skills: parsed.activations.map(a => ({ name: a.name, activations: 1 })),
+    skills: parsed.activations.map(a => ({ name: a.name, activations: 1, lastAt: a.at })),
     credits,
   };
 }
@@ -120,8 +125,11 @@ export function aggregateSessionFile(info: SessionInfo): SessionSkillUsage | nul
 export function mergeSkillTotals(usages: SessionSkillUsage[]): SkillTotal[] {
   const map = new Map<string, SkillTotal & { sessionIds: Set<string> }>();
   for (const u of usages) {
-    const usedMs = (u.at ? Date.parse(u.at) : NaN) || u.mtimeMs;
     for (const s of u.skills) {
+      // 最終利用はスキル自体の最後の起動時刻で見る。取れなければ
+      // セッション開始時刻、それも無ければ記録の更新時刻へ落とす
+      const usedMs = (s.lastAt ? Date.parse(s.lastAt) : NaN) || (u.at ? Date.parse(u.at) : NaN) || u.mtimeMs;
+      const usedAt = s.lastAt ?? u.at ?? new Date(u.mtimeMs).toISOString();
       let row = map.get(s.name);
       if (!row) {
         row = {
@@ -147,7 +155,7 @@ export function mergeSkillTotals(usages: SessionSkillUsage[]): SkillTotal[] {
       row.activations += s.activations;
       if (usedMs > row.lastUsedMs) {
         row.lastUsedMs = usedMs;
-        row.lastUsedAt = u.at ?? new Date(u.mtimeMs).toISOString();
+        row.lastUsedAt = usedAt;
       }
     }
   }

@@ -376,7 +376,12 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   let summaryPanel: vscode.WebviewPanel | null = null;
+  // 共有パネルへの表示要求の世代。集計のように時間がかかる処理は、開始時の
+  // 世代を覚えておき、完了時に世代が進んでいたら（後発の表示が勝っていたら）
+  // 自分の結果で上書きしない
+  let panelGeneration = 0;
   const showHtmlPanel = (title: string, html: string): void => {
+    panelGeneration++;
     try {
       if (summaryPanel) {
         summaryPanel.title = title;
@@ -450,6 +455,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // スキル別集計（Issue #31）: 履歴に表示中のセッションをその場で読み、
     // スキル単位に寄せてパネルに表示する。記録は読み取りのみ
     vscode.commands.registerCommand("skilltrace.showSkillTotals", async () => {
+      const generation = ++panelGeneration;
       const list = capSessionsBySource(sessions, 30);
       if (!list.length) {
         void vscode.window.showInformationMessage(`SkillTrace: ${L("履歴にセッションがありません", "No sessions in the history")}`);
@@ -468,7 +474,10 @@ export function activate(context: vscode.ExtensionContext): void {
             await new Promise<void>(resolve => setImmediate(resolve));
           }
           const rows = mergeSkillTotals(usages);
-          showHtmlPanel(L("スキル別集計", "Skill totals"), renderSkillTotalsHtml(rows, { scanned: usages.length, skipped }, LANG));
+          // 集計中に別のサマリ表示があったら、そちらを優先して上書きしない
+          if (generation === panelGeneration) {
+            showHtmlPanel(L("スキル別集計", "Skill totals"), renderSkillTotalsHtml(rows, { scanned: usages.length, skipped }, LANG));
+          }
         },
       );
     }),

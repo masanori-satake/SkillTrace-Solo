@@ -20,8 +20,8 @@ test("aggregate copilot: skill.invoked の名前で数え、usage_record を積�
   assert.equal(u.source, "copilot");
   assert.equal(u.at, "2026-11-09T01:00:00.000Z");
   assert.deepEqual(u.skills, [
-    { name: "alpha", activations: 2 },
-    { name: "beta", activations: 1 },
+    { name: "alpha", activations: 2, lastAt: "2026-11-09T01:05:00.000Z" },
+    { name: "beta", activations: 1, lastAt: "2026-11-09T01:06:00.000Z" },
   ]);
   assert.equal(u.inputTokens, 150);
   assert.equal(u.outputTokens, 15);
@@ -36,7 +36,7 @@ test("aggregate kiro: disclose_context を数え、usage_summary のクレジッ
   ].join("\n");
   const u = aggregateKiroSessionText(text, { sessionId: "k1", mtimeMs: 456 });
   assert.equal(u.source, "kiro");
-  assert.deepEqual(u.skills, [{ name: "alpha", activations: 2 }]);
+  assert.deepEqual(u.skills, [{ name: "alpha", activations: 2, lastAt: "2026-11-09T02:01:00.000Z" }]);
   assert.ok(Math.abs((u.credits ?? 0) - 0.75) < 1e-9);
 });
 
@@ -57,15 +57,15 @@ test("aggregate vscode: スキル読み取りを有無で数え、リクエス�
   ].join("\n");
   const u = aggregateVSCodeSessionText(text, { sessionId: "v1", mtimeMs: 789 });
   assert.equal(u.source, "vscode");
-  assert.deepEqual(u.skills, [{ name: "MySkill", activations: 1 }]);
+  assert.deepEqual(u.skills, [{ name: "MySkill", activations: 1, lastAt: "1970-01-01T00:00:03.000Z" }]);
   assert.ok(Math.abs((u.credits ?? 0) - 0.75) < 1e-9);
 });
 
 test("merge: 供給源を混ぜずに寄せ、セッション消費は各スキルにセッション合計で入る", () => {
   const rows = mergeSkillTotals([
-    { sessionId: "k1", source: "kiro", at: "2026-11-09T02:00:00.000Z", mtimeMs: 2000, skills: [{ name: "alpha", activations: 2 }, { name: "beta", activations: 1 }], credits: 0.75 },
-    { sessionId: "s1", source: "copilot", at: "2026-11-09T01:00:00.000Z", mtimeMs: 1000, skills: [{ name: "alpha", activations: 1 }], inputTokens: 150, outputTokens: 15 },
-    { sessionId: "v1", source: "vscode", at: null, mtimeMs: Date.parse("2026-11-10T00:00:00.000Z"), skills: [{ name: "beta", activations: 1 }], credits: 0.5 },
+    { sessionId: "k1", source: "kiro", at: "2026-11-09T02:00:00.000Z", mtimeMs: 2000, skills: [{ name: "alpha", activations: 2, lastAt: "2026-11-09T03:30:00.000Z" }, { name: "beta", activations: 1, lastAt: null }], credits: 0.75 },
+    { sessionId: "s1", source: "copilot", at: "2026-11-09T01:00:00.000Z", mtimeMs: 1000, skills: [{ name: "alpha", activations: 1, lastAt: "2026-11-09T01:30:00.000Z" }], inputTokens: 150, outputTokens: 15 },
+    { sessionId: "v1", source: "vscode", at: null, mtimeMs: Date.parse("2026-11-10T00:00:00.000Z"), skills: [{ name: "beta", activations: 1, lastAt: null }], credits: 0.5 },
   ]);
   assert.equal(rows.length, 2);
   const alpha = rows.find(r => r.name === "alpha")!;
@@ -81,7 +81,8 @@ test("merge: 供給源を混ぜずに寄せ、セッション消費は各スキ�
   assert.equal(alpha.chatCredits, 0);
   assert.equal(alpha.copilotInputTokens, 150);
   assert.equal(alpha.copilotOutputTokens, 15);
-  assert.equal(alpha.lastUsedAt, "2026-11-09T02:00:00.000Z");
+  // 最終利用はセッション開始時刻ではなく、スキル自体の最後の起動時刻（03:30）
+  assert.equal(alpha.lastUsedAt, "2026-11-09T03:30:00.000Z");
   // beta は Kiro セッションと Chat セッションに現れ、Kiro の消費 0.75 は
   // セッション合計として beta にも入る（按分しない仕様）
   assert.equal(beta.sessions, 2);
