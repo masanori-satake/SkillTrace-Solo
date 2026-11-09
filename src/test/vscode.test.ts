@@ -150,3 +150,18 @@ test("vscode activations keep the skill directory's letter case", () => {
   const parsed = parseVSCodeChatSessionText(text);
   assert.deepEqual(parsed.activations.map(a => a.name), ["MySkill"]);
 });
+
+test("vscode replay: dangerous keys in delta paths never touch Object.prototype", () => {
+  const text = [
+    JSON.stringify({ kind: 0, v: { version: 3, creationDate: 1000, sessionId: "s4", requests: [] } }),
+    JSON.stringify({ kind: 1, k: ["__proto__", "polluted"], v: "yes" }),
+    JSON.stringify({ kind: 1, k: ["constructor", "prototype", "polluted"], v: "yes" }),
+    JSON.stringify({ kind: 2, k: ["__proto__"], v: [{ polluted: "yes" }] }),
+    JSON.stringify({ kind: 1, k: ["customTitle"], v: "通常の更新は通る" }),
+  ].join("\n");
+  const parsed = parseVSCodeChatSessionText(text);
+  assert.equal(({} as Record<string, unknown>).polluted, undefined);
+  assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined);
+  assert.equal(parsed.title, "通常の更新は通る");
+  assert.equal(parsed.requests.length, 0);
+});

@@ -74,6 +74,12 @@ export function vsDisplayPath(raw: string): string {
   return s;
 }
 
+/** プロトタイプ汚染の防止: 記録ファイル由来のキー経路で __proto__ 等を
+ *  たどったり書き込んだりしない（共有されたセッションファイル等への防御） */
+function isSafeKey(key: unknown): boolean {
+  return key !== "__proto__" && key !== "constructor" && key !== "prototype";
+}
+
 /** 差分ログの再生: キー経路への値セット。数値の節は配列の添字として扱う */
 function setPath(state: unknown, path: unknown[], value: unknown): void {
   let cur: unknown = state;
@@ -91,6 +97,7 @@ function setPath(state: unknown, path: unknown[], value: unknown): void {
     } else {
       const rec = cur as Json;
       const k = String(key);
+      if (!isSafeKey(k)) return;
       if (!isObj(rec[k]) && !Array.isArray(rec[k])) rec[k] = wantArray ? [] : {};
       cur = rec[k];
     }
@@ -102,6 +109,7 @@ function setPath(state: unknown, path: unknown[], value: unknown): void {
     while (cur.length <= idx) cur.push(null);
     cur[idx] = value;
   } else if (isObj(cur)) {
+    if (!isSafeKey(last)) return;
     cur[String(last)] = value;
   }
 }
@@ -126,6 +134,7 @@ function appendAtPath(state: unknown, path: unknown[], value: unknown, indexHint
     } else {
       const rec = cur as Json;
       const k = String(key);
+      if (!isSafeKey(k)) return;
       if (!isObj(rec[k]) && !Array.isArray(rec[k])) rec[k] = wantArray ? [] : {};
       cur = rec[k];
     }
@@ -139,6 +148,7 @@ function appendAtPath(state: unknown, path: unknown[], value: unknown, indexHint
     if (!Array.isArray(cur[idx])) cur[idx] = [];
     target = cur[idx] as unknown[];
   } else if (isObj(cur)) {
+    if (!isSafeKey(last)) return;
     const k = String(last);
     if (!Array.isArray(cur[k])) cur[k] = [];
     target = cur[k] as unknown[];
