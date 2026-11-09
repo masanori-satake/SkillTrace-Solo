@@ -6,7 +6,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, TraceNode } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
-import { esc, fmt, fmtCredits, countTools, toolColumns, toolGroupsPresent, toolGroupLabel, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, glossaryFor, type Lang } from "./common";
+import { esc, fmt, fmtCredits, blockBar, countTools, toolColumns, toolGroupsPresent, toolGroupLabel, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, glossaryFor, type Lang } from "./common";
 import { formatLocalDateTime } from "./sessions";
 
 function unicodeBar(ratio: number | null | undefined, width = 20): string {
@@ -127,17 +127,25 @@ function nodeSuffix(tn: TraceNode | undefined, gn: { boundary: boolean; missing:
 }
 
 /** グラフを深さ付きの行リストに平らにする（共有参照は最初の出現だけ辿る。画面表示と同じ） */
+/** ノード明細の推定トークンに添えるバー（母数はそのスキルの全ファイル合計） */
+function nodeBar(n: TraceNode, part: SkillPart): string {
+  const total = part.nodes.reduce((a, x) => a + x.estTokens, 0);
+  return n.estTokens > 0 && total > 0 ? ` ${blockBar(n.estTokens / total)}` : "";
+}
+
 function flattenTree(part: SkillPart, lang: Lang = "ja"): { depth: number; text: string; tn?: TraceNode }[] {
   const byId = new Map(part.nodes.map(n => [n.id, n]));
   const out: { depth: number; text: string; tn?: TraceNode }[] = [];
   const root = part.graph.order[0];
   if (!root) return out;
+  const total = part.nodes.reduce((a, n) => a + n.estTokens, 0);
   const seen = new Set<string>();
   const walk = (id: string, depth: number): void => {
     const gn = part.graph.nodes.get(id);
     if (!gn) return;
     const tn = byId.get(gn.id);
-    out.push({ depth, text: `${gn.relToSkill}${gn.title ? ` — ${gn.title}` : ""} ${nodeSuffix(tn, gn, lang)} ~${fmt(gn.estTokens)} ${lang === "en" ? "tokens" : "トークン"}`, tn });
+    const bar = gn.estTokens > 0 && total > 0 ? ` ${blockBar(gn.estTokens / total)}` : "";
+    out.push({ depth, text: `${gn.relToSkill}${gn.title ? ` — ${gn.title}` : ""} ${nodeSuffix(tn, gn, lang)} ~${fmt(gn.estTokens)} ${lang === "en" ? "tokens" : "トークン"}${bar}`, tn });
     if (seen.has(id) || gn.cycle) return;
     seen.add(id);
     for (const c of gn.children) walk(c, depth + 1);
@@ -280,7 +288,13 @@ function glossaryMd(lang: Lang = "ja"): string {
 }
 
 function treeMd(part: SkillPart, lang: Lang = "ja"): string {
-  return flattenTree(part, lang).map(l => `${"  ".repeat(l.depth)}- ${l.text}`).join("\n");
+  const en = lang === "en";
+  const body = flattenTree(part, lang).map(l => `${"  ".repeat(l.depth)}- ${l.text}`).join("\n");
+  const total = part.nodes.reduce((a, n) => a + n.estTokens, 0);
+  if (!total) return body;
+  return body + (en
+    ? "\n\n(Bar length: share of this skill's total estimated tokens across all its files)"
+    : "\n\n（バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です）");
 }
 
 export function renderSessionMarkdown(st: SessionTrace, opts?: DocumentOptions): string {
@@ -333,7 +347,7 @@ export function renderSkillMarkdown(st: SessionTrace, part: SkillPart, opts?: Do
   const en = lang === "en";
   const counts = countsOf(part.nodes);
   const nodeRows = [...part.nodes].sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9)).map(n =>
-    `| ${mdCell(n.relToSkill)}${n.boundary ? (en ? " (outside skill)" : " （スキル外）") : ""} | ${n.grade ? gradeCertaintyLabel(n.grade, lang) : (en ? "No record" : "記録なし")} | ${n.order ?? ""} | ${n.firstAt ? formatLocalDateTime(n.firstAt, lang) : ""} | ${mdCell(n.evidence)} | ${fmt(n.estTokens)} |`).join("\n");
+    `| ${mdCell(n.relToSkill)}${n.boundary ? (en ? " (outside skill)" : " （スキル外）") : ""} | ${n.grade ? gradeCertaintyLabel(n.grade, lang) : (en ? "No record" : "記録なし")} | ${n.order ?? ""} | ${n.firstAt ? formatLocalDateTime(n.firstAt, lang) : ""} | ${mdCell(n.evidence)} | ${fmt(n.estTokens)}${nodeBar(n, part)} |`).join("\n");
   return `# ${en ? "Skill summary" : "スキルサマリ"} — ${part.skillName}
 
 ${metaLines(st, lang).map(([k, v]) => `- ${k}: ${v}`).join("\n")}
@@ -409,9 +423,13 @@ function treeHtml(part: SkillPart, lang: Lang = "ja"): string {
       seen.add(id);
       if (gn.children.length) children = `<ul>${gn.children.map(walk).join("")}</ul>`;
     }
-    return `<li>${pill(tn?.grade ?? null, lang)} ${esc(gn.relToSkill)}${gn.title ? ` <span style="${H.muted}">${esc(gn.title)}</span>` : ""}${gn.boundary ? ` <span style="color:#7a4fa3;font-size:12px">${en ? "outside skill" : "スキル外"}</span>` : ""}${gn.missing ? ` <span style="color:#c0392b;font-size:12px">${en ? "missing target" : "参照先なし"}</span>` : ""}${tn?.order ? ` <span style="color:#3a6ea5;font-weight:600">#${tn.order}</span>` : ""} <span style="${H.muted}">~${fmt(gn.estTokens)} ${en ? "tokens" : "トークン"}</span>${children}</li>`;
+    const total = part.nodes.reduce((a, n) => a + n.estTokens, 0);
+    const bar = gn.estTokens > 0 && total > 0 ? ` <span style="${H.mono}">${blockBar(gn.estTokens / total)}</span>` : "";
+    return `<li>${pill(tn?.grade ?? null, lang)} ${esc(gn.relToSkill)}${gn.title ? ` <span style="${H.muted}">${esc(gn.title)}</span>` : ""}${gn.boundary ? ` <span style="color:#7a4fa3;font-size:12px">${en ? "outside skill" : "スキル外"}</span>` : ""}${gn.missing ? ` <span style="color:#c0392b;font-size:12px">${en ? "missing target" : "参照先なし"}</span>` : ""}${tn?.order ? ` <span style="color:#3a6ea5;font-weight:600">#${tn.order}</span>` : ""} <span style="${H.muted}">~${fmt(gn.estTokens)} ${en ? "tokens" : "トークン"}</span>${bar}${children}</li>`;
   };
-  return `<ul>${walk(root.id)}</ul>`;
+  const totalAll = part.nodes.reduce((a, n) => a + n.estTokens, 0);
+  const note = totalAll ? `<p style="${H.muted}">${en ? "Bar length: share of this skill's total estimated tokens across all its files" : "バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です"}</p>` : "";
+  return `<ul>${walk(root.id)}</ul>${note}`;
 }
 
 function metaHtml(st: SessionTrace, lang: Lang = "ja"): string {
@@ -542,7 +560,7 @@ export function renderSkillHtmlFragment(st: SessionTrace, part: SkillPart, opts?
   const en = lang === "en";
   const counts = countsOf(part.nodes);
   const nodeRows = [...part.nodes].sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9)).map(n =>
-    `<tr><td style="${H.cell}">${esc(n.relToSkill)}${n.boundary ? (en ? " (outside skill)" : " （スキル外）") : ""}</td><td style="${H.cell}">${n.grade ? pill(n.grade, lang) : (en ? "No record" : "記録なし")}</td><td style="${H.cellR}">${n.order ?? ""}</td><td style="${H.cell}">${esc(n.firstAt ? formatLocalDateTime(n.firstAt, lang) : "")}</td><td style="${H.cell}">${esc(n.evidence)}</td><td style="${H.cellR}">${fmt(n.estTokens)}</td></tr>`).join("");
+    `<tr><td style="${H.cell}">${esc(n.relToSkill)}${n.boundary ? (en ? " (outside skill)" : " （スキル外）") : ""}</td><td style="${H.cell}">${n.grade ? pill(n.grade, lang) : (en ? "No record" : "記録なし")}</td><td style="${H.cellR}">${n.order ?? ""}</td><td style="${H.cell}">${esc(n.firstAt ? formatLocalDateTime(n.firstAt, lang) : "")}</td><td style="${H.cell}">${esc(n.evidence)}</td><td style="${H.cellR}">${fmt(n.estTokens)}${nodeBar(n, part)}</td></tr>`).join("");
   return `<div style="${H.root}">
 <h1 style="${H.h1}">${en ? "Skill summary" : "スキルサマリ"} — ${esc(part.skillName)}</h1>
 ${metaHtml(st, lang)}

@@ -212,6 +212,37 @@ test("tool matrix columns are grouped and ordered by totals", async () => {
   assert.deepEqual(toolColumns([]), []);
 });
 
+test("blockBar: fill follows the ratio", async () => {
+  const { blockBar } = await import("../core/common.js");
+  assert.equal(blockBar(0), "░░░░░░░░░░");
+  assert.equal(blockBar(1), "██████████");
+  assert.equal(blockBar(0.5), "█████░░░░░");
+  assert.equal(blockBar(0.62, 8), "█████░░░");
+  assert.equal(blockBar(2), "██████████");
+  assert.equal(blockBar(-1), "░░░░░░░░░░");
+});
+
+test("token bars appear in document trees and the on-screen tree (Issue #32)", async () => {
+  const { renderSessionMarkdown } = await import("../core/document.js");
+  const { renderSessionHtml } = await import("../core/report.js");
+  const { blockBar, fmt } = await import("../core/common.js");
+  const { st } = fixtureSessionTrace();
+  const md = renderSessionMarkdown(st);
+  assert.ok(md.includes("（バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です）"));
+  // 到達の流れの節だけを取り出し、推定トークン値の直後にバーが付くことと、
+  // バーの割合がフィクスチャから算出した割合と一致することを確認する
+  const flow = md.split("## 到達の流れ")[1]?.split("\n## ")[0] ?? "";
+  assert.ok(flow.length > 0);
+  const part = st.skills[0];
+  const total = part.nodes.reduce((a, n) => a + n.estTokens, 0);
+  const rootTn = part.nodes.find(n => n.id === part.graph.rootId);
+  assert.ok(rootTn && rootTn.estTokens > 0 && total > 0);
+  assert.ok(flow.includes(`~${fmt(rootTn.estTokens)} トークン ${blockBar(rootTn.estTokens / total)}`));
+  const html = renderSessionHtml(st);
+  assert.ok(html.includes('class="tbar"'));
+  assert.ok(html.includes("バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です"));
+});
+
 test("sparkline: glyph mapping and peak-preserving sampling", async () => {
   const { sparkline } = await import("../core/document.js");
   assert.equal(sparkline([0, 0.5, 1]), "▁▅█");
