@@ -54,7 +54,7 @@ Current version: **v1.9.0**
    - Per-turn and total usage from the session record. Copilot: input / output / cache read / cache write / reasoning tokens, plus how much of the input was cache reuse. Kiro: credits per turn, because Kiro's records carry no token counts. VS Code chat: input / output tokens and credits per request, because its records carry both.
    - A context window usage graph shows how full the window became at the last turn (for Kiro, the usage percentage the record snapshots) — the overflow that silently degrades answer quality becomes visible. The transition is also carried into copied documents: an SVG chart in HTML, and a block-character sparkline with the peak in Markdown.
    - Sessions in which no skill was activated (for example spec-driven work in Kiro) still show the always-loaded context (steering / AGENTS.md) and the measured usage, when the record has them.
-   - In the history tree, the summary trees and the node details, each file also carries a bar showing its share of the skill's total estimated tokens — heavy files stand out at a glance.
+   - In the history tree and the summary trees, each file also carries a bar showing its share of the skill's total estimated tokens — heavy files stand out at a glance. Copied documents carry the same bar in the node details table as well (the node details table exists only in documents; the on-screen skill summary shows the bars in its tree instead).
 
 4. **Two-layer summaries that explain themselves**
    - A session summary (the user's view) and per-skill summaries (the provider's view), each self-contained: terminology used in the summary is explained in a glossary section at the end of the same page, using the Agent Skills community's standard terms (activation, progressive disclosure, context window, …).
@@ -233,7 +233,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
    - セッション記録から、ターン別と合計の実測を表示します。Copilot は入力 / 出力 / キャッシュ読取 / キャッシュ書込 / 推論トークンと、入力のうちキャッシュ再利用で済んだ割合。Kiro は記録にトークン数がないため、ターンごとのクレジットで表示します。VS Code チャットは記録に両方が残るため、入力 / 出力トークンとリクエストごとのクレジットを表示します。
    - コンテキストウィンドウ使用量のグラフで、最後のターン時点で窓がどれだけ埋まっていたかを表示します（Kiro は記録に残る使用率 %）。静かに精度を落とす「あふれ」が見えるようになります。推移は文書コピーにも入ります（HTML は SVG のグラフ、Markdown はブロック文字のスパークラインと最大値）。
    - スキルが起動しなかったセッション（Kiro の仕様駆動など）でも、記録にあれば常時文脈（steering / AGENTS.md）と実測を表示します。
-   - 履歴ツリー、サマリのツリー、ノード明細では、各ファイルに、そのスキルの全ファイルの推定トークン合計に対する割合をバーで添えます。重いファイルが一目で分かります。
+   - 履歴ツリーとサマリのツリーでは、各ファイルに、そのスキルの全ファイルの推定トークン合計に対する割合をバーで添えます。重いファイルが一目で分かります。文書コピーではノード明細の表にもバーを添えます（ノード明細は文書コピーのみの表で、画面のスキルサマリではツリー側にバーが付きます）。
 
 4. **説明が自己完結する二層のサマリ**
    - セッションサマリ（利用者の視点）とスキル別サマリ（提供者の視点）。どちらも、使われている用語は同じページの末尾にある「用語の説明」で解説します。用語は Agent Skills 界隈の標準的な言い方（activation、progressive disclosure、context window など）に揃えてあります。

@@ -225,11 +225,19 @@ test("blockBar: fill follows the ratio", async () => {
 test("token bars appear in document trees and the on-screen tree (Issue #32)", async () => {
   const { renderSessionMarkdown } = await import("../core/document.js");
   const { renderSessionHtml } = await import("../core/report.js");
+  const { blockBar, fmt } = await import("../core/common.js");
   const { st } = fixtureSessionTrace();
   const md = renderSessionMarkdown(st);
-  // 到達の流れの各行にバーが付き、母数の注記がある
-  assert.ok(md.includes("█"));
   assert.ok(md.includes("（バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です）"));
+  // 到達の流れの節だけを取り出し、推定トークン値の直後にバーが付くことと、
+  // バーの割合がフィクスチャから算出した割合と一致することを確認する
+  const flow = md.split("## 到達の流れ")[1]?.split("\n## ")[0] ?? "";
+  assert.ok(flow.length > 0);
+  const part = st.skills[0];
+  const total = part.nodes.reduce((a, n) => a + n.estTokens, 0);
+  const rootTn = part.nodes.find(n => n.id === part.graph.rootId);
+  assert.ok(rootTn && rootTn.estTokens > 0 && total > 0);
+  assert.ok(flow.includes(`~${fmt(rootTn.estTokens)} トークン ${blockBar(rootTn.estTokens / total)}`));
   const html = renderSessionHtml(st);
   assert.ok(html.includes('class="tbar"'));
   assert.ok(html.includes("バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です"));
