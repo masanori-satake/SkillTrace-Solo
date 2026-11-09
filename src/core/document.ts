@@ -18,16 +18,19 @@ function unicodeBar(ratio: number | null | undefined, width = 20): string {
 /** コンテキストウィンドウ使用量の系列を 0..1 の割合列にする（供給源の違いを吸収する）。
  *  Copilot / Copilot Chat はトークン実測 ÷ 上限（上限が記録に無ければ系列の最大値）、
  *  Kiro は記録された使用率そのもの。perTurn は横軸がターンか記録順か */
-function contextRatios(st: SessionTrace): { ratios: number[]; perTurn: boolean } | null {
+function contextRatios(st: SessionTrace): { ratios: number[]; perTurn: boolean; relativeToMax: boolean } | null {
   if (st.source === "kiro") {
     const ratios = (st.contextUsageSeries ?? []).map(p => p.ratio);
-    return ratios.length ? { ratios, perTurn: false } : null;
+    return ratios.length ? { ratios, perTurn: false, relativeToMax: false } : null;
   }
   const series = st.contextCurrentSeries ?? [];
   if (!series.length) return null;
+  // 上限が記録に無い場合は系列の最大値で割る。その場合の 100% は実際の
+  // 上限に対する使用率ではないため、表示側で相対表示だと明示する
+  const relativeToMax = !st.contextTokenLimit;
   const denom = st.contextTokenLimit ?? Math.max(...series.map(p => p.tokens));
   if (!denom) return null;
-  return { ratios: series.map(p => p.tokens / denom), perTurn: true };
+  return { ratios: series.map(p => p.tokens / denom), perTurn: true, relativeToMax };
 }
 
 const SPARK_GLYPHS = "▁▂▃▄▅▆▇█";
@@ -59,9 +62,12 @@ function contextTransitionMd(st: SessionTrace, lang: Lang = "ja"): string {
   const peakIdx = s.ratios.indexOf(peak);
   const last = s.ratios[s.ratios.length - 1];
   const unit = s.perTurn ? (en ? "turn" : "ターン") : (en ? "snapshot" : "記録");
+  const relNote = s.relativeToMax
+    ? (en ? " (the limit is not recorded, so the values are relative to the series maximum = 100%)" : "（上限が記録されていないため、系列の最大値を100%とした相対表示です）")
+    : "";
   return en
-    ? `\nTransition (in ${s.perTurn ? "turn" : "recorded"} order): ${sparkline(s.ratios)} (peak ${(peak * 100).toFixed(1)}% at ${unit} ${peakIdx + 1} / final ${(last * 100).toFixed(1)}%)`
-    : `\n推移（${s.perTurn ? "ターン" : "記録"}順）: ${sparkline(s.ratios)}（最大 ${(peak * 100).toFixed(1)}%・${unit} ${peakIdx + 1} ／ 最終 ${(last * 100).toFixed(1)}%）`;
+    ? `\nTransition (in ${s.perTurn ? "turn" : "recorded"} order): ${sparkline(s.ratios)} (peak ${(peak * 100).toFixed(1)}% at ${unit} ${peakIdx + 1} / final ${(last * 100).toFixed(1)}%)${relNote}`
+    : `\n推移（${s.perTurn ? "ターン" : "記録"}順）: ${sparkline(s.ratios)}（最大 ${(peak * 100).toFixed(1)}%・${unit} ${peakIdx + 1} ／ 最終 ${(last * 100).toFixed(1)}%）${relNote}`;
 }
 
 /** 推移の SVG（文書 HTML 用。貼り付け先で CSS が効かない前提で色は固定値） */
@@ -89,8 +95,13 @@ function contextChartSvg(st: SessionTrace, lang: Lang = "ja"): string {
   const xLabels = `<text x="${X(0)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#888888">${unit} 1</text>`
     + `<text x="${X(ratios.length - 1)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#888888">${unit} ${ratios.length}</text>`;
   const peakLabel = `<text x="${X(peakIdx).toFixed(1)}" y="${Math.max(11, Y(peak) - 8).toFixed(1)}" text-anchor="middle" font-size="11" fill="#d97b29">${en ? "Peak" : "最大"} ${(peak * 100).toFixed(1)}%</text>`;
+  const caption = s.relativeToMax
+    ? (en ? "Vertical: context window usage (relative to the series maximum = 100%, because the limit is not recorded) / Horizontal: " + (s.perTurn ? "turn" : "order of recorded snapshots") + ". The orange dot marks the peak."
+      : `縦軸: コンテキストウィンドウ使用量（上限が記録されていないため、系列の最大値を100%とした相対表示）／ 横軸: ${s.perTurn ? "ターン" : "記録された時点の順序"}。オレンジの点は最大の位置です。`)
+    : (en ? "Vertical: context window usage (share of the limit) / Horizontal: " + (s.perTurn ? "turn" : "order of recorded snapshots") + ". The orange dot marks the peak."
+      : `縦軸: コンテキストウィンドウ使用量（上限に対する割合）／ 横軸: ${s.perTurn ? "ターン" : "記録された時点の順序"}。オレンジの点は最大の位置です。`);
   return `<svg width="${W}" height="${H}" style="background:#f4f6f8;border:1px solid #dddddd;border-radius:6px">${grid}<polyline points="${pts}" fill="none" stroke="#6cb2f5" stroke-width="2"/>${dots}${peakLabel}${xLabels}</svg>`
-    + `<p style="color:#888888;font-size:12px">${en ? "Vertical: context window usage (share of the limit) / Horizontal: " + (s.perTurn ? "turn" : "order of recorded snapshots") + ". The orange dot marks the peak." : `縦軸: コンテキストウィンドウ使用量（上限に対する割合）／ 横軸: ${s.perTurn ? "ターン" : "記録された時点の順序"}。オレンジの点は最大の位置です。`}</p>`;
+    + `<p style="color:#888888;font-size:12px">${caption}</p>`;
 }
 
 function countsOf(nodes: TraceNode[]): Record<string, number> {

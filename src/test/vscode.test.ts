@@ -9,7 +9,7 @@ import {
 } from "../core/vscode";
 import { firstHeading } from "../core/trace";
 import { renderSessionHtml } from "../core/report";
-import { renderSessionMarkdown } from "../core/document";
+import { renderSessionHtmlFragment, renderSessionMarkdown } from "../core/document";
 
 // フィクスチャは実機プローブ（2026-11-09、他環境の VS Code で vscode-probe を実行）の
 // 本物の chatSessions 記録。パス内のユーザー ID だけを probe-user に置換してある。
@@ -134,6 +134,25 @@ test("vscode replay: kind 2 appends to arrays, and i truncates before appending"
     JSON.stringify({ kind: 2, k: ["requests"], v: [req("r3")], i: 1 }),
   ].join("\n"));
   assert.deepEqual(truncated.requests.map(r => r.userMessage), ["r1", "r3"]);
+});
+
+test("vscode document: without a recorded limit, the transition is marked as relative to the series maximum", () => {
+  const text = [
+    JSON.stringify({ kind: 0, v: { version: 3, creationDate: 1000, sessionId: "v-rel", requests: [] } }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r1", timestamp: 2000, message: { text: "hi" }, response: [], promptTokens: 100, completionTokens: 5, copilotCredits: 0 }] }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r2", timestamp: 3000, message: { text: "more" }, response: [], promptTokens: 200, completionTokens: 5, copilotCredits: 0 }] }),
+  ].join("\n");
+  const parsed = parseVSCodeChatSessionText(text);
+  assert.equal(parsed.contextTokenLimit, null);
+  const st = buildVSCodeSessionTrace(parsed, [], { sessionId: "v-rel", workspaceAbs: probeWs });
+  assert.equal(st.contextCurrentSeries.length, 2);
+  const md = renderSessionMarkdown(st);
+  // 系列最大（200）を 100% とする相対表示であることが明記される
+  assert.ok(md.includes("推移（ターン順）"));
+  assert.ok(md.includes("系列の最大値を100%とした相対表示です"));
+  const frag = renderSessionHtmlFragment(st);
+  assert.ok(frag.includes("系列の最大値を100%とした相対表示"));
+  assert.ok(!frag.includes("上限に対する割合"));
 });
 
 test("vscode activations keep the skill directory's letter case", () => {
