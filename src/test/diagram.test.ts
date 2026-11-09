@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGraph } from "../core/graph";
 import { parseEventsText } from "../core/events";
@@ -67,4 +68,32 @@ test("skill summary renders the reference diagram with a legend (Issue #40)", ()
   assert.ok(html.includes("参照構造の図"));
   assert.ok(html.includes("凡例"));
   assert.ok(html.includes("marker-end"));
+});
+
+function bigSkillTrace(refCount: number) {
+  const base = mkdtempSync(join(tmpdir(), "skilltrace-diagram-"));
+  const ws = join(base, "ws");
+  const dir = join(ws, ".github", "skills", "big");
+  mkdirSync(dir, { recursive: true });
+  const links = Array.from({ length: refCount }, (_, i) => `[f${i}](f${i}.md)`).join(" ");
+  writeFileSync(join(dir, "SKILL.md"), `# Big\n\n${links}\n`);
+  for (let i = 0; i < refCount; i++) writeFileSync(join(dir, `f${i}.md`), `# F${i}\n`);
+  const graph = buildGraph(dir, ws);
+  const trace = buildTrace(parseEventsText(""), graph, { sessionId: "x", workspaceAbs: ws, skillDirAbs: dir, rootHeading: "Big" });
+  return { graph, trace };
+}
+
+test("wide reference diagram scrolls at natural size instead of shrinking (Issue #40 review)", () => {
+  const { graph, trace } = bigSkillTrace(39); // 40 ノード、1段に39件で横幅が大きくなる
+  const html = renderHtml(trace, graph);
+  assert.ok(html.includes("参照構造の図"));
+  assert.ok(html.includes("overflow-x:auto"));
+});
+
+test("omitted diagram points to the node-details file list, noting cycles (Issue #40 review)", () => {
+  const { graph, trace } = bigSkillTrace(40); // 41 ノードで上限超過
+  const html = renderHtml(trace, graph);
+  assert.ok(!html.includes("参照構造の図"));
+  assert.ok(html.includes("ノード明細のファイル一覧を参照してください"));
+  assert.ok(html.includes("ツリーは循環箇所で展開を止める場合があります"));
 });

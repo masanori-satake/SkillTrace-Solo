@@ -408,8 +408,8 @@ function referenceDiagramSection(nodes: TraceNode[], graph: Graph, lang: Lang): 
     : "設計した参照のつながりをノードリンク図で示します。複数箇所から参照されるファイルは1つの円に集まり、循環は輪として見えます。円の色は到達の確度、大きさは推定トークン、円の上の数字は到達順です。同時読み込みグラフ（Issue #42）の「実際に使われた構造」と見比べられます。"}</div>`;
   if (nodes.length > DIAGRAM_NODE_CAP) {
     return head + intro + `<p>${en
-      ? `The diagram is omitted because this skill has ${nodes.length} files (legibility limit: ${DIAGRAM_NODE_CAP}). See the arrival flow below for the full structure.`
-      : `このスキルはファイルが ${nodes.length} 件あるため、図は省略しました（見やすさの上限: ${DIAGRAM_NODE_CAP} 件）。全体の構造は下の到達の流れで確認できます。`}</p>`;
+      ? `The diagram is omitted because this skill has ${nodes.length} files (legibility limit: ${DIAGRAM_NODE_CAP}). See the arrival flow below and the file list in Node details. The tree may stop at cycles.`
+      : `このスキルはファイルが ${nodes.length} 件あるため、図は省略しました（見やすさの上限: ${DIAGRAM_NODE_CAP} 件）。下の到達の流れとノード明細のファイル一覧を参照してください。ツリーは循環箇所で展開を止める場合があります。`}</p>`;
   }
   const diagram = buildReferenceDiagram(nodes, graph.order[0]?.relToSkill ?? "SKILL.md");
   // 階層レイアウト: 深さごとに1段、段の中では到達順→名前順
@@ -438,7 +438,9 @@ function referenceDiagramSection(nodes: TraceNode[], graph: Graph, lang: Lang): 
   });
   const fillOf = (g: Grade): string => g === "A" ? "#0d8f9f" : g === "B" ? "#e8b33d" : g === "C" ? "#94a3b8" : "#ffffff";
   const svg: string[] = [];
-  svg.push(`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="${en ? "Reference structure diagram" : "参照構造の図"}">`);
+  // 横幅が大きい図は縮小すると読めなくなるため、実寸で横スクロールにする
+  const wide = W > 900;
+  svg.push(`<svg viewBox="0 0 ${W} ${H}" style="${wide ? `width:${W}px;max-width:none` : "width:100%"};height:auto" role="img" aria-label="${en ? "Reference structure diagram" : "参照構造の図"}">`);
   svg.push(`<defs><marker id="rarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs>`);
   for (const e of diagram.edges) {
     const a = pos.get(e.from), b = pos.get(e.to);
@@ -462,7 +464,8 @@ function referenceDiagramSection(nodes: TraceNode[], graph: Graph, lang: Lang): 
   svg.push("</svg>");
   const chip = (fill: string, extra = "") => `<svg width="12" height="12" style="vertical-align:-1px"><circle cx="6" cy="6" r="5" fill="${fill}" stroke="#475569"${extra}/></svg>`;
   const legend = `<p class="tok">${en ? "Legend" : "凡例"}: ${chip("#0d8f9f")} ${en ? "certainty high" : "確度高"} ${chip("#e8b33d")} ${en ? "medium" : "中"} ${chip("#94a3b8")} ${en ? "low" : "低"} ${chip("#ffffff")} ${en ? "no record" : "記録なし"} / ${chip("#ffffff", ` stroke-dasharray="2 1"`)} ${en ? "outside skill / missing target (dashed)" : "スキル外・参照先なし（破線）"} / ${en ? "node size = estimated tokens; darker line = both ends arrived" : "円の大きさ＝推定トークン、濃い線＝両端とも到達した参照"}</p>`;
-  return head + intro + svg.join("") + legend;
+  const svgHtml = svg.join("");
+  return head + intro + (wide ? `<div style="overflow-x:auto">${svgHtml}</div>` : svgHtml) + legend;
 }
 
 export function renderHtml(trace: Trace, graph: Graph, opts: { title?: string; scopeNote?: string; doc?: { md: string; frag: string }; lang?: Lang } = {}): string {

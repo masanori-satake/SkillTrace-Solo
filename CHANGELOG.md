@@ -4,11 +4,11 @@
 
 ### Added
 
-- Reference structure diagram (Issue #40). The skill summary now opens with a node-link diagram of the designed reference structure: files referenced from several places converge on a single node (unlike the arrival-flow tree, which expands them repeatedly), and cycles appear as loops. Nodes are layered by distance from SKILL.md; node colour is the certainty of arrival (with a legend), node size is estimated tokens, and the number above a node is its arrival order. Edges between two arrived files are drawn darker. Outside-skill and missing targets are dashed. When a skill has more than 40 files, the diagram is omitted for legibility and the tree below shows everything. Together with the co-reading graph (Issue #42), the designed structure and the structure of actual use can now be compared side by side.
+- Reference structure diagram (Issue #40). The skill summary now opens with a node-link diagram of the designed reference structure: files referenced from several places converge on a single node (unlike the arrival-flow tree, which expands them repeatedly), and cycles appear as loops. Nodes are layered by distance from SKILL.md; node colour is the certainty of arrival (with a legend), node size is estimated tokens, and the number above a node is its arrival order. Edges between two arrived files are drawn darker. Outside-skill and missing targets are dashed. When a skill has more than 40 files, the diagram is omitted for legibility; every file is still listed in Node details (the tree may stop at cycles). Wide diagrams are shown at natural size with horizontal scrolling instead of being shrunk. Together with the co-reading graph (Issue #42), the designed structure and the structure of actual use can now be compared side by side.
 
 ### 追加 (Added)
 
-- 参照構造の図（Issue #40）。スキルサマリの先頭に、設計した参照構造のノードリンク図を追加した。複数箇所から参照されるファイルは1つの円に集まり（到達の流れのツリーが繰り返し展開するのと対照的）、循環は輪として見える。円は SKILL.md からの距離で段に並び、色は到達の確度（凡例つき）、大きさは推定トークン、円の上の数字は到達順。両端とも到達した参照の線は濃く描く。スキル外と参照先なしは破線で示す。ファイルが40件を超えるスキルでは見やすさのため図を省略し、下のツリーで全件を示す。同時読み込みグラフ（Issue #42）と並べることで、「設計した構造」と「実際に使われた構造」を比較できる。
+- 参照構造の図（Issue #40）。スキルサマリの先頭に、設計した参照構造のノードリンク図を追加した。複数箇所から参照されるファイルは1つの円に集まり（到達の流れのツリーが繰り返し展開するのと対照的）、循環は輪として見える。円は SKILL.md からの距離で段に並び、色は到達の確度（凡例つき）、大きさは推定トークン、円の上の数字は到達順。両端とも到達した参照の線は濃く描く。スキル外と参照先なしは破線で示す。ファイルが40件を超えるスキルでは見やすさのため図を省略する（全件はノード明細に載る。ツリーは循環箇所で展開を止める場合がある）。横幅の大きい図は縮小せず、実寸で横スクロール表示にする。同時読み込みグラフ（Issue #42）と並べることで、「設計した構造」と「実際に使われた構造」を比較できる。
 
 ## [1.12.0] - 2026-11-10
 
