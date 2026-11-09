@@ -58,6 +58,18 @@ test("reference diagram converges shared references and survives cycles (Issue #
   assert.equal(d.edges.find(e => e.from === "b.md")?.used, false);
 });
 
+test("unreachable nodes are placed one layer below the deepest layer (Issue #40 review)", () => {
+  const nodes = [
+    node({ id: "root", relToSkill: "SKILL.md", name: "SKILL.md", children: ["a.md"] }),
+    node({ id: "a", relToSkill: "a.md", name: "a.md" }),
+    node({ id: "orphan", relToSkill: "orphan.md", name: "orphan.md" }),
+  ];
+  const d = buildReferenceDiagram(nodes, "SKILL.md");
+  assert.equal(d.nodes.find(n => n.rel === "a.md")?.depth, 1);
+  // ルートから辿れないノードは、最も深い層の1つ下に置く
+  assert.equal(d.nodes.find(n => n.rel === "orphan.md")?.depth, 2);
+});
+
 test("skill summary renders the reference diagram with a legend (Issue #40)", () => {
   const parsed = parseEventsText(readFileSync(join(root, "events.jsonl"), "utf8"));
   const graph = buildGraph(skillDir, workspace);
@@ -68,6 +80,17 @@ test("skill summary renders the reference diagram with a legend (Issue #40)", ()
   assert.ok(html.includes("参照構造の図"));
   assert.ok(html.includes("凡例"));
   assert.ok(html.includes("marker-end"));
+});
+
+test("reference diagram heading and legend follow the language (Issue #40 review)", () => {
+  const parsed = parseEventsText(readFileSync(join(root, "events.jsonl"), "utf8"));
+  const graph = buildGraph(skillDir, workspace);
+  const heading = firstHeading(readFileSync(join(skillDir, "SKILL.md"), "utf8"));
+  const trace = buildTrace(parsed, graph, { sessionId: "fixture", workspaceAbs: workspace, skillDirAbs: skillDir, rootHeading: heading });
+  const html = renderHtml(trace, graph, { lang: "en" });
+  assert.ok(html.includes("Reference structure"));
+  assert.ok(html.includes("Legend"));
+  assert.ok(html.includes("certainty high"));
 });
 
 function bigSkillTrace(refCount: number) {
@@ -94,6 +117,7 @@ test("omitted diagram points to the node-details file list, noting cycles (Issue
   const { graph, trace } = bigSkillTrace(40); // 41 ノードで上限超過
   const html = renderHtml(trace, graph);
   assert.ok(!html.includes("参照構造の図"));
+  assert.ok(html.includes("41 件"));
   assert.ok(html.includes("ノード明細のファイル一覧を参照してください"));
   assert.ok(html.includes("ツリーは循環箇所で展開を止める場合があります"));
 });
