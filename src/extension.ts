@@ -463,6 +463,9 @@ export function activate(context: vscode.ExtensionContext): void {
           for (const info of list) {
             const u = aggregateSessionFile(info);
             if (u) usages.push(u); else skipped++;
+            // 同期読みが続くと拡張ホストのイベントループが止まり、進捗通知が
+            // 描画されない。1セッションごとに制御を返す
+            await new Promise<void>(resolve => setImmediate(resolve));
           }
           const rows = mergeSkillTotals(usages);
           showHtmlPanel(L("スキル別集計", "Skill totals"), renderSkillTotalsHtml(rows, { scanned: usages.length, skipped }, LANG));
