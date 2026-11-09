@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.4.2] - 2026-11-09
+
+### Fixed
+
+- **Session history: the display cap is now per source.** The history
+  showed the newest 30 sessions across Copilot and Kiro combined, so in
+  an environment with many Kiro sessions (hundreds), older Copilot
+  sessions could be crowded out and never appear. The cap now keeps
+  the newest 30 of each source, so both stay visible.
+
+### 修正 (Fixed)
+
+- **セッション履歴の表示上限を、供給源ごとに数えるよう直した。**
+  従来は Copilot と Kiro を合算して新しい順に30件までだったため、
+  Kiro のセッションが多い環境（数百件）では、古い Copilot の
+  セッションが押し出されて1件も表示されなかった。これからは
+  供給源ごとに新しい順30件までを表示する。
+
 ## [1.4.1] - 2026-11-08
 
 ### Fixed

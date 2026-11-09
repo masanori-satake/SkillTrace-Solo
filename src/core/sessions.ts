@@ -58,6 +58,23 @@ export function listSessions(baseDir: string): SessionInfo[] {
   return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
+/** 履歴表示用に、供給源ごとに新しい順で最大 perSource 件までに絞る。
+ *  合算で絞ると、件数の多い供給源（Kiro は数百件になりうる）が他方を
+ *  全部押し出してしまう。入力は新しい順に整列済みである前提で、
+ *  全体の並び順は保ったまま供給源ごとの件数だけを数える */
+export function capSessionsBySource(sessions: SessionInfo[], perSource: number): SessionInfo[] {
+  const counts = new Map<string, number>();
+  const out: SessionInfo[] = [];
+  for (const s of sessions) {
+    const key = s.source ?? "copilot";
+    const n = counts.get(key) ?? 0;
+    if (n >= perSource) continue;
+    counts.set(key, n + 1);
+    out.push(s);
+  }
+  return out;
+}
+
 // 履歴ラベル用の軽量スキャン: skill.invoked 系の行だけをパースし、
 // 発動したスキル名を返す（全文パースは表示中のセッションだけに行う）。
 // 候補が無い・読めない場合は null（未判定）。発動が無ければ空配列。

@@ -5,7 +5,7 @@ import test from "node:test";
 import { buildGraph } from "../core/graph";
 import { parseEventsText } from "../core/events";
 import { buildSessionTrace, buildTrace, firstHeading, gradeCertaintyLabel } from "../core/trace";
-import { formatLocalDateTime } from "../core/sessions";
+import { capSessionsBySource, formatLocalDateTime, type SessionInfo } from "../core/sessions";
 import { langFromEnv } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
 
@@ -294,4 +294,18 @@ test("english rendering (copilot): token usage, breakdown, glossary and labels s
   const copyEn = renderSessionCopy(st, { kind: "all" }, "en");
   assert.ok(copyEn.includes("SkillTrace session summary"));
   assert.ok(copyEn.includes("High"));
+});
+
+test("history cap is per source, so Kiro sessions cannot crowd out Copilot ones", () => {
+  const mk = (id: string, mtimeMs: number, source?: "copilot" | "kiro"): SessionInfo =>
+    ({ id, dir: "", eventsPath: "", mtimeMs, workspaceHint: null, ...(source ? { source } : {}) });
+  // 新しい Kiro 35件の後ろに、古い Copilot 3件（source 未指定 = Copilot）
+  const sessions: SessionInfo[] = [];
+  for (let i = 0; i < 35; i++) sessions.push(mk(`kiro-${i}`, 10000 - i, "kiro"));
+  sessions.push(mk("cop-old-1", 100), mk("cop-old-2", 90), mk("cop-old-3", 80));
+  const capped = capSessionsBySource(sessions, 30);
+  assert.equal(capped.filter(s => s.source === "kiro").length, 30);
+  assert.deepEqual(capped.filter(s => s.source !== "kiro").map(s => s.id), ["cop-old-1", "cop-old-2", "cop-old-3"]);
+  // 全体の並び（新しい順）は保たれる
+  for (let i = 1; i < capped.length; i++) assert.ok(capped[i - 1].mtimeMs >= capped[i].mtimeMs);
 });
