@@ -1,6 +1,6 @@
 # SkillTrace-Solo
 
-[![Version](https://img.shields.io/badge/version-v1.12.0-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-v1.13.0-blue.svg)](package.json)
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/masanori-satake.skilltrace-solo.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)
 [![Open VSX](https://img.shields.io/open-vsx/v/masanori-satake/skilltrace-solo?label=Open%20VSX)](https://open-vsx.org/extension/masanori-satake/skilltrace-solo)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/masanori-satake/SkillTrace-Solo)](https://github.com/masanori-satake/SkillTrace-Solo/releases)
@@ -18,7 +18,7 @@
 
 When GitHub Copilot or Amazon Kiro runs a skill, it follows references from `SKILL.md` into `references/` and beyond — but nothing on screen tells you how far it really got, what it cost, or how full the context window became. SkillTrace overlays the session records the agents already write (Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`; Kiro: `~/.kiro/sessions/<bucket>/sess_<uuid>/`; VS Code chat: `workspaceStorage/<hash>/chatSessions/<id>.jsonl`) onto the skill's reference graph, and reports, per file, the certainty that it arrived, the measured usage (tokens for Copilot, credits for Kiro), and the context window usage. No setup is required: the records are written by default, and past sessions can be analysed retroactively.
 
-Current version: **v1.12.0**
+Current version: **v1.13.0**
 
 ---
 
@@ -72,7 +72,10 @@ Current version: **v1.12.0**
 8. **Co-reading graph**
    - Below the per-file table, files read in the same session are connected by lines (thickness = number of sessions, with a legend). This is the structure of actual use, as opposed to the designed reference structure: pairs always read together are merge candidates, and files always read alone show the split is working.
 
-9. **A learning aid, not just a meter**
+9. **Reference structure diagram**
+   - The skill summary opens with a node-link diagram of the designed reference structure: shared references converge on a single node and cycles appear as loops. Node colour is the certainty of arrival, size is estimated tokens. Read it next to the co-reading graph to compare the designed structure with the structure of actual use.
+
+10. **A learning aid, not just a meter**
    - Bundled learning docs (`docs/learning/`) explain the concepts behind the displays — "read" vs "loaded into context", token kinds and credits, and how Copilot's and Kiro's session records compare — using real session numbers. Open them from the "SkillTrace: Open Learning Docs" command.
 
 ---
@@ -82,7 +85,7 @@ Current version: **v1.12.0**
 
 - From the Visual Studio Marketplace: search for **SkillTrace-Solo**, or install from the [Marketplace page](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo). Updates arrive through VS Code as usual.
 - From a VSIX file:
-  1. Download `skilltrace-solo-1.12.0.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
+  1. Download `skilltrace-solo-1.13.0.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
   2. In VS Code, run "Extensions: Install from VSIX..." from the Command Palette and select the file.
 
 ---
@@ -204,7 +207,7 @@ MIT — see [LICENSE](LICENSE).
 
 GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` から `references/` やその先へ参照を辿ります。しかし画面のどこを見ても、実際にどこまで辿り着いたか、いくら消費したか、コンテキストウィンドウがどれだけ埋まったかは分かりません。SkillTrace は、エージェントが標準で書き出しているセッション記録（Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`、Kiro: `~/.kiro/sessions/<バケット>/sess_<UUID>/`、VS Code チャット: `workspaceStorage/<ハッシュ>/chatSessions/<ID>.jsonl`）をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測（Copilot はトークン、Kiro はクレジット）、コンテキストウィンドウ使用量を表示します。設定は不要で、記録は標準で書かれるため、過去のセッションも後から分析できます。
 
-現在のバージョン: **v1.12.0**
+現在のバージョン: **v1.13.0**
 
 ---
 
@@ -258,7 +261,10 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 8. **同時読み込みグラフ**
    - ファイル別の表の下に、同じセッションで一緒に読み込まれたファイルを線でつないだ図を示します（太さはセッション数に対応、凡例つき）。設計した参照構造に対する「実際に使われた構造」で、常に一緒に読み込まれる組み合わせは統合候補、常に単独で読み込まれるファイルは分割が機能している証拠です。
 
-9. **計測ツールであり、学習の道具でもある**
+9. **参照構造の図**
+   - スキルサマリの先頭に、設計した参照構造のノードリンク図を示します。共有参照は1つの円に集まり、循環は輪として見えます。円の色は到達の確度、大きさは推定トークンです。同時読み込みグラフと見比べることで、「設計した構造」と「実際に使われた構造」を比較できます。
+
+10. **計測ツールであり、学習の道具でもある**
    - 同梱の学習ドキュメント（`docs/learning/`）が、表示の背後にある概念 — 「読んだ」と「コンテキストに読み込まれた」の違い、トークンの種類とクレジット、Copilot と Kiro のセッション記録の対比 — を、実セッションの数値で解説します。「SkillTrace: 学習ドキュメントを開く」コマンドから開けます。
 
 ---
@@ -268,7 +274,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 
 - Visual Studio Marketplace から: **SkillTrace-Solo** で検索するか、[Marketplace のページ](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)からインストールしてください。更新は通常どおり VS Code 経由で届きます。
 - VSIX ファイルから:
-  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.12.0.vsix` をダウンロードする
+  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.13.0.vsix` をダウンロードする
   2. VS Code のコマンドパレットで「Extensions: Install from VSIX...」を実行し、ファイルを選ぶ
 
 ---
