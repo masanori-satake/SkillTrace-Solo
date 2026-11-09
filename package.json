@@ -281,6 +281,6 @@
     "check-version-bump": "node scripts/check-version.js --check-bump",
     "update-version": "node scripts/update-version.js"
   },
-  "version": "1.10.0",
+  "version": "1.11.0",
   "icon": "icon.png"
 }

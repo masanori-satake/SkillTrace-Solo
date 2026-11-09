@@ -284,8 +284,18 @@ export interface FileUsageRow {
   lastReadAt: string | null;
 }
 
+/** 同時読み込み（Issue #42）: 同じセッションで一緒に読み込まれた組み合わせ */
+export interface CoReadData {
+  /** 表示用相対パスのペアと、一緒に読み込まれたセッション数 */
+  pairs: { a: string; b: string; sessions: number }[];
+  /** 読み込まれたことはあるが、どのファイルとも一緒に読まれなかったファイル */
+  isolated: string[];
+}
+
 export interface SkillFileUsage {
   name: string;
+  /** 同時読み込みの集計（SKILL.md は常時読み込まれるため除く） */
+  coRead: CoReadData;
   /** この結果が対象とする置き場所の表示名（ワークスペースのルート等） */
   dirLabel: string;
   /** このスキルが起動したセッション数（母数） */
@@ -332,7 +342,7 @@ export function aggregateFileUsageGroups(groups: FileUsageGroup[], usages: Sessi
     }
     const counts = new Map<string, FileUsageRow>();
     for (const [key, rel] of files) counts.set(key, { rel, readSessions: 0, mentionSessions: 0, noneSessions: 0, lastReadAt: null });
-    return { group: g, counts, invokedSessions: 0 };
+    return { group: g, counts, invokedSessions: 0, sessionReads: [] as Set<string>[] };
   });
   let unattributedSessions = 0;
   for (const u of usages) {
@@ -354,6 +364,7 @@ export function aggregateFileUsageGroups(groups: FileUsageGroup[], usages: Sessi
       if (!belongs) continue;
       counted = true;
       pg.invokedSessions++;
+      pg.sessionReads.push(new Set(read.keys()));
       for (const [key, row] of pg.counts) {
         const at = read.get(key);
         if (at !== undefined) {
@@ -365,12 +376,36 @@ export function aggregateFileUsageGroups(groups: FileUsageGroup[], usages: Sessi
     }
     if (strict && !counted) unattributedSessions++;
   }
-  const results = perGroup.map(pg => ({
-    name: skillName,
-    dirLabel: pg.group.label,
-    invokedSessions: pg.invokedSessions,
-    rows: [...pg.counts.values()].sort((a, b) =>
-      b.noneSessions - a.noneSessions || b.mentionSessions - a.mentionSessions || a.rel.localeCompare(b.rel)),
-  }));
+  const results = perGroup.map(pg => {
+    const rows = [...pg.counts.values()].sort((a, b) =>
+      b.noneSessions - a.noneSessions || b.mentionSessions - a.mentionSessions || a.rel.localeCompare(b.rel));
+    // 同時読み込み: セッションごとの読み取り集合からペアを数える。
+    // SKILL.md は起動時に常に読み込まれるため、組み合わせの対象から除く
+    const pairCounts = new Map<string, { a: string; b: string; sessions: number }>();
+    const paired = new Set<string>();
+    for (const set of pg.sessionReads) {
+      const keys = [...set].filter(k => k !== "skill.md" && pg.counts.has(k)).sort();
+      for (let i = 0; i < keys.length; i++) {
+        for (let j = i + 1; j < keys.length; j++) {
+          const id = keys[i] + "\n" + keys[j];
+          const cur = pairCounts.get(id);
+          if (cur) cur.sessions++;
+          else pairCounts.set(id, { a: pg.counts.get(keys[i])!.rel, b: pg.counts.get(keys[j])!.rel, sessions: 1 });
+          paired.add(keys[i]);
+          paired.add(keys[j]);
+        }
+      }
+    }
+    const pairs = [...pairCounts.values()].sort((x, y) =>
+      y.sessions - x.sessions || x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
+    const isolated = rows.filter(r => r.readSessions > 0 && r.rel !== "SKILL.md" && !paired.has(r.rel.toLowerCase())).map(r => r.rel);
+    return {
+      name: skillName,
+      dirLabel: pg.group.label,
+      invokedSessions: pg.invokedSessions,
+      rows,
+      coRead: { pairs, isolated },
+    };
+  });
   return { results, unattributedSessions };
 }

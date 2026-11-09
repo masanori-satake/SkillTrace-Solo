@@ -500,6 +500,67 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
 
 // ファイル単位の横断集計（Issue #41）: スキルの分割方法の判断材料として、
 // 参照ファイルごとに「読み込まれたセッション数」を寄せる
+// 同時読み込み（Issue #42）: 一緒に読み込まれたファイル同士を線でつなぐ
+// ノードリンク図と、組み合わせの表。SKILL.md は常時読み込まれるため除く
+function coReadSection(usage: SkillFileUsage, en: boolean): string {
+  const { pairs, isolated } = usage.coRead;
+  const readByRel = new Map(usage.rows.map(r => [r.rel, r.readSessions]));
+  const out: string[] = [];
+  out.push(`<h3>${en ? "Read together" : "同時読み込み"}</h3>`);
+  out.push(`<div class="note">${en
+    ? "Files read in the same session, connected by lines. SKILL.md is excluded because it is read on every activation. Pairs that are always read together are merge candidates; files that are always read alone show that the split is working."
+    : "同じセッションで一緒に読み込まれたファイルを線でつないでいます。SKILL.md は起動のたびに読み込まれるため除いています。常に一緒に読み込まれる組み合わせは統合候補、常に単独で読み込まれるファイルは分割が機能している証拠です。"}</div>`);
+  if (!pairs.length && !isolated.length) {
+    out.push(`<p>${en ? "No reference files were read in these sessions." : "対象セッションで読み込まれた参照ファイルはありませんでした。"}</p>`);
+    return out.join("\n");
+  }
+  // 図: 読み込まれたファイルを円形に並べ、ペアを線でつなぐ。
+  // 対象が多い場合はラベルが潰れるため図を省略し、表で示す
+  const nodes = [...new Set([...pairs.flatMap(p => [p.a, p.b]), ...isolated])];
+  if (pairs.length && nodes.length <= 24) {
+    const W = 560, H = 400, cx = W / 2, cy = H / 2 - 6, R = 148;
+    const pos = new Map<string, { x: number; y: number }>();
+    nodes.forEach((rel, i) => {
+      const ang = -Math.PI / 2 + (i * 2 * Math.PI) / nodes.length;
+      pos.set(rel, { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) });
+    });
+    const maxSessions = Math.max(...pairs.map(p => p.sessions));
+    const svg: string[] = [];
+    svg.push(`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto" role="img" aria-label="${en ? "Co-reading graph" : "同時読み込みグラフ"}">`);
+    for (const p of pairs) {
+      const a = pos.get(p.a)!, b = pos.get(p.b)!;
+      const wdt = (1 + 3 * (p.sessions / maxSessions)).toFixed(1);
+      const op = (0.3 + 0.55 * (p.sessions / maxSessions)).toFixed(2);
+      svg.push(`<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="#64748b" stroke-width="${wdt}" opacity="${op}"><title>${esc(p.a)} + ${esc(p.b)}: ${p.sessions}</title></line>`);
+    }
+    for (const rel of nodes) {
+      const p = pos.get(rel)!;
+      const ang = Math.atan2(p.y - cy, p.x - cx);
+      const lx = cx + (R + 16) * Math.cos(ang), ly = cy + (R + 16) * Math.sin(ang);
+      const anchorAttr = Math.cos(ang) > 0.35 ? "start" : Math.cos(ang) < -0.35 ? "end" : "middle";
+      const base = rel.split("/").pop() ?? rel;
+      svg.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5" fill="#0d8f9f"><title>${esc(rel)} (${readByRel.get(rel) ?? 0})</title></circle>`);
+      svg.push(`<text x="${lx.toFixed(1)}" y="${(ly + 3).toFixed(1)}" font-size="10" fill="currentColor" text-anchor="${anchorAttr}">${esc(base)}</text>`);
+    }
+    svg.push("</svg>");
+    out.push(svg.join(""));
+    out.push(`<p class="tok">${en ? "Line thickness = sessions read together" : "線の太さ＝一緒に読み込まれたセッション数"}: <svg width="34" height="8"><line x1="2" y1="4" x2="32" y2="4" stroke="#64748b" stroke-width="1"/></svg> 1 <svg width="34" height="8"><line x1="2" y1="4" x2="32" y2="4" stroke="#64748b" stroke-width="4"/></svg> ${maxSessions}</p>`);
+  } else if (pairs.length) {
+    out.push(`<p>${en ? "Too many files to draw legibly; the pairs are listed in the table below." : "対象ファイルが多いため図は省略し、組み合わせは表で示します。"}</p>`);
+  }
+  if (pairs.length) {
+    out.push(`<table class="totals"><thead><tr><th>${en ? "Pair" : "組み合わせ"}</th><th>${en ? "Read together (sessions)" : "一緒に読まれた（セッション）"}</th><th>${en ? "Read in total" : "それぞれの読み取り"}</th></tr></thead><tbody>`);
+    for (const p of pairs) {
+      out.push(`<tr><td>${esc(p.a)} + ${esc(p.b)}</td><td>${fmt(p.sessions)}</td><td>${fmt(readByRel.get(p.a) ?? 0)} / ${fmt(readByRel.get(p.b) ?? 0)}</td></tr>`);
+    }
+    out.push("</tbody></table>");
+  }
+  if (isolated.length) {
+    out.push(`<p>${en ? "Read, but never together with another file: " : "読み込まれたが、どのファイルとも一緒に読まれなかったファイル: "}${isolated.map(r => esc(r)).join(", ")}</p>`);
+  }
+  return out.join("\n");
+}
+
 export function renderFileUsageHtml(results: SkillFileUsage[], meta: { scanned: number; skipped: number; unattributed: number }, lang: Lang = "ja"): string {
   const en = lang === "en";
   const dash = "—";
@@ -536,6 +597,7 @@ export function renderFileUsageHtml(results: SkillFileUsage[], meta: { scanned: 
       body.push(`<tr><td>${esc(r.rel)}</td><td>${fmt(r.readSessions)}</td><td>${fmt(r.mentionSessions)}</td><td>${fmt(r.noneSessions)}</td><td>${esc(r.lastReadAt ? formatLocalDateTime(r.lastReadAt, lang) : dash)}</td></tr>`);
     }
     body.push("</tbody></table>");
+    body.push(coReadSection(usage, en));
   }
   body.push(`<div class="note">${en
     ? "\"Read in\" is based on structural evidence in the records (tool arguments, read URIs, always-loaded context inclusions) and is coarser than the per-session traces. \"No reach recorded\" means only that no reach was confirmed in sessions that have records — it does not prove the file is never read. Files not referenced from the skill (and therefore absent from the graph) are not listed."
