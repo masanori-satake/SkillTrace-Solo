@@ -3,7 +3,7 @@ import type { GraphNode } from "./core/graph";
 import type { SessionTrace, SkillPart } from "./core/trace";
 import { gradeCertaintyLabel } from "./core/trace";
 import { firstContextUsageRatio, type Lang } from "./core/common";
-import type { SessionInfo } from "./core/sessions";
+import { capSessionsBySource, type SessionInfo } from "./core/sessions";
 
 // ツリーの階層（0.4.0）: セッション履歴 ＞ セッション ＞ 発動スキル ＞ 参照ツリー。
 // 手動取り込みは廃止し、セッションは履歴として常時並ぶ。表示中のセッションだけが
@@ -380,7 +380,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
 
   async getChildren(element?: El): Promise<El[]> {
     if (!element) {
-      return this.sessions.slice(0, 30).map(session => ({ kind: "session", session } as SessionEl));
+      return capSessionsBySource(this.sessions, 30).map(session => ({ kind: "session", session } as SessionEl));
     }
     switch (element.kind) {
       case "session": {
