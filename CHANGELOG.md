@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.2] - 2026-11-09
+
+### Fixed
+
+- Kiro skill discovery for multi-root sessions now searches the union of the recorded `workspacePaths` and `rootPaths`. When the two records disagreed, skills living under a root listed in only one of them were reported as not found, leaving the summary's activated-skills table empty.
+- When activated skills cannot be found, the note in summaries and in the tree now names the workspace the session ran in and guides the user to open it to see the reference tree, instead of leaving an unexplained empty table.
+
+### 修正 (Fixed)
+
+- マルチルートの Kiro セッションで、スキル探索の対象を記録の workspacePaths と rootPaths の和集合にした。2つの記録が食い違うと、片方にしか無いルートのスキルが「見つからない」になり、サマリの「起動したスキル」の表が空になっていた。
+- 起動したスキルが見つからないときの注記（サマリとツリー）に、そのセッションを実行したワークスペースを示し、開くと参照ツリーを表示できる旨を案内するようにした。空の表だけが残って理由が分からない状態を避けるため。
+
 ## [1.6.1] - 2026-11-09
 
 ### Fixed

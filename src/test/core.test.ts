@@ -7,7 +7,7 @@ import { buildGraph } from "../core/graph";
 import { parseEventsText } from "../core/events";
 import { buildSessionTrace, buildTrace, firstHeading, gradeCertaintyLabel } from "../core/trace";
 import { capSessionsBySource, formatLocalDateTime, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
-import { langFromEnv, sanitizeFilenamePart } from "../core/common";
+import { langFromEnv, sanitizeFilenamePart, undiscoveredSkillsNote } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
 
 const root = join(__dirname, "..", "..", "test-fixtures");
@@ -402,4 +402,15 @@ test("health: the model.* event layer of newer Copilot runtimes is known", () =>
   const parsed = parseEventsText(lines.map(l => JSON.stringify(l)).join("\n"));
   assert.equal(parsed.health.unknownRatio, 0);
   assert.deepEqual(parsed.health.unknownEventTypes, {});
+});
+
+test("undiscovered skills note guides to the workspace the session ran in", () => {
+  const withWs = undiscoveredSkillsNote(["some-skill"], "ja", "C:/ws/project");
+  assert.ok(withWs.includes("some-skill"));
+  assert.ok(withWs.includes("C:/ws/project"));
+  assert.ok(withWs.includes("そのワークスペースを開くと、参照ツリーを表示できます"));
+  const without = undiscoveredSkillsNote(["some-skill"], "ja");
+  assert.ok(!without.includes("実行されました"));
+  assert.equal(undiscoveredSkillsNote([], "ja", "C:/ws/project"), "");
+  assert.ok(undiscoveredSkillsNote(["s"], "en", "C:/ws/project").includes("Open that workspace"));
 });
