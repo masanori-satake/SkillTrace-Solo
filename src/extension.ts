@@ -310,6 +310,20 @@ export function activate(context: vscode.ExtensionContext): void {
     } catch { /* VS Code の保存領域が無い環境では監視なし（ポーリングで代替） */ }
   };
 
+  // スイッチの永続化先: ワークスペース側（フォルダー／ワークスペース）で
+  // 設定済みなら、そちらのスコープへ書き戻す。グローバルだけを更新すると、
+  // ワークスペース設定が優先されるため再起動時に切り替えが戻ってしまう
+  const persistSwitch = async (key: string, value: boolean): Promise<void> => {
+    const cfg = vscode.workspace.getConfiguration("skilltrace");
+    const info = cfg.inspect<boolean>(key);
+    let target = vscode.ConfigurationTarget.Global;
+    if (info?.workspaceFolderValue !== undefined) target = vscode.ConfigurationTarget.WorkspaceFolder;
+    else if (info?.workspaceValue !== undefined) target = vscode.ConfigurationTarget.Workspace;
+    try {
+      await cfg.update(key, value, target);
+    } catch { /* スキーマ登録ラグ時はメモリ上の状態を正とする */ }
+  };
+
   // 自動追尾のオン/オフは「1つのスイッチ」: ビューのボタン・ステータスバー・設定の
   // どれを操作しても同じ状態が全箇所に反映される。設定への書き込みが一時的に
   // 失敗しても切り替え自体は成立させる（0.3.2 の堅牢化を継続）。
@@ -317,9 +331,7 @@ export function activate(context: vscode.ExtensionContext): void {
     autoFollow = value;
     await vscode.commands.executeCommand("setContext", "skilltrace.autoFollow", value);
     if (opts.persist !== false) {
-      try {
-        await vscode.workspace.getConfiguration("skilltrace").update("autoFollowLatest", value, vscode.ConfigurationTarget.Global);
-      } catch { /* スキーマ登録ラグ時はメモリ上の状態を正とする */ }
+      await persistSwitch("autoFollowLatest", value);
     }
     if (value && sessions.length) {
       // 追尾に戻るときは最新のセッションへ表示を移す
@@ -336,9 +348,7 @@ export function activate(context: vscode.ExtensionContext): void {
     filterToWorkspace = value;
     await vscode.commands.executeCommand("setContext", "skilltrace.workspaceFilter", value);
     if (opts.persist !== false) {
-      try {
-        await vscode.workspace.getConfiguration("skilltrace").update("filterToCurrentWorkspace", value, vscode.ConfigurationTarget.Global);
-      } catch { /* スキーマ登録ラグ時はメモリ上の状態を正とする */ }
+      await persistSwitch("filterToCurrentWorkspace", value);
     }
     lastSignature = "";
     refreshSessions();
