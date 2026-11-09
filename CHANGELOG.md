@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.1] - 2026-11-09
+
+### Fixed
+
+- VS Code chat sessions with no requests (files VS Code creates as soon as a chat is opened) are no longer listed in the history. They carried no content and kept appearing as "No skill used" entries.
+
+### 修正 (Fixed)
+
+- VS Code のチャット履歴で、リクエストの無いセッション（チャットを開いただけで作られるファイル）を履歴に載せないようにした。中身が無く、「スキル未使用」の履歴だけが増えていた。
+
 ## [1.5.0] - 2026-11-09
 
 ### Added

@@ -28,6 +28,8 @@ test("vscode chat sessions are listed from the workspaceStorage layout", () => {
   assert.equal(sessions[0].source, "vscode");
   assert.equal(sessions[0].title, "vscode-probe 合言葉取得");
   assert.ok(sessions[0].workspaceHint?.endsWith("vscode-probe-workspace/vscode-probe-workspace"));
+  // リクエストの無い「開いただけ」のセッションファイルは列挙されない
+  assert.ok(!sessions.some(x => x.id.startsWith("eeeeeeee")));
 });
 
 test("vscode delta log replays into requests with reads and usage", () => {
