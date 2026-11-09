@@ -119,12 +119,13 @@ ${grid}<polyline points="${pts}" fill="none" stroke="#6cb2f5" stroke-width="2"/>
 
 // --- Kiro の実測表示: トークンではなくクレジットと使用率（%）で記録される ---
 type CreditSource = Pick<SessionTrace, "creditsTotal" | "creditTurns">;
-function creditsBlock(src: CreditSource, lang: Lang = "ja"): string {
+function creditsBlock(src: CreditSource, lang: Lang = "ja", note?: { ja: string; en: string }): string {
   const en = lang === "en";
   const turns = src.creditTurns ?? [];
   const cols = toolColumns(turns);
+  const defaultNote = en ? " (summed from usage_summary; Kiro records credits, not tokens)" : "（usage_summary の積算。Kiro の実測はトークンではなくクレジットで記録されます）";
   const head = `<h2>${en ? "Credit usage" : "クレジット実測"}</h2>
-<p>${en ? "Total" : "合計"} <b>${fmtCredits(src.creditsTotal)}</b> credits${en ? " (summed from usage_summary; Kiro records credits, not tokens)" : "（usage_summary の積算。Kiro の実測はトークンではなくクレジットで記録されます）"}</p>`;
+<p>${en ? "Total" : "合計"} <b>${fmtCredits(src.creditsTotal)}</b> credits${note ? (en ? note.en : note.ja) : defaultNote}</p>`;
   if (!cols.length) {
     const rows = turns.map(t => `<tr><td>${t.turn + 1}</td><td>${fmtCredits(t.credits)}</td><td></td></tr>`).join("");
     return `${head}
@@ -180,7 +181,16 @@ ${grid}<polyline points="${pts}" fill="none" stroke="#6cb2f5" stroke-width="2"/>
 /** 実測ブロック: 供給源で出し分ける（Copilot=トークン実測、Kiro=クレジット実測） */
 function usageBlock(trace: Trace | SessionTrace, lang: Lang = "ja"): string {
   if (trace.source === "kiro") return `${creditsBlock(trace, lang)}\n${renderKiroUsageChart(trace, lang)}`;
-  return `<h2>${lang === "en" ? "Token usage" : "トークン実測"}</h2>\n${tokenTable(trace.turns, trace.totals, lang)}\n${renderFillChart(trace, lang)}`;
+  const tokenBlock = `<h2>${lang === "en" ? "Token usage" : "トークン実測"}</h2>\n${tokenTable(trace.turns, trace.totals, lang)}\n${renderFillChart(trace, lang)}`;
+  // VS Code の記録にはトークン実測とクレジット実測の両方が残るため併記する
+  if (trace.source === "vscode" && (trace.creditsTotal ?? 0) > 0) {
+    const note = {
+      ja: "（各リクエストの copilotCredits の積算。VS Code の記録にはトークン実測も残ります）",
+      en: " (summed from each request's copilotCredits; VS Code records token usage as well)",
+    };
+    return `${tokenBlock}\n${creditsBlock(trace, lang, note)}`;
+  }
+  return tokenBlock;
 }
 
 // 先頭の用語導線: 「困ったらこの文書の中に用語集がある」と認知させることが目的

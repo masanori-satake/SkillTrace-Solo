@@ -1,6 +1,6 @@
 # SkillTrace-Solo
 
-[![Version](https://img.shields.io/badge/version-v1.4.4-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-v1.5.0-blue.svg)](package.json)
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/masanori-satake.skilltrace-solo.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)
 [![Open VSX](https://img.shields.io/open-vsx/v/masanori-satake/skilltrace-solo?label=Open%20VSX)](https://open-vsx.org/extension/masanori-satake/skilltrace-solo)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/masanori-satake/SkillTrace-Solo)](https://github.com/masanori-satake/SkillTrace-Solo/releases)
@@ -16,9 +16,9 @@
 
 **SkillTrace-Solo** is a lightweight, 100% local VS Code extension that shows which files an AI agent *actually* loaded while running an Agent Skill — the dynamic counterpart to [SkillMap-Solo](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skillmap-solo), which analyses the same skills statically.
 
-When GitHub Copilot or Amazon Kiro runs a skill, it follows references from `SKILL.md` into `references/` and beyond — but nothing on screen tells you how far it really got, what it cost, or how full the context window became. SkillTrace overlays the session records the agents already write (Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`; Kiro: `~/.kiro/sessions/<bucket>/sess_<uuid>/`) onto the skill's reference graph, and reports, per file, the certainty that it arrived, the measured usage (tokens for Copilot, credits for Kiro), and the context window usage. No setup is required: the records are written by default, and past sessions can be analysed retroactively.
+When GitHub Copilot or Amazon Kiro runs a skill, it follows references from `SKILL.md` into `references/` and beyond — but nothing on screen tells you how far it really got, what it cost, or how full the context window became. SkillTrace overlays the session records the agents already write (Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`; Kiro: `~/.kiro/sessions/<bucket>/sess_<uuid>/`; VS Code chat: `workspaceStorage/<hash>/chatSessions/<id>.jsonl`) onto the skill's reference graph, and reports, per file, the certainty that it arrived, the measured usage (tokens for Copilot, credits for Kiro), and the context window usage. No setup is required: the records are written by default, and past sessions can be analysed retroactively.
 
-Current version: **v1.4.4**
+Current version: **v1.5.0**
 
 ---
 
@@ -43,7 +43,7 @@ Current version: **v1.4.4**
 ### 💡 Key Features
 
 1. **Session history tree — no importing, no target switching**
-   - Sessions from Copilot and Kiro appear together in the Explorer view as a history (newest first; Kiro sessions are labelled "Kiro"): session → invoked skills (in invocation order, multiple skills supported) → reference tree.
+   - Sessions from Copilot, Kiro and VS Code chat appear together in the Explorer view as a history (newest first; Kiro sessions are labelled "Kiro", VS Code chat sessions "VS Code"): session → invoked skills (in invocation order, multiple skills supported) → reference tree.
    - While you look at the newest session, the view follows new records live (follow-tail). While you inspect a past session, new sessions only join the history with a badge — your view is never hijacked.
 
 2. **Arrival certainty, per file**
@@ -51,7 +51,7 @@ Current version: **v1.4.4**
    - Files with no record are labelled "no record", which does **not** prove they were not read. Arrival order numbers run across the whole session, and a replay button lights the files up in that order.
 
 3. **Measured usage and context window usage**
-   - Per-turn and total usage from the session record. Copilot: input / output / cache read / cache write / reasoning tokens, plus how much of the input was cache reuse. Kiro: credits per turn, because Kiro's records carry no token counts.
+   - Per-turn and total usage from the session record. Copilot: input / output / cache read / cache write / reasoning tokens, plus how much of the input was cache reuse. Kiro: credits per turn, because Kiro's records carry no token counts. VS Code chat: input / output tokens and credits per request, because its records carry both.
    - A context window usage graph shows how full the window became at the last turn (for Kiro, the usage percentage the record snapshots) — the overflow that silently degrades answer quality becomes visible.
    - Sessions in which no skill was activated (for example spec-driven work in Kiro) still show the always-loaded context (steering / AGENTS.md) and the measured usage, when the record has them.
 
@@ -72,7 +72,7 @@ Current version: **v1.4.4**
 
 - From the Visual Studio Marketplace: search for **SkillTrace-Solo**, or install from the [Marketplace page](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo). Updates arrive through VS Code as usual.
 - From a VSIX file:
-  1. Download `skilltrace-solo-1.4.4.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
+  1. Download `skilltrace-solo-1.5.0.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
   2. In VS Code, run "Extensions: Install from VSIX..." from the Command Palette and select the file.
 
 ---
@@ -132,6 +132,7 @@ Current version: **v1.4.4**
 - VS Code 1.90 or later.
 - GitHub Copilot, with sessions run through Copilot CLI / the VS Code agent host so that records exist under `~/.copilot/session-state/`.
 - Amazon Kiro, with sessions recorded in the v3 session store under `~/.kiro/sessions/`.
+- VS Code's built-in Copilot Chat, with sessions recorded under the VS Code user data folder's `workspaceStorage/<hash>/chatSessions/`.
 
 ---
 
@@ -140,7 +141,7 @@ Current version: **v1.4.4**
 
 - **100% local.** No network access, no telemetry, no tracking.
 - **Read-only.** The tool reads session records and skill files; it never modifies the agent, the skill, or the session it observes — it changes how things are *shown*, never the target.
-- Session records are read from `~/.copilot/session-state/` and `~/.kiro/sessions/` on your machine. Summaries display the first 120 characters of the session's first prompt so you can tell sessions apart; nothing leaves your machine.
+- Session records are read from `~/.copilot/session-state/`, `~/.kiro/sessions/` and the VS Code user data folder's `workspaceStorage/` on your machine. Summaries display the first 120 characters of the session's first prompt so you can tell sessions apart; nothing leaves your machine.
 
 ---
 
@@ -190,9 +191,9 @@ MIT — see [LICENSE](LICENSE).
 
 **SkillTrace-Solo** は、AI エージェントが Agent Skill を実行したときに *実際に* どのファイルを読み込んだかを表示する、軽量・100%ローカルの VS Code 拡張機能です。同じスキルを静的に解析する [SkillMap-Solo](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skillmap-solo) に対する、動的解析の担当です。
 
-GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` から `references/` やその先へ参照を辿ります。しかし画面のどこを見ても、実際にどこまで辿り着いたか、いくら消費したか、コンテキストウィンドウがどれだけ埋まったかは分かりません。SkillTrace は、エージェントが標準で書き出しているセッション記録（Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`、Kiro: `~/.kiro/sessions/<バケット>/sess_<UUID>/`）をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測（Copilot はトークン、Kiro はクレジット）、コンテキストウィンドウ使用量を表示します。設定は不要で、記録は標準で書かれるため、過去のセッションも後から分析できます。
+GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` から `references/` やその先へ参照を辿ります。しかし画面のどこを見ても、実際にどこまで辿り着いたか、いくら消費したか、コンテキストウィンドウがどれだけ埋まったかは分かりません。SkillTrace は、エージェントが標準で書き出しているセッション記録（Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`、Kiro: `~/.kiro/sessions/<バケット>/sess_<UUID>/`、VS Code チャット: `workspaceStorage/<ハッシュ>/chatSessions/<ID>.jsonl`）をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測（Copilot はトークン、Kiro はクレジット）、コンテキストウィンドウ使用量を表示します。設定は不要で、記録は標準で書かれるため、過去のセッションも後から分析できます。
 
-現在のバージョン: **v1.4.4**
+現在のバージョン: **v1.5.0**
 
 ---
 
@@ -217,7 +218,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 ### 💡 主な機能
 
 1. **セッション履歴ツリー — 取り込みも対象切り替えも不要**
-   - Copilot と Kiro のセッションが、エクスプローラーのビューに履歴として一緒に（新しい順に、Kiro のセッションには「Kiro」と表示）並びます: セッション → 起動したスキル（起動順、複数対応）→ 参照ツリー。
+   - Copilot と Kiro、VS Code チャットのセッションが、エクスプローラーのビューに履歴として一緒に（新しい順に、Kiro のセッションには「Kiro」、VS Code チャットのセッションには「VS Code」と表示）並びます: セッション → 起動したスキル（起動順、複数対応）→ 参照ツリー。
    - 最新セッションを見ている間は新しい記録にライブで追随し（follow-tail）、過去のセッションを精査している間は新着が履歴とバッジにだけ現れます。表示が横取りされることはありません。
 
 2. **ファイルごとの到達の確度**
@@ -225,7 +226,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
    - 記録が見つからないファイルは「記録なし」と表示します。これは「読まれていない」ことの証明ではありません。到達順の番号はセッション全体の通し番号で、再生ボタンでその順に点灯させることもできます。
 
 3. **実測とコンテキストウィンドウ使用量**
-   - セッション記録から、ターン別と合計の実測を表示します。Copilot は入力 / 出力 / キャッシュ読取 / キャッシュ書込 / 推論トークンと、入力のうちキャッシュ再利用で済んだ割合。Kiro は記録にトークン数がないため、ターンごとのクレジットで表示します。
+   - セッション記録から、ターン別と合計の実測を表示します。Copilot は入力 / 出力 / キャッシュ読取 / キャッシュ書込 / 推論トークンと、入力のうちキャッシュ再利用で済んだ割合。Kiro は記録にトークン数がないため、ターンごとのクレジットで表示します。VS Code チャットは記録に両方が残るため、入力 / 出力トークンとリクエストごとのクレジットを表示します。
    - コンテキストウィンドウ使用量のグラフで、最後のターン時点で窓がどれだけ埋まっていたかを表示します（Kiro は記録に残る使用率 %）。静かに精度を落とす「あふれ」が見えるようになります。
    - スキルが起動しなかったセッション（Kiro の仕様駆動など）でも、記録にあれば常時文脈（steering / AGENTS.md）と実測を表示します。
 
@@ -246,7 +247,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 
 - Visual Studio Marketplace から: **SkillTrace-Solo** で検索するか、[Marketplace のページ](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)からインストールしてください。更新は通常どおり VS Code 経由で届きます。
 - VSIX ファイルから:
-  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.4.4.vsix` をダウンロードする
+  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.5.0.vsix` をダウンロードする
   2. VS Code のコマンドパレットで「Extensions: Install from VSIX...」を実行し、ファイルを選ぶ
 
 ---
@@ -306,6 +307,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 - VS Code 1.90 以降。
 - GitHub Copilot。セッション記録が `~/.copilot/session-state/` に書かれる形（Copilot CLI / VS Code のエージェントホスト）で実行されたセッションが対象です。
 - Amazon Kiro。セッション記録が v3 セッションストア（`~/.kiro/sessions/`）に書かれるセッションが対象です。
+- VS Code 標準の Copilot チャット。セッション記録が VS Code のユーザーデータフォルダ配下の `workspaceStorage/<ハッシュ>/chatSessions/` に書かれるセッションが対象です。
 
 ---
 
@@ -314,7 +316,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 
 - **100%ローカル処理。** ネットワーク通信、テレメトリ、トラッキングは一切ありません。
 - **読み取り専用。** セッション記録とスキルファイルを読むだけで、観測対象のエージェント・スキル・セッションを変更することはありません。変えるのは「見え方」だけで、対象そのものには触れません。
-- セッション記録はお使いのマシンの `~/.copilot/session-state/` と `~/.kiro/sessions/` から読みます。サマリにはセッションを見分けるために最初のプロンプトの先頭120文字を表示しますが、外部に送信されることはありません。
+- セッション記録はお使いのマシンの `~/.copilot/session-state/` と `~/.kiro/sessions/`、VS Code のユーザーデータフォルダ配下の `workspaceStorage/` から読みます。サマリにはセッションを見分けるために最初のプロンプトの先頭120文字を表示しますが、外部に送信されることはありません。
 
 ---
 

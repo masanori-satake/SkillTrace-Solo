@@ -8,6 +8,8 @@ import { buildSessionTrace, firstHeading, type SessionTrace } from "./core/trace
 import { renderSessionHtml, renderSkillHtml } from "./core/report";
 import { defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
 import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames } from "./core/kiro";
+import { buildVSCodeSessionTrace, defaultVSCodeStorageDir, listVSCodeChatSessions, parseVSCodeChatSessionFile, scanVSCodeActivationNames } from "./core/vscode";
+import { normPath } from "./core/graph";
 import { detectSkillsForSession } from "./core/autodetect";
 import { renderSessionCopy } from "./core/copy";
 import { renderSessionMarkdown, renderSkillMarkdown } from "./core/document";
@@ -79,6 +81,28 @@ export function activate(context: vscode.ExtensionContext): void {
         buildCache.set(session.id, { mtimeMs: session.mtimeMs, trace });
         return trace;
       }
+      if (session.source === "vscode") {
+        const parsed = parseVSCodeChatSessionFile(session.eventsPath);
+        const workspaceDir = (session.workspaceHint && existsSync(session.workspaceHint))
+          ? session.workspaceHint
+          : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
+        const activated = new Set(parsed.activations.map(a => a.name));
+        const readPaths = parsed.requests.flatMap(r => r.tools.map(t => t.readPath).filter((p): p is string => !!p));
+        const parts = workspaceDir ? discoverSkills(workspaceDir)
+          .filter(sk => activated.has(sk.name) || readPaths.some(p => normPath(p).includes(normPath(sk.dir))))
+          .map(sk => {
+            let rootHeading: string | null = null;
+            try { rootHeading = firstHeading(readFileSync(join(sk.dir, "SKILL.md"), "utf8")); } catch { /* 見出しなし */ }
+            return { graph: buildGraph(sk.dir, workspaceDir), skillDirAbs: sk.dir, rootHeading };
+          }) : [];
+        // スキル起動が無くても、リクエストや読み取りの記録があればトレースを
+        // 構築する（Kiro と同じ扱い: 中身が見えることが先）
+        if (parts.length || parsed.requests.length) {
+          trace = buildVSCodeSessionTrace(parsed, parts, { sessionId: session.id, workspaceAbs: workspaceDir, lang: LANG });
+        }
+        buildCache.set(session.id, { mtimeMs: session.mtimeMs, trace });
+        return trace;
+      }
       const workspaceDir = (session.workspaceHint && existsSync(session.workspaceHint))
         ? session.workspaceHint
         : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
@@ -112,6 +136,9 @@ export function activate(context: vscode.ExtensionContext): void {
       // 候補で絞ると、無関係なスキルが1つでも発見できる環境で、未発見スキルの
       // 起動だけがあるセッションが「スキル未使用」と食い違って表示される
       result = scanKiroActivationNames(session.eventsPath);
+    } else if (session.source === "vscode") {
+      // Kiro と同じく、記録にある起動名をそのまま使う（候補で絞らない）
+      result = scanVSCodeActivationNames(session.eventsPath);
     } else if (session.workspaceHint && existsSync(session.workspaceHint)) {
       result = scanInvokedSkillNames(session.eventsPath, discoverSkills(session.workspaceHint));
     }
@@ -144,6 +171,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let debounce: NodeJS.Timeout | null = null;
   let baseWatcher: FSWatcher | null = null;
   let kiroWatcher: FSWatcher | null = null;
+  let vscodeWatcher: FSWatcher | null = null;
   let sessionWatcher: FSWatcher | null = null;
   let watchedSessionDir: string | null = null;
 
@@ -198,7 +226,8 @@ export function activate(context: vscode.ExtensionContext): void {
       source: "kiro", title: k.title,
       workspacePaths: k.workspacePaths.length ? k.workspacePaths : k.rootPaths,
     }));
-    const list = [...listSessions(sessionStateDir()), ...kiroList].sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const vscodeList: SessionInfo[] = listVSCodeChatSessions(defaultVSCodeStorageDir());
+    const list = [...listSessions(sessionStateDir()), ...kiroList, ...vscodeList].sort((a, b) => b.mtimeMs - a.mtimeMs);
     const newest = list[0];
     // 表示の決定（follow-tail）
     let newDisplayed = displayedId;
@@ -216,7 +245,7 @@ export function activate(context: vscode.ExtensionContext): void {
     lastSignature = signature;
 
     if (!list.length) {
-      treeView.message = L("セッションがまだありません。Copilot / Kiro でスキルを使うセッションを実行すると、ここに履歴として自動で並びます。", "No sessions yet. Run a session that uses skills in Copilot / Kiro and it will appear here automatically.");
+      treeView.message = L("セッションがまだありません。Copilot / Kiro / VS Code のチャットでスキルを使うセッションを実行すると、ここに履歴として自動で並びます。", "No sessions yet. Run a session that uses skills in Copilot / Kiro / VS Code chat and it will appear here automatically.");
     } else {
       treeView.message = undefined;
     }
@@ -250,6 +279,12 @@ export function activate(context: vscode.ExtensionContext): void {
       kiroWatcher = watch(join(defaultKiroHome(), "sessions"), () => scheduleRefresh());
       kiroWatcher.on("error", () => { /* ポーリングで代替 */ });
     } catch { /* Kiro 未使用環境では監視なし（ポーリングで代替） */ }
+    try {
+      vscodeWatcher?.close();
+      // chatSessions は workspaceStorage/<hash>/chatSessions の2階層下なので recursive で監視する
+      vscodeWatcher = watch(defaultVSCodeStorageDir(), { recursive: true }, () => scheduleRefresh());
+      vscodeWatcher.on("error", () => { /* ポーリングで代替 */ });
+    } catch { /* VS Code の保存領域が無い環境では監視なし（ポーリングで代替） */ }
   };
 
   // 自動追尾のオン/オフは「1つのスイッチ」: ビューのボタン・ステータスバー・設定の
@@ -487,7 +522,7 @@ export function activate(context: vscode.ExtensionContext): void {
   refreshSessions();
   const poll = setInterval(refreshSessions, 3000);
   context.subscriptions.push({ dispose: () => clearInterval(poll) });
-  context.subscriptions.push({ dispose: () => { baseWatcher?.close(); kiroWatcher?.close(); sessionWatcher?.close(); if (debounce) clearTimeout(debounce); } });
+  context.subscriptions.push({ dispose: () => { baseWatcher?.close(); kiroWatcher?.close(); vscodeWatcher?.close(); sessionWatcher?.close(); if (debounce) clearTimeout(debounce); } });
 }
 
 export function deactivate(): void { /* 購読は context.subscriptions で破棄される */ }

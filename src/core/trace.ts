@@ -43,7 +43,7 @@ export interface TraceNode {
 export interface OutsideRead { path: string; at: string | null; tool: string; failed: boolean; title: string | null }
 export interface Trace {
   /** 記録の供給源（未指定は Copilot として扱う。SessionTrace と同じ任意項目） */
-  source?: "copilot" | "kiro";
+  source?: "copilot" | "kiro" | "vscode";
   creditsTotal?: number;
   creditTurns?: { turn: number; credits: number; usedTools: string[] }[];
   contextUsageSeries?: { at: string | null; ratio: number }[];
@@ -284,7 +284,7 @@ export interface SkillPart {
 export interface SessionTrace {
   session: { id: string; startedAt: string | null; workspace: string; userMessagePreview: string; userMessageTruncated: boolean };
   /** 記録の供給源（未指定は Copilot として扱う） */
-  source?: "copilot" | "kiro";
+  source?: "copilot" | "kiro" | "vscode";
   /** Kiro: クレジット実測の合計（usage_summary の積算） */
   creditsTotal?: number;
   /** Kiro: ターン別のクレジット実測 */

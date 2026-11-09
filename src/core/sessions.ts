@@ -14,7 +14,7 @@ export interface SessionInfo {
   mtimeMs: number;
   workspaceHint: string | null;
   /** 記録の供給源（未指定は Copilot） */
-  source?: "copilot" | "kiro";
+  source?: "copilot" | "kiro" | "vscode";
   /** Kiro: session.json のタイトル */
   title?: string | null;
   /** Kiro: ワークスペースのパス一覧（マルチルート。先頭が主） */

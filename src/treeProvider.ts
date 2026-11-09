@@ -247,6 +247,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         // 行は短く保つ（ホバー時のボタンを収めるため）。発動スキルは子項目とツールチップで示す
         const parts: string[] = [];
         if (s.source === "kiro") parts.push("Kiro");
+        if (s.source === "vscode") parts.push("VS Code");
         if (isDisplayed) parts.push(this.L("表示中", "Showing"));
         if (isLatest) parts.push(this.L("最新", "Latest"));
         if (invoked !== null && invoked.length === 0) parts.push(this.L("スキル未使用", "No skill used"));
@@ -256,7 +257,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
           "",
           s.title ? `${this.L("タイトル", "Title")}: ${s.title}` : "",
           `${this.L("最終更新", "Last updated")}: ${new Date(s.mtimeMs).toLocaleString(this.lang === "en" ? "en-US" : "ja-JP")}`,
-          s.source === "kiro" ? `${this.L("記録", "Record")}: Kiro` : `${this.L("記録", "Record")}: Copilot`,
+          s.source === "kiro" ? `${this.L("記録", "Record")}: Kiro` : s.source === "vscode" ? `${this.L("記録", "Record")}: VS Code` : `${this.L("記録", "Record")}: Copilot`,
           s.workspaceHint ? `${this.L("ワークスペース", "Workspace")}: ${s.workspaceHint}` : "",
           `${this.L("起動したスキル", "Activated skills")}: ${invoked === null ? this.L("未判定", "undetermined") : invoked.length ? invoked.join(", ") : this.L("なし", "none")}`,
         ].filter(Boolean).join("\n"));
