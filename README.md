@@ -161,7 +161,7 @@ Current version: **v1.6.3**
 - Session comparison
 - Static context-window gauge, in coordination with SkillMap-Solo
 - History search and filtering
-- Learning docs, part 2 (based on workplace use)
+- Learning docs, part 2 (based on use in other environments)
 
 ---
 
