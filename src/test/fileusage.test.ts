@@ -188,3 +188,55 @@ test("same-name skills in different locations are not mixed (Issue #41 review)",
   assert.equal(single.unattributedSessions, 0);
   assert.equal(single.results[0].invokedSessions, 3);
 });
+
+test("co-reading pairs and isolated files are aggregated (Issue #42)", async () => {
+  const { aggregateFileUsageGroups } = await import("../core/fileusage.js");
+  const { buildGraph, normPath } = await import("../core/graph.js");
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-coread-"));
+  const dir = join(root, ".github", "skills", "coread");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), "# Co\n\n[a](a.md) [b](b.md) [c](c.md) [d](d.md)\n");
+  for (const f of ["a.md", "b.md", "c.md", "d.md"]) writeFileSync(join(dir, f), `# ${f}\n`);
+  const usage = (rels: string[]) => ({
+    startedAt: null,
+    skills: [{ name: "coread", dir: normPath(dir), readRels: new Map(rels.map(r => [r, null] as [string, null])), mentionRels: new Set<string>() }],
+  });
+  const usages = [
+    usage(["skill.md", "a.md", "b.md"]),
+    usage(["skill.md", "a.md", "b.md", "c.md"]),
+    usage(["skill.md", "d.md"]),
+  ];
+  const { results } = aggregateFileUsageGroups(
+    [{ label: root, dirs: [normPath(dir)], graphs: [buildGraph(dir, root)] }], usages, "coread");
+  const co = results[0].coRead;
+  const pairOf = (a: string, b: string) => co.pairs.find(p => p.a === a && p.b === b)?.sessions;
+  assert.equal(pairOf("a.md", "b.md"), 2);
+  assert.equal(pairOf("a.md", "c.md"), 1);
+  assert.equal(pairOf("b.md", "c.md"), 1);
+  // SKILL.md は常時読み込まれるため、組み合わせの対象に入らない
+  assert.ok(!co.pairs.some(p => p.a === "SKILL.md" || p.b === "SKILL.md"));
+  assert.deepEqual(co.isolated, ["d.md"]);
+});
+
+test("per-file page renders the co-reading graph and pair table (Issue #42)", async () => {
+  const { aggregateFileUsageGroups } = await import("../core/fileusage.js");
+  const { buildGraph, normPath } = await import("../core/graph.js");
+  const { renderFileUsageHtml } = await import("../core/report.js");
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-coread-html-"));
+  const dir = join(root, ".github", "skills", "coread");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), "# Co\n\n[a](a.md) [b](b.md)\n");
+  writeFileSync(join(dir, "a.md"), "# A\n");
+  writeFileSync(join(dir, "b.md"), "# B\n");
+  const usages = [{
+    startedAt: null,
+    skills: [{ name: "coread", dir: normPath(dir), readRels: new Map([["skill.md", null], ["a.md", null], ["b.md", null]] as [string, null][]), mentionRels: new Set<string>() }],
+  }];
+  const { results } = aggregateFileUsageGroups(
+    [{ label: root, dirs: [normPath(dir)], graphs: [buildGraph(dir, root)] }], usages, "coread");
+  const html = renderFileUsageHtml(results, { scanned: 1, skipped: 0, unattributed: 0 });
+  assert.ok(html.includes("同時読み込み"));
+  assert.ok(html.includes("<svg"));
+  assert.ok(html.includes("a.md + b.md"));
+  assert.ok(html.includes("線の太さ＝一緒に読み込まれたセッション数"));
+});

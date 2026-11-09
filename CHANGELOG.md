@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.11.0] - 2026-11-10
+
+### Added
+
+- Co-reading graph (Issue #42). The per-file reach view now also shows which reference files were read together in the same session: a node-link diagram (files as nodes, lines for pairs read together, line thickness mapped to the number of sessions, with a legend) plus a pair table. SKILL.md is excluded because it is read on every activation. Pairs that are always read together are merge candidates, and files that are always read alone show that the split is working — the diagram shows the structure of actual use, complementing the reference structure. When there are too many files to draw legibly, the diagram is omitted and the pairs are listed in the table only.
+
+### 追加 (Added)
+
+- 同時読み込みグラフ（Issue #42）。ファイル別の到達の表示に、同じセッションで一緒に読み込まれたファイル同士の関係を追加した。ノードリンク図（ファイルがノード、一緒に読み込まれた組み合わせが線、線の太さはセッション数に対応し凡例つき）と、組み合わせの表で示す。SKILL.md は起動のたびに読み込まれるため除いている。常に一緒に読み込まれる組み合わせは統合候補、常に単独で読み込まれるファイルは分割が機能している証拠であり、設計した参照構造に対して「実際に使われた構造」を見せるもの。対象ファイルが多い場合は図を省略し、組み合わせは表のみで示す。
+
 ## [1.10.0] - 2026-11-10
 
 ### Added
