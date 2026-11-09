@@ -286,36 +286,58 @@ export interface FileUsageRow {
 
 export interface SkillFileUsage {
   name: string;
+  /** この結果が対象とする置き場所の表示名（ワークスペースのルート等） */
+  dirLabel: string;
   /** このスキルが起動したセッション数（母数） */
   invokedSessions: number;
   rows: FileUsageRow[];
+}
+
+/** 集計の対象グループ: 同じルート（ワークスペース）内にある同名スキルは
+ *  コピーの関係として1グループにまとめ、ルートが違えば別のスキルとして分ける */
+export interface FileUsageGroup {
+  /** 表示名（ルートのパス） */
+  label: string;
+  /** グループに属するスキルフォルダ（正規化済み） */
+  dirs: string[];
+  graphs: Graph[];
 }
 
 /**
  * 発見済みスキルのグラフ（ファイル一覧）とセッション横断の到達を突き合わせる。
  * ファイル一覧はグラフに現れるファイルに限る（参照されていないファイルは
  * 構造側の関心事として対象外）。スキル外（境界）のファイルと、参照先の無い
- * ファイルは数えない。到達の相対パスは記録側のフォルダ基準なので、
- * 置き場所が変わったセッションとも突き合わせられる。
+ * ファイルは数えない。
+ *
+ * 同名スキルの混在を避ける規則:
+ * - グループが1つだけなら、そのスキルを起動したセッションをすべて数える
+ * - グループが複数ある場合は、記録に残るスキルフォルダがグループに属する
+ *   セッションだけを数える。フォルダが記録に無いセッションは、どのグループ
+ *   にも入れず unattributedSessions として返す（混ぜて数えるより正直なため）
+ * 到達の相対パスは記録側のフォルダ基準なので、置き場所が変わったセッション
+ * でも、グループが1つの場合は突き合わせられる。
  */
-export function aggregateFileUsage(graphs: Graph[], usages: SessionFileUsage[], skillName: string): SkillFileUsage {
-  const files = new Map<string, string>();
-  for (const g of graphs) {
-    for (const node of g.order) {
-      if (node.missing || node.boundary) continue;
-      const rel = node.relToSkill.replace(/\\/g, "/");
-      if (!rel || rel.startsWith("../")) continue;
-      files.set(rel.toLowerCase(), rel);
-    }
-  }
-  const counts = new Map<string, FileUsageRow>();
-  for (const [key, rel] of files) counts.set(key, { rel, readSessions: 0, mentionSessions: 0, noneSessions: 0, lastReadAt: null });
-  let invokedSessions = 0;
+export function aggregateFileUsageGroups(groups: FileUsageGroup[], usages: SessionFileUsage[], skillName: string): { results: SkillFileUsage[]; unattributedSessions: number } {
   const nameLower = skillName.toLowerCase();
+  const strict = groups.length > 1;
+  const perGroup = groups.map(g => {
+    const files = new Map<string, string>();
+    for (const graph of g.graphs) {
+      for (const node of graph.order) {
+        if (node.missing || node.boundary) continue;
+        const rel = node.relToSkill.replace(/\\/g, "/");
+        if (!rel || rel.startsWith("../")) continue;
+        files.set(rel.toLowerCase(), rel);
+      }
+    }
+    const counts = new Map<string, FileUsageRow>();
+    for (const [key, rel] of files) counts.set(key, { rel, readSessions: 0, mentionSessions: 0, noneSessions: 0, lastReadAt: null });
+    return { group: g, counts, invokedSessions: 0 };
+  });
+  let unattributedSessions = 0;
   for (const u of usages) {
-    const reach = u.skills.filter(s => s.name.toLowerCase() === nameLower);
+    const reach = u.skills.filter(x => x.name.toLowerCase() === nameLower);
     if (!reach.length) continue;
-    invokedSessions++;
     const read = new Map<string, string | null>();
     const mention = new Set<string>();
     for (const r of reach) {
@@ -325,16 +347,30 @@ export function aggregateFileUsage(graphs: Graph[], usages: SessionFileUsage[], 
       }
       for (const rel of r.mentionRels) mention.add(rel);
     }
-    for (const [key, row] of counts) {
-      const at = read.get(key);
-      if (at !== undefined) {
-        row.readSessions++;
-        if (at !== null && (row.lastReadAt === null || at > row.lastReadAt)) row.lastReadAt = at;
-      } else if (mention.has(key)) row.mentionSessions++;
-      else row.noneSessions++;
+    const recordedDirs = new Set(reach.map(r => r.dir).filter(d => d));
+    let counted = false;
+    for (const pg of perGroup) {
+      const belongs = !strict || pg.group.dirs.some(d => recordedDirs.has(d));
+      if (!belongs) continue;
+      counted = true;
+      pg.invokedSessions++;
+      for (const [key, row] of pg.counts) {
+        const at = read.get(key);
+        if (at !== undefined) {
+          row.readSessions++;
+          if (at !== null && (row.lastReadAt === null || at > row.lastReadAt)) row.lastReadAt = at;
+        } else if (mention.has(key)) row.mentionSessions++;
+        else row.noneSessions++;
+      }
     }
+    if (strict && !counted) unattributedSessions++;
   }
-  const rows = [...counts.values()].sort((a, b) =>
-    b.noneSessions - a.noneSessions || b.mentionSessions - a.mentionSessions || a.rel.localeCompare(b.rel));
-  return { name: skillName, invokedSessions, rows };
+  const results = perGroup.map(pg => ({
+    name: skillName,
+    dirLabel: pg.group.label,
+    invokedSessions: pg.invokedSessions,
+    rows: [...pg.counts.values()].sort((a, b) =>
+      b.noneSessions - a.noneSessions || b.mentionSessions - a.mentionSessions || a.rel.localeCompare(b.rel)),
+  }));
+  return { results, unattributedSessions };
 }

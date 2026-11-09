@@ -500,25 +500,43 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
 
 // ファイル単位の横断集計（Issue #41）: スキルの分割方法の判断材料として、
 // 参照ファイルごとに「読み込まれたセッション数」を寄せる
-export function renderFileUsageHtml(usage: SkillFileUsage, meta: { scanned: number; skipped: number }, lang: Lang = "ja"): string {
+export function renderFileUsageHtml(results: SkillFileUsage[], meta: { scanned: number; skipped: number; unattributed: number }, lang: Lang = "ja"): string {
   const en = lang === "en";
   const dash = "—";
-  const title = en ? `Per-file reach — ${usage.name}` : `ファイル別の到達 — ${usage.name}`;
+  const name = results[0]?.name ?? "";
+  const title = en ? `Per-file reach — ${name}` : `ファイル別の到達 — ${name}`;
+  const multiple = results.length > 1;
   const body: string[] = [];
   body.push(`<h1>${esc(title)}</h1>`);
   body.push(`<p><a href="command:skilltrace.showSkillTotals">${en ? "← Back to skill totals" : "← スキル別集計に戻る"}</a></p>`);
   body.push(`<div class="note">${en
-    ? `Counts the sessions shown in the history (up to 30 most recent per source) in which this skill was activated: ${usage.invokedSessions} session(s), out of ${meta.scanned} scanned${meta.skipped ? `; ${meta.skipped} could not be read and were skipped` : ""}. The file list comes from the reference graph of the skill as found in the currently open workspace.`
-    : `履歴に表示中のセッション（供給源ごとに新しい順30件まで）のうち、このスキルが起動した ${usage.invokedSessions} セッションを数えました（走査したのは ${meta.scanned} セッション${meta.skipped ? `、読み取れなかった ${meta.skipped} 件は除く` : ""}）。ファイルの一覧は、今開いているワークスペースで見つかったスキルの参照グラフから取っています。`}</div>`);
-  if (!usage.rows.length) {
-    body.push(`<p>${en ? "No files were found in the reference graph of this skill." : "このスキルの参照グラフにファイルがありませんでした。"}</p>`);
-    return pageShell(title, body.join("\n"), lang);
+    ? `Counts the sessions shown in the history (up to 30 most recent per source), out of ${meta.scanned} scanned${meta.skipped ? `; ${meta.skipped} could not be read and were skipped` : ""}. The file list comes from the reference graph of the skill as found in the currently open workspace.`
+    : `履歴に表示中のセッション（供給源ごとに新しい順30件まで）から集計しました。走査したのは ${meta.scanned} セッション${meta.skipped ? `（読み取れなかった ${meta.skipped} 件は除く）` : ""}。ファイルの一覧は、今開いているワークスペースで見つかったスキルの参照グラフから取っています。`}</div>`);
+  if (multiple) {
+    body.push(`<div class="note">${en
+      ? "Skills with the same name exist in more than one location, so the results are split per location. Within one location, the placements (.agents / .github / .kiro) are treated as copies of one skill. Sessions are counted toward a location only when the skill folder recorded in the session belongs to it."
+      : "同名のスキルが複数の場所にあるため、場所ごとに分けて集計しています。同じ場所の中の各配置（.agents / .github / .kiro）は、1つのスキルのコピーとしてまとめています。セッションは、記録に残るスキルフォルダがその場所に属する場合だけ数えます。"}</div>`);
+    if (meta.unattributed > 0) {
+      body.push(`<div class="note">${en
+        ? `${meta.unattributed} session(s) activated a skill of this name but could not be attributed to any location (no folder in the record, or a folder that is not open), so they are not counted anywhere above.`
+        : `この名前のスキルを起動したセッションのうち ${meta.unattributed} 件は、場所を特定できなかったため（記録にフォルダが無い、または開いていない場所のため）上のどこにも数えていません。`}</div>`);
+    }
   }
-  body.push(`<table class="totals"><thead><tr><th>${en ? "File" : "ファイル"}</th><th>${en ? "Read in (sessions)" : "読み込まれた（セッション）"}</th><th>${en ? "Mentioned only" : "言及のみ"}</th><th>${en ? "No reach recorded" : "到達なし"}</th><th>${en ? "Last read" : "最終到達"}</th></tr></thead><tbody>`);
-  for (const r of usage.rows) {
-    body.push(`<tr><td>${esc(r.rel)}</td><td>${fmt(r.readSessions)}</td><td>${fmt(r.mentionSessions)}</td><td>${fmt(r.noneSessions)}</td><td>${esc(r.lastReadAt ? formatLocalDateTime(r.lastReadAt, lang) : dash)}</td></tr>`);
+  for (const usage of results) {
+    if (multiple) body.push(`<h2>${esc(usage.dirLabel)}</h2>`);
+    body.push(`<p>${en
+      ? `Sessions in which this skill was activated: ${usage.invokedSessions}`
+      : `このスキルが起動したセッション: ${usage.invokedSessions} 件`}</p>`);
+    if (!usage.rows.length) {
+      body.push(`<p>${en ? "No files were found in the reference graph of this skill." : "このスキルの参照グラフにファイルがありませんでした。"}</p>`);
+      continue;
+    }
+    body.push(`<table class="totals"><thead><tr><th>${en ? "File" : "ファイル"}</th><th>${en ? "Read in (sessions)" : "読み込まれた（セッション）"}</th><th>${en ? "Mentioned only" : "言及のみ"}</th><th>${en ? "No reach recorded" : "到達なし"}</th><th>${en ? "Last read" : "最終到達"}</th></tr></thead><tbody>`);
+    for (const r of usage.rows) {
+      body.push(`<tr><td>${esc(r.rel)}</td><td>${fmt(r.readSessions)}</td><td>${fmt(r.mentionSessions)}</td><td>${fmt(r.noneSessions)}</td><td>${esc(r.lastReadAt ? formatLocalDateTime(r.lastReadAt, lang) : dash)}</td></tr>`);
+    }
+    body.push("</tbody></table>");
   }
-  body.push("</tbody></table>");
   body.push(`<div class="note">${en
     ? "\"Read in\" is based on structural evidence in the records (tool arguments, read URIs, always-loaded context inclusions) and is coarser than the per-session traces. \"No reach recorded\" means only that no reach was confirmed in sessions that have records — it does not prove the file is never read. Files not referenced from the skill (and therefore absent from the graph) are not listed."
     : "「読み込まれた」は、記録に残る構造的な証拠（ツールの引数、読み取り URI、常時文脈への取り込み）に基づく判定で、セッション単位のトレースより粗いものです。「到達なし」は、記録のあるセッションで到達が確認できなかったという意味で、読まれていないことの証明ではありません。スキルから参照されておらず参照グラフに現れないファイルは、この一覧には出ません。"}</div>`);

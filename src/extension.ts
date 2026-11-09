@@ -6,7 +6,7 @@ import { buildGraph } from "./core/graph";
 import { parseEventsFile } from "./core/events";
 import { buildSessionTrace, firstHeading, type SessionTrace } from "./core/trace";
 import { renderFileUsageHtml, renderFileUsageMissingHtml, renderSessionHtml, renderSkillHtml, renderSkillTotalsHtml } from "./core/report";
-import { aggregateFileUsage, extractSessionFileUsage, type SessionFileUsage } from "./core/fileusage";
+import { aggregateFileUsageGroups, extractSessionFileUsage, type FileUsageGroup, type SessionFileUsage } from "./core/fileusage";
 import type { Graph } from "./core/graph";
 import { aggregateSessionFile, mergeSkillTotals, type SessionSkillUsage } from "./core/aggregate";
 import { capSessionsBySource, defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
@@ -492,18 +492,20 @@ export function activate(context: vscode.ExtensionContext): void {
       const generation = ++panelGeneration;
       const roots = [...(vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? []), homedir()];
       const graphs: Graph[] = [];
-      const seenDirs = new Set<string>();
+      // 同名スキルの混在を避けるため、ルート（ワークスペース）ごとに
+      // グループ化する。同じルート内の各配置場所はコピーの関係としてまとめる
+      const groups: FileUsageGroup[] = [];
       for (const root of roots) {
         if (!root || !existsSync(root)) continue;
+        const dirs: string[] = [];
+        const g: Graph[] = [];
         for (const s of discoverSkills(root)) {
           if (s.name.toLowerCase() !== name.toLowerCase()) continue;
-          const key = s.dir.toLowerCase();
-          if (seenDirs.has(key)) continue;
-          seenDirs.add(key);
-          try { graphs.push(buildGraph(s.dir, root)); } catch { /* 読めないスキルは飛ばす */ }
+          try { g.push(buildGraph(s.dir, root)); dirs.push(normPath(s.dir)); } catch { /* 読めないスキルは飛ばす */ }
         }
+        if (g.length) groups.push({ label: root, dirs, graphs: g });
       }
-      if (!graphs.length) {
+      if (!groups.length) {
         showHtmlPanel(L("ファイル別の到達", "Per-file reach"), renderFileUsageMissingHtml(name, LANG));
         return;
       }
@@ -519,8 +521,8 @@ export function activate(context: vscode.ExtensionContext): void {
             await new Promise<void>(resolve => setImmediate(resolve));
           }
           if (generation === panelGeneration) {
-            const usage = aggregateFileUsage(graphs, usages, name);
-            showHtmlPanel(L("ファイル別の到達", "Per-file reach"), renderFileUsageHtml(usage, { scanned: usages.length, skipped }, LANG));
+            const { results, unattributedSessions } = aggregateFileUsageGroups(groups, usages, name);
+            showHtmlPanel(L("ファイル別の到達", "Per-file reach"), renderFileUsageHtml(results, { scanned: usages.length, skipped, unattributed: unattributedSessions }, LANG));
           }
         },
       );

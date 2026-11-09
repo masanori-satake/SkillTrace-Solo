@@ -50,7 +50,7 @@ test("per-file reach extraction from the VS Code chat fixture record", async () 
 });
 
 test("aggregation marks files never reached in any session (Issue #41)", async () => {
-  const { extractFileUsageCopilotText, aggregateFileUsage } = await import("../core/fileusage.js");
+  const { extractFileUsageCopilotText, aggregateFileUsageGroups } = await import("../core/fileusage.js");
   const { buildGraph } = await import("../core/graph.js");
   // SKILL.md が alpha と delta を参照し、alpha が beta を参照するスキル。
   // フィクスチャのセッションは alpha / beta / gamma を読んでいる
@@ -63,7 +63,10 @@ test("aggregation marks files never reached in any session (Issue #41)", async (
   writeFileSync(join(skillDir, "references", "delta.md"), "# Delta\n");
   const graph = buildGraph(skillDir, root);
   const text = readFileSync(join(FIX, "events.jsonl"), "utf8");
-  const usage = aggregateFileUsage([graph], [extractFileUsageCopilotText(text)], "phase0-probe");
+  const { results } = aggregateFileUsageGroups(
+    [{ label: root, dirs: [skillDir.replace(/\\/g, "/").toLowerCase()], graphs: [graph] }],
+    [extractFileUsageCopilotText(text)], "phase0-probe");
+  const usage = results[0];
   assert.equal(usage.invokedSessions, 1);
   const byRel = new Map(usage.rows.map(r => [r.rel, r]));
   assert.equal(byRel.get("SKILL.md")?.readSessions, 1);
@@ -146,4 +149,42 @@ test("vscode: read paths with spaces match the skill folder exactly (Issue #41 r
   assert.ok(s);
   assert.ok(s.readRels.has("skill.md"));
   assert.ok(s.readRels.has("references/a b.md"), JSON.stringify([...s.readRels.keys()]));
+});
+
+test("same-name skills in different locations are not mixed (Issue #41 review)", async () => {
+  const { aggregateFileUsageGroups } = await import("../core/fileusage.js");
+  const { buildGraph, normPath } = await import("../core/graph.js");
+  const mkSkill = (rootName: string, extra: string): { root: string; dir: string } => {
+    const root = mkdtempSync(join(tmpdir(), rootName));
+    const dir = join(root, ".github", "skills", "dup");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), `# Dup\n\nRead [x](${extra}).\n`);
+    writeFileSync(join(dir, extra), "# X\n");
+    return { root, dir };
+  };
+  const a = mkSkill("skilltrace-dup-a-", "only-a.md");
+  const b = mkSkill("skilltrace-dup-b-", "only-b.md");
+  const usage = (dir: string, rel: string) => ({
+    startedAt: null,
+    skills: [{ name: "dup", dir, readRels: new Map([["skill.md", null], [rel, null]]), mentionRels: new Set<string>() }],
+  });
+  const usages = [usage(normPath(a.dir), "only-a.md"), usage(normPath(b.dir), "only-b.md"), usage("", "skill.md")];
+  const groups = [
+    { label: a.root, dirs: [normPath(a.dir)], graphs: [buildGraph(a.dir, a.root)] },
+    { label: b.root, dirs: [normPath(b.dir)], graphs: [buildGraph(b.dir, b.root)] },
+  ];
+  const { results, unattributedSessions } = aggregateFileUsageGroups(groups, usages, "dup");
+  assert.equal(results.length, 2);
+  // A には A のファイルだけが、A のセッションだけで数えられる
+  assert.equal(results[0].invokedSessions, 1);
+  assert.ok(results[0].rows.some(r => r.rel === "only-a.md" && r.readSessions === 1));
+  assert.ok(!results[0].rows.some(r => r.rel === "only-b.md"));
+  assert.equal(results[1].invokedSessions, 1);
+  assert.ok(results[1].rows.some(r => r.rel === "only-b.md" && r.readSessions === 1));
+  // フォルダの分からないセッションは、複数グループのときはどこにも混ぜない
+  assert.equal(unattributedSessions, 1);
+  // グループが1つだけなら、フォルダ不明のセッションも名前で数える
+  const single = aggregateFileUsageGroups([groups[0]], usages, "dup");
+  assert.equal(single.unattributedSessions, 0);
+  assert.equal(single.results[0].invokedSessions, 3);
 });
