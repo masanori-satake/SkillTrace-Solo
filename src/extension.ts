@@ -9,7 +9,7 @@ import { renderFileUsageHtml, renderFileUsageMissingHtml, renderSessionHtml, ren
 import { aggregateFileUsageGroups, extractSessionFileUsage, type FileUsageGroup, type SessionFileUsage } from "./core/fileusage";
 import type { Graph } from "./core/graph";
 import { aggregateSessionFile, mergeSkillTotals, type SessionSkillUsage } from "./core/aggregate";
-import { capSessionsBySource, defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
+import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
 import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames } from "./core/kiro";
 import { buildVSCodeSessionTrace, defaultVSCodeStorageDir, listVSCodeChatSessions, parseVSCodeChatSessionFile, scanVSCodeActivationNames } from "./core/vscode";
 import { normPath } from "./core/graph";
@@ -180,6 +180,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(statusBar);
 
   let autoFollow = vscode.workspace.getConfiguration("skilltrace").get<boolean>("autoFollowLatest") ?? true;
+  let filterToWorkspace = vscode.workspace.getConfiguration("skilltrace").get<boolean>("filterToCurrentWorkspace") ?? false;
   let sessions: SessionInfo[] = [];
   let displayedId: string | null = null;
   let prevNewestId: string | null = null;
@@ -244,35 +245,41 @@ export function activate(context: vscode.ExtensionContext): void {
     }));
     const vscodeList: SessionInfo[] = listVSCodeChatSessions(defaultVSCodeStorageDir());
     const list = [...listSessions(sessionStateDir()), ...kiroList, ...vscodeList].sort((a, b) => b.mtimeMs - a.mtimeMs);
-    const newest = list[0];
+    // ワークスペース絞り込み（Issue #44）: 供給源ごとの上限より前に絞る。
+    // オン の間は、関係を確かめられないセッション（ワークスペース不明）は表示しない
+    const roots = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath);
+    const visible = filterToWorkspace ? filterSessionsToWorkspace(list, roots) : list;
+    const newest = visible[0];
     // 表示の決定（follow-tail）
     let newDisplayed = displayedId;
     if (!newest) newDisplayed = null;
     else if (displayedId === null) newDisplayed = newest.id;
     else if (autoFollow && displayedId === prevNewestId && newest.id !== prevNewestId) newDisplayed = newest.id;
-    else if (!list.some(s => s.id === displayedId)) newDisplayed = newest.id;
+    else if (!visible.some(s => s.id === displayedId)) newDisplayed = newest.id;
 
-    const signature = list.map(s => `${s.id}:${s.mtimeMs}`).join("|") + `#${newDisplayed ?? ""}#${autoFollow}`;
+    const signature = visible.map(s => `${s.id}:${s.mtimeMs}`).join("|") + `#${newDisplayed ?? ""}#${autoFollow}#${filterToWorkspace}#${roots.join("|")}`;
     const displayedChanged = newDisplayed !== displayedId;
-    sessions = list;
+    sessions = visible;
     displayedId = newDisplayed;
     prevNewestId = newest?.id ?? null;
     if (signature === lastSignature && !displayedChanged) { refreshStatus(); return; }
     lastSignature = signature;
 
-    if (!list.length) {
-      treeView.message = L("セッションがまだありません。Copilot CLI / Kiro / Copilot Chat でスキルを使うセッションを実行すると、ここに履歴として自動で並びます。", "No sessions yet. Run a session that uses skills in Copilot CLI, Kiro, or Copilot Chat and it will appear here automatically.");
+    if (!visible.length) {
+      treeView.message = filterToWorkspace && list.length
+        ? L("現在のワークスペースに関連するセッションがありません。ワークスペースが記録から分からないセッションも、絞り込みがオンの間は表示されません。絞り込みをオフにすると全セッションが表示されます。", "No sessions are related to the current workspace. Sessions whose workspace is not in their records are also hidden while the filter is on. Turn off the workspace filter to see all sessions.")
+        : L("セッションがまだありません。Copilot CLI / Kiro / Copilot Chat でスキルを使うセッションを実行すると、ここに履歴として自動で並びます。", "No sessions yet. Run a session that uses skills in Copilot CLI, Kiro, or Copilot Chat and it will appear here automatically.");
     } else {
       treeView.message = undefined;
     }
     if (displayedChanged) provider.resetExpandedFor(displayedId ?? "");
-    const displayed = list.find(s => s.id === displayedId);
+    const displayed = visible.find(s => s.id === displayedId);
     if (displayed) {
       // 表示中セッションの記録が伸びていたら、再描画より先に古いトレースを捨てる
       const built = buildCache.get(displayed.id);
       if (built && built.mtimeMs !== displayed.mtimeMs) provider.invalidateTrace(displayed.id);
     }
-    provider.setSessions(list, displayedId);
+    provider.setSessions(visible, displayedId);
     updateBadge();
     refreshStatus();
     ensureSessionWatcher(displayed);
@@ -318,6 +325,20 @@ export function activate(context: vscode.ExtensionContext): void {
       // 追尾に戻るときは最新のセッションへ表示を移す
       displayedId = sessions[0].id;
       provider.resetExpandedFor(displayedId);
+    }
+    lastSignature = "";
+    refreshSessions();
+  };
+
+  // ワークスペース絞り込みも自動追尾と同じ「1つのスイッチ」: ボタン・設定の
+  // どちらを操作しても同じ状態が全箇所に反映される（Issue #44）
+  const setWorkspaceFilter = async (value: boolean, opts: { persist?: boolean } = {}): Promise<void> => {
+    filterToWorkspace = value;
+    await vscode.commands.executeCommand("setContext", "skilltrace.workspaceFilter", value);
+    if (opts.persist !== false) {
+      try {
+        await vscode.workspace.getConfiguration("skilltrace").update("filterToCurrentWorkspace", value, vscode.ConfigurationTarget.Global);
+      } catch { /* スキーマ登録ラグ時はメモリ上の状態を正とする */ }
     }
     lastSignature = "";
     refreshSessions();
@@ -418,6 +439,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("skilltrace.toggleAutoFollow", async () => { await setAutoFollow(!autoFollow); }),
     vscode.commands.registerCommand("skilltrace.enableAutoFollow", async () => { await setAutoFollow(true); }),
     vscode.commands.registerCommand("skilltrace.pauseAutoFollow", async () => { await setAutoFollow(false); }),
+    vscode.commands.registerCommand("skilltrace.toggleWorkspaceFilter", async () => { await setWorkspaceFilter(!filterToWorkspace); }),
+    vscode.commands.registerCommand("skilltrace.enableWorkspaceFilter", async () => { await setWorkspaceFilter(true); }),
+    vscode.commands.registerCommand("skilltrace.disableWorkspaceFilter", async () => { await setWorkspaceFilter(false); }),
     // タイトルバーの「すべて展開」「すべて折りたたむ」: 履歴の全セッションを
     // 対象にする。かつては1つのトグルボタンだったが、閉じたいつもりで押して
     // 高コストな「すべて展開」が走る事故があったため、2ボタンに分離した
@@ -448,7 +472,12 @@ export function activate(context: vscode.ExtensionContext): void {
         const v = vscode.workspace.getConfiguration("skilltrace").get<boolean>("autoFollowLatest") ?? true;
         if (v !== autoFollow) await setAutoFollow(v, { persist: false });
       }
+      if (e.affectsConfiguration("skilltrace.filterToCurrentWorkspace")) {
+        const v = vscode.workspace.getConfiguration("skilltrace").get<boolean>("filterToCurrentWorkspace") ?? false;
+        if (v !== filterToWorkspace) await setWorkspaceFilter(v, { persist: false });
+      }
     }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => { lastSignature = ""; refreshSessions(); }),
     vscode.commands.registerCommand("skilltrace.refresh", () => {
       if (displayedId) { buildCache.delete(displayedId); provider.invalidateTrace(displayedId); }
       lastSignature = "";
@@ -612,6 +641,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 起動時: 履歴を並べ、自動追尾（follow-tail）を始める
   refreshStatus();
   void vscode.commands.executeCommand("setContext", "skilltrace.autoFollow", autoFollow);
+  void vscode.commands.executeCommand("setContext", "skilltrace.workspaceFilter", filterToWorkspace);
   startWatching();
   refreshSessions();
   const poll = setInterval(refreshSessions, 3000);

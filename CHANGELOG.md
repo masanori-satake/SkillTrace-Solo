@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.12.0] - 2026-11-10
+
+### Added
+
+- History filter to the current workspace (Issue #44). A new setting `skilltrace.filterToCurrentWorkspace` (default off) and a filter button in the history view title bar — one switch, like auto-follow, so the setting and the button always agree. While it is on, the history shows only sessions certainly related to the open workspace folders (the recorded workspace matches a folder, or is inside it / contains it; multi-root workspaces match on any root). Sessions whose workspace cannot be determined from their records are hidden while the filter is on, so the list becomes exactly the sessions worth checking; they reappear when the filter is turned off. The filter is applied before the per-source newest-30 cap, so related sessions are not crowded out, and the skill totals and per-file reach are computed over the filtered (displayed) sessions.
+
+### 追加 (Added)
+
+- 履歴を現在のワークスペースに絞るモード（Issue #44）。設定 `skilltrace.filterToCurrentWorkspace`（既定オフ）と、履歴ビューのタイトルバーのフィルターボタンを追加した。自動追尾と同じ「1つのスイッチ」で、設定とボタンは常に連動する。オンの間は、開いているワークスペースフォルダーに確実に関係するセッションだけを表示する（記録のワークスペースがフォルダーと一致、またはその配下／上位。マルチルートはいずれかのルートで照合）。ワークスペースが記録から分からないセッションはオンの間は表示されないため、確認すべきセッションが明確になる。オフにすれば全セッションが戻る。絞り込みは供給源ごとの新しい順30件の上限より前に適用するため、関係するセッションが上限で押し出されることはなく、スキル別集計とファイル別到達も絞り込み後の表示中セッションを対象に計算する。
+
 ## [1.11.0] - 2026-11-10
 
 ### Added
