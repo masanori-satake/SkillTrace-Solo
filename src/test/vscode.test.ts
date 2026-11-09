@@ -115,3 +115,38 @@ test("vscode summaries show both token usage and credit usage", () => {
   assert.ok(md.includes("クレジット実測"));
   assert.ok(md.includes("| 1 | 0.24 | 3 | 1 |"));
 });
+
+test("vscode replay: kind 2 appends to arrays, and i truncates before appending", () => {
+  const req = (id: string) => ({ requestId: id, timestamp: 2000, message: { text: id }, response: [], promptTokens: 1, completionTokens: 1, copilotCredits: 0 });
+  const header = JSON.stringify({ kind: 0, v: { version: 3, creationDate: 1000, sessionId: "s2", requests: [] } });
+  const appended = parseVSCodeChatSessionText([
+    header,
+    JSON.stringify({ kind: 2, k: ["requests"], v: [req("r1")] }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: [req("r2")] }),
+  ].join("\n"));
+  assert.deepEqual(appended.requests.map(r => r.userMessage), ["r1", "r2"]);
+  const truncated = parseVSCodeChatSessionText([
+    header,
+    JSON.stringify({ kind: 2, k: ["requests"], v: [req("r1"), req("r2")] }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: [req("r3")], i: 1 }),
+  ].join("\n"));
+  assert.deepEqual(truncated.requests.map(r => r.userMessage), ["r1", "r3"]);
+});
+
+test("vscode activations keep the skill directory's letter case", () => {
+  const uri = "file:///c%3A/work/.github/skills/MySkill/SKILL.md?vscodeLinkType%3Dskill";
+  const part = {
+    kind: "toolInvocationSerialized", toolId: "copilot_readFile", toolCallId: "c1", isComplete: true,
+    startedAt: 3000, completedAt: 3001,
+    invocationMessage: {
+      value: `Reading skill [MySkill](${uri})`,
+      uris: { [decodeURIComponent(uri)]: { $mid: 1, path: "/c:/work/.github/skills/MySkill/SKILL.md", scheme: "file", query: "vscodeLinkType=skill" } },
+    },
+  };
+  const text = [
+    JSON.stringify({ kind: 0, v: { version: 3, creationDate: 1000, sessionId: "s3", requests: [] } }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r1", timestamp: 2000, message: { text: "hi" }, response: [part], promptTokens: 1, completionTokens: 1, copilotCredits: 0 }] }),
+  ].join("\n");
+  const parsed = parseVSCodeChatSessionText(text);
+  assert.deepEqual(parsed.activations.map(a => a.name), ["MySkill"]);
+});

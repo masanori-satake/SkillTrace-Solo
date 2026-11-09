@@ -1,5 +1,6 @@
 // VS Code の Copilot チャット記録（workspaceStorage/<hash>/chatSessions/<id>.jsonl）の読み取り口。
-// 形式は差分ログ: kind 0 = セッション全体のスナップショット、kind 1 / 2 = キー経路 k への値のセット。
+// 形式は差分ログ: kind 0 = セッション全体のスナップショット、kind 1 = キー経路 k への値のセット、
+// kind 2 = キー経路の配列への追記（任意の i で、その長さに切り詰めてから追記する）。
 // 順に適用すると最終状態（requests 配列）が復元できる（2026-11-09 の実ファイルで確認）。
 // リクエストの応答パートにツール呼び出し（toolInvocationSerialized）が残り、
 // copilot_readFile の対象パスは invocationMessage の uris から引ける。
@@ -105,6 +106,50 @@ function setPath(state: unknown, path: unknown[], value: unknown): void {
   }
 }
 
+/** 差分ログの再生（kind 2）: キー経路の配列へ追記する。
+ *  e.i が指定されていれば、先にその長さへ切り詰める（再生成で古い応答を捨てる動き）。
+ *  対象が配列でなければ空配列から始める。v が配列ならその要素をすべて、そうでなければ v 自体を追記する */
+function appendAtPath(state: unknown, path: unknown[], value: unknown, indexHint: unknown): void {
+  // 親まで辿る（setPath と同じ経路規則）
+  let cur: unknown = state;
+  for (let i = 0; i < path.length - 1; i++) {
+    if (!isObj(cur) && !Array.isArray(cur)) return;
+    const key = path[i];
+    const nextKey = path[i + 1];
+    const wantArray = typeof nextKey === "number" || (typeof nextKey === "string" && /^\d+$/.test(nextKey));
+    if (Array.isArray(cur)) {
+      const idx = typeof key === "number" ? key : /^\d+$/.test(String(key)) ? Number(key) : -1;
+      if (idx < 0) return;
+      while (cur.length <= idx) cur.push(null);
+      if (!isObj(cur[idx]) && !Array.isArray(cur[idx])) cur[idx] = wantArray ? [] : {};
+      cur = cur[idx];
+    } else {
+      const rec = cur as Json;
+      const k = String(key);
+      if (!isObj(rec[k]) && !Array.isArray(rec[k])) rec[k] = wantArray ? [] : {};
+      cur = rec[k];
+    }
+  }
+  const last = path[path.length - 1];
+  let target: unknown[];
+  if (Array.isArray(cur)) {
+    const idx = typeof last === "number" ? last : /^\d+$/.test(String(last)) ? Number(last) : -1;
+    if (idx < 0) return;
+    while (cur.length <= idx) cur.push(null);
+    if (!Array.isArray(cur[idx])) cur[idx] = [];
+    target = cur[idx] as unknown[];
+  } else if (isObj(cur)) {
+    const k = String(last);
+    if (!Array.isArray(cur[k])) cur[k] = [];
+    target = cur[k] as unknown[];
+  } else return;
+  if (typeof indexHint === "number" && Number.isFinite(indexHint) && indexHint >= 0 && target.length > indexHint) {
+    target.length = Math.floor(indexHint);
+  }
+  if (Array.isArray(value)) target.push(...value);
+  else target.push(value);
+}
+
 /** ツール呼び出しパートから、読み取り対象のパスと「スキル読み取り」かを取り出す */
 function extractRead(part: Json): { readPath: string | null; skillRead: boolean } {
   const msg = isObj(part.invocationMessage) ? part.invocationMessage : isObj(part.pastTenseMessage) ? part.pastTenseMessage : null;
@@ -129,11 +174,15 @@ function extractRead(part: Json): { readPath: string | null; skillRead: boolean 
   return { readPath, skillRead };
 }
 
-/** 読み取りパスからスキル名を引く（.../skills/<名前>/SKILL.md） */
+/** 読み取りパスからスキル名を引く（.../skills/<名前>/SKILL.md）。
+ *  名前の大文字小文字は保持する（normPath の小文字化を通すと、発見した
+ *  スキルのディレクトリ名と一致せず「未発見」の注記が誤って付くため）。
+ *  "skills" と "SKILL.md" の照合だけ大文字小文字を区別しない */
 function skillNameFromPath(p: string): string | null {
-  const segs = normPath(p).split("/");
-  const i = segs.lastIndexOf("skills");
-  if (i >= 0 && segs[i + 1] && segs[segs.length - 1]?.toLowerCase() === "skill.md") return segs[i + 1];
+  const segs = vsDisplayPath(p).split("/").filter(x => x !== "" && x !== ".");
+  const lowered = segs.map(x => x.toLowerCase());
+  const i = lowered.lastIndexOf("skills");
+  if (i >= 0 && segs[i + 1] && lowered[lowered.length - 1] === "skill.md") return segs[i + 1];
   return null;
 }
 
@@ -152,8 +201,10 @@ export function parseVSCodeChatSessionText(text: string): VSCodeParsed {
     health.typeCounts[key] = (health.typeCounts[key] || 0) + 1;
     if (kind === 0 && isObj(e.v)) {
       state = JSON.parse(JSON.stringify(e.v)) as Json;
-    } else if ((kind === 1 || kind === 2) && state && Array.isArray(e.k) && e.k.length) {
+    } else if (kind === 1 && state && Array.isArray(e.k) && e.k.length) {
       setPath(state, e.k as unknown[], e.v);
+    } else if (kind === 2 && state && Array.isArray(e.k) && e.k.length) {
+      appendAtPath(state, e.k as unknown[], e.v, e.i);
     }
   }
 
@@ -268,6 +319,17 @@ function lightScan(filePath: string): { title: string | null } {
   return { title: null };
 }
 
+/** 列挙用タイトルのキャッシュ（ファイルパス + mtimeMs が同じなら再スキャンしない）。
+ *  履歴の再描画のたびに全セッションを lightScan すると、件数が多い環境で重くなる */
+const titleCache = new Map<string, { mtimeMs: number; title: string | null }>();
+function cachedTitle(eventsPath: string, mtimeMs: number): string | null {
+  const hit = titleCache.get(eventsPath);
+  if (hit && hit.mtimeMs === mtimeMs) return hit.title;
+  const title = lightScan(eventsPath).title;
+  titleCache.set(eventsPath, { mtimeMs, title });
+  return title;
+}
+
 export function listVSCodeChatSessions(storageDir: string): SessionInfo[] {
   if (!existsSync(storageDir)) return [];
   const out: SessionInfo[] = [];
@@ -293,7 +355,7 @@ export function listVSCodeChatSessions(storageDir: string): SessionInfo[] {
           mtimeMs: st.mtimeMs,
           workspaceHint: hint,
           source: "vscode",
-          title: lightScan(eventsPath).title,
+          title: cachedTitle(eventsPath, st.mtimeMs),
           workspacePaths: hint ? [hint] : [],
         });
       } catch { /* skip */ }
