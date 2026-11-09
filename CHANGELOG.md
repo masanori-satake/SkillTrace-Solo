@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.4.4] - 2026-11-09
+
+### Changed
+
+- **Regression coverage for sessions recorded through VS Code.** In
+  environments where VS Code delegates agent runs to the Copilot CLI
+  host, sessions are recorded in the CLI format under
+  `~/.copilot/session-state` and were already traced correctly; a real
+  probe session (activation, traversal order, token totals) is now
+  pinned as a test fixture so this keeps working. No behaviour change.
+  Support for the other VS Code storage format (chatSessions) is
+  tracked in Issue #22.
+
+### 変更 (Changed)
+
+- **VS Code 経由で記録されるセッションへの回帰テストを追加。**
+  VS Code のエージェント実行が Copilot CLI ホストに委ねられる環境では、
+  記録は CLI 形式で `~/.copilot/session-state` に残り、従来から正しく
+  辿れていた。その実セッション（起動・到達順・トークン実測）を
+  テストフィクスチャとして固定し、今後も壊れないようにした。
+  挙動の変更はない。もう一方の保存形式（chatSessions）への対応は
+  Issue #22 で追跡中。
+
 ## [1.4.3] - 2026-11-09
 
 ### Fixed

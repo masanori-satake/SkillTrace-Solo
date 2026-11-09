@@ -326,3 +326,29 @@ test("history cap is per source, so Kiro sessions cannot crowd out Copilot ones"
   // 全体の並び（新しい順）は保たれる
   for (let i = 1; i < capped.length; i++) assert.ok(capped[i - 1].mtimeMs >= capped[i].mtimeMs);
 });
+
+test("vscode-probe: sessions recorded by VS Code's Copilot agent host (CLI format) trace fully", () => {
+  // VS Code のエージェント実行が Copilot CLI ホストに委ねられる環境では、
+  // 記録は CLI 形式の events.jsonl として ~/.copilot/session-state に残る。
+  // その実ファイル（自宅プローブ、2026-11-09）で、起動と辿りが復元できることを固定する
+  const probeRoot = join(root, "vscode-probe");
+  const probeWs = join(probeRoot, "workspace");
+  const probeSkillDir = join(probeWs, ".github", "skills", "vscode-probe");
+  const parsed = parseEventsText(readFileSync(join(probeRoot, "events.jsonl"), "utf8"));
+  const graph = buildGraph(probeSkillDir, probeWs);
+  const heading = firstHeading(readFileSync(join(probeSkillDir, "SKILL.md"), "utf8"));
+  const st = buildSessionTrace(parsed, [{ graph, skillDirAbs: probeSkillDir, rootHeading: heading }], { sessionId: "vscode-probe", workspaceAbs: probeWs });
+  assert.ok(st);
+  assert.equal(st.skills.length, 1);
+  assert.equal(st.skills[0].skillName, "vscode-probe");
+  const byName = new Map(st.skills[0].nodes.map(n => [n.name, n]));
+  assert.equal(byName.get("SKILL.md")?.grade, "A");
+  assert.equal(byName.get("SKILL.md")?.order, 1);
+  assert.equal(byName.get("level1.md")?.grade, "A");
+  assert.equal(byName.get("level1.md")?.order, 2);
+  assert.equal(byName.get("level2.md")?.grade, "A");
+  assert.equal(byName.get("level2.md")?.order, 3);
+  assert.equal(st.outsideReads.length, 0);
+  assert.equal(st.totals.inputTokens, 119282);
+  assert.equal(st.totals.cacheReadTokens, 89202);
+});
