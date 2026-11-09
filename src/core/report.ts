@@ -3,7 +3,8 @@
 // スキル呼び出しのサマリ（提供者視点: このスキルが適切に動いたか）。
 // どちらも同じ SessionTrace データに対するビューであり、計算は1つだけ。
 import type { Graph } from "./graph";
-import type { SessionTrace, SkillPart, Trace, TraceNode } from "./trace";
+import type { SessionTrace, SkillPart, Trace, TraceNode, Grade } from "./trace";
+import { gradeCertaintyLabel } from "./trace";
 import { formatLocalDateTime } from "./sessions";
 import type { SkillTotal } from "./aggregate";
 import type { SkillFileUsage } from "./fileusage";
@@ -334,6 +335,139 @@ document.getElementById('play').addEventListener('click',()=>{
 </script>`;
 
 // --- スキル呼び出しのサマリ（提供者視点）: 従来レポートの範囲を1スキルに絞ったもの ---
+// --- 参照構造のノードリンク図（Issue #40） ---
+// 設計した参照のつながりを、共有参照を複製せず1ノードに収束させて描く。
+// ツリー（到達の流れ）が同じファイルを何度も展開するのに対し、こちらは
+// 「全体の形」を見るための図。色は到達の確度、大きさは推定トークン。
+export interface DiagramNode {
+  rel: string;
+  name: string;
+  grade: Grade;
+  order: number | null;
+  estTokens: number;
+  boundary: boolean;
+  missing: boolean;
+  /** ルート（SKILL.md）からの最短の深さ（BFS）。到達できないノードは最終層 */
+  depth: number;
+}
+export interface ReferenceDiagram {
+  nodes: DiagramNode[];
+  edges: { from: string; to: string; used: boolean }[];
+}
+
+export function buildReferenceDiagram(nodes: TraceNode[], rootRel: string): ReferenceDiagram {
+  // TraceNode の children / parents は id ではなく relToSkill で持たれている
+  const byRel = new Map(nodes.map(n => [n.relToSkill, n]));
+  // BFS でルートからの最短の深さを求める（循環があっても訪問済みで止まる）
+  const depth = new Map<string, number>();
+  if (byRel.has(rootRel)) {
+    depth.set(rootRel, 0);
+    const queue = [rootRel];
+    while (queue.length) {
+      const rel = queue.shift()!;
+      const d = depth.get(rel)!;
+      for (const c of byRel.get(rel)?.children ?? []) {
+        if (byRel.has(c) && !depth.has(c)) { depth.set(c, d + 1); queue.push(c); }
+      }
+    }
+  }
+  const maxDepth = depth.size ? Math.max(...depth.values()) : 0;
+  const dnodes: DiagramNode[] = nodes.map(n => ({
+    rel: n.relToSkill,
+    name: n.name,
+    grade: n.grade,
+    order: n.order,
+    estTokens: n.estTokens,
+    boundary: n.boundary,
+    missing: n.missing,
+    depth: depth.get(n.relToSkill) ?? maxDepth + 1,
+  }));
+  const edgeSeen = new Set<string>();
+  const edges: { from: string; to: string; used: boolean }[] = [];
+  for (const n of nodes) {
+    for (const c of n.children) {
+      const child = byRel.get(c);
+      if (!child) continue;
+      const key = n.relToSkill + "\n" + child.relToSkill;
+      if (edgeSeen.has(key)) continue;
+      edgeSeen.add(key);
+      const used = (n.grade === "A" || n.grade === "B") && (child.grade === "A" || child.grade === "B");
+      edges.push({ from: n.relToSkill, to: child.relToSkill, used });
+    }
+  }
+  return { nodes: dnodes, edges };
+}
+
+const DIAGRAM_NODE_CAP = 40;
+
+function referenceDiagramSection(nodes: TraceNode[], graph: Graph, lang: Lang): string {
+  const en = lang === "en";
+  const head = `<h2>${en ? "Reference structure" : "参照構造"}</h2>`;
+  const intro = `<div class="note">${en
+    ? "The designed reference structure, drawn as a node-link diagram: files referenced from several places converge on a single node, and cycles appear as loops. Node colour = certainty of arrival, node size = estimated tokens, the number above a node = arrival order. Compare with the co-reading graph (Issue #42), which shows the structure of actual use."
+    : "設計した参照のつながりをノードリンク図で示します。複数箇所から参照されるファイルは1つの円に集まり、循環は輪として見えます。円の色は到達の確度、大きさは推定トークン、円の上の数字は到達順です。同時読み込みグラフ（Issue #42）の「実際に使われた構造」と見比べられます。"}</div>`;
+  if (nodes.length > DIAGRAM_NODE_CAP) {
+    return head + intro + `<p>${en
+      ? `The diagram is omitted because this skill has ${nodes.length} files (legibility limit: ${DIAGRAM_NODE_CAP}). See the arrival flow below and the file list in Node details. The tree may stop at cycles.`
+      : `このスキルはファイルが ${nodes.length} 件あるため、図は省略しました（見やすさの上限: ${DIAGRAM_NODE_CAP} 件）。下の到達の流れとノード明細のファイル一覧を参照してください。ツリーは循環箇所で展開を止める場合があります。`}</p>`;
+  }
+  const diagram = buildReferenceDiagram(nodes, graph.order[0]?.relToSkill ?? "SKILL.md");
+  // 階層レイアウト: 深さごとに1段、段の中では到達順→名前順
+  const layers = new Map<number, DiagramNode[]>();
+  for (const n of diagram.nodes) {
+    const arr = layers.get(n.depth) ?? [];
+    arr.push(n);
+    layers.set(n.depth, arr);
+  }
+  for (const arr of layers.values()) arr.sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || a.name.localeCompare(b.name));
+  const depths = [...layers.keys()].sort((a, b) => a - b);
+  const maxLayer = Math.max(1, ...[...layers.values()].map(a => a.length));
+  const maxTokens = Math.max(1, ...diagram.nodes.map(n => n.estTokens));
+  const W = Math.max(600, maxLayer * 118 + 40);
+  const layerH = 96, topPad = 30, bottomPad = 34;
+  const H = topPad + depths.length * layerH + bottomPad;
+  const pos = new Map<string, { x: number; y: number; r: number }>();
+  depths.forEach((d, li) => {
+    const arr = layers.get(d)!;
+    arr.forEach((n, i) => {
+      const x = 30 + ((i + 0.5) * (W - 60)) / arr.length;
+      const y = topPad + li * layerH + layerH / 2;
+      const r = n.missing ? 4 : 5 + 6 * Math.sqrt(n.estTokens / maxTokens);
+      pos.set(n.rel, { x, y, r });
+    });
+  });
+  const fillOf = (g: Grade): string => g === "A" ? "#0d8f9f" : g === "B" ? "#e8b33d" : g === "C" ? "#94a3b8" : "#ffffff";
+  const svg: string[] = [];
+  // 横幅が大きい図は縮小すると読めなくなるため、実寸で横スクロールにする
+  const wide = W > 900;
+  svg.push(`<svg viewBox="0 0 ${W} ${H}" style="${wide ? `width:${W}px;max-width:none` : "width:100%"};height:auto" role="img" aria-label="${en ? "Reference structure diagram" : "参照構造の図"}">`);
+  svg.push(`<defs><marker id="rarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs>`);
+  for (const e of diagram.edges) {
+    const a = pos.get(e.from), b = pos.get(e.to);
+    if (!a || !b) continue;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const x1 = a.x + ux * (a.r + 1), y1 = a.y + uy * (a.r + 1);
+    const x2 = b.x - ux * (b.r + 4), y2 = b.y - uy * (b.r + 4);
+    svg.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${e.used ? "#0d8f9f" : "#94a3b8"}" stroke-width="${e.used ? 1.8 : 1}" opacity="${e.used ? 0.85 : 0.55}" marker-end="url(#rarr)"><title>${esc(e.from)} → ${esc(e.to)}</title></line>`);
+  }
+  for (const n of diagram.nodes) {
+    const p = pos.get(n.rel)!;
+    const stroke = n.boundary || n.missing ? "#64748b" : "#475569";
+    const dash = n.boundary || n.missing ? ` stroke-dasharray="3 2"` : "";
+    const title = `${n.rel} / ${gradeCertaintyLabel(n.grade, lang)} / ~${fmt(n.estTokens)} ${en ? "tokens" : "トークン"}${n.order !== null ? ` / #${n.order}` : ""}${n.boundary ? (en ? " / outside skill" : " / スキル外") : ""}${n.missing ? (en ? " / missing target" : " / 参照先なし") : ""}`;
+    svg.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.r.toFixed(1)}" fill="${fillOf(n.grade)}" stroke="${stroke}" stroke-width="1.2"${dash}><title>${esc(title)}</title></circle>`);
+    if (n.order !== null) svg.push(`<text x="${p.x.toFixed(1)}" y="${(p.y - p.r - 5).toFixed(1)}" font-size="8.5" fill="#64748b" text-anchor="middle">#${n.order}</text>`);
+    svg.push(`<text x="${p.x.toFixed(1)}" y="${(p.y + p.r + 13).toFixed(1)}" font-size="10" fill="currentColor" text-anchor="middle">${esc(n.name)}</text>`);
+  }
+  svg.push("</svg>");
+  const chip = (fill: string, extra = "") => `<svg width="12" height="12" style="vertical-align:-1px"><circle cx="6" cy="6" r="5" fill="${fill}" stroke="#475569"${extra}/></svg>`;
+  const legend = `<p class="tok">${en ? "Legend" : "凡例"}: ${chip("#0d8f9f")} ${en ? "certainty high" : "確度高"} ${chip("#e8b33d")} ${en ? "medium" : "中"} ${chip("#94a3b8")} ${en ? "low" : "低"} ${chip("#ffffff")} ${en ? "no record" : "記録なし"} / ${chip("#ffffff", ` stroke-dasharray="2 1"`)} ${en ? "outside skill / missing target (dashed)" : "スキル外・参照先なし（破線）"} / ${en ? "node size = estimated tokens; darker line = both ends arrived" : "円の大きさ＝推定トークン、濃い線＝両端とも到達した参照"}</p>`;
+  const svgHtml = svg.join("");
+  return head + intro + (wide ? `<div style="overflow-x:auto">${svgHtml}</div>` : svgHtml) + legend;
+}
+
 export function renderHtml(trace: Trace, graph: Graph, opts: { title?: string; scopeNote?: string; doc?: { md: string; frag: string }; lang?: Lang } = {}): string {
   const lang = opts.lang ?? "ja";
   const en = lang === "en";
@@ -352,6 +486,7 @@ ${opts.scopeNote ? `<div class="note">${esc(opts.scopeNote)}</div>` : ""}
 ${promptBlock(trace.session.userMessagePreview, trace.session.userMessageTruncated, lang)}
 ${healthWarn(trace.health, lang)}
 <p>${en ? "Arrivals" : "到達"}: ${gradeBadge("A", lang)} <b>${counts.A}</b>${en ? " (loading into context confirmed)" : "（コンテキストへの読み込みを確認）"} / ${gradeBadge("B", lang)} <b>${counts.B}</b>${en ? " (read)" : "（読み取り）"} / ${gradeBadge("C", lang)} <b>${counts.C}</b>${en ? " (mention only)" : "（言及のみ）"} / ${gradeBadge(null, lang)} <b>${counts.N}</b>${en ? " (no record)" : "（記録なし）"} / ${en ? `${trace.nodes.length} files in total` : `全 ${trace.nodes.length} ファイル`}</p>
+${referenceDiagramSection(trace.nodes, graph, lang)}
 ${renderTreeHtml(trace.nodes, graph, lang)}
 <button id="play" type="button">▶ ${en ? "Play in arrival order" : "到達順に再生"}</button>
 ${usageBlock(trace, lang)}
