@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.0] - 2026-11-09
+
+### Added
+
+- Token-weight bars (Issue #32). Each file in the history tree, the summary trees (on screen and in copied documents) and the node details now carries a bar showing its share of the skill's total estimated tokens across all its files, with the basis stated next to the tree. The values are the same per-file estimates already shown with ~; the bars only make the distribution visible, and no per-file measured values are fabricated where the record has none.
+
+### 追加 (Added)
+
+- トークンの重み付けバー（Issue #32）。履歴ツリー、サマリのツリー（画面と文書コピーの両方）、ノード明細の各ファイルに、そのスキルの全ファイルの推定トークン合計に対する割合をバーで添えた。母数はツリーの脇に明記する。値は従来から ~付きで表示しているファイル単体の推定そのもので、バーは分布を見えるようにするだけであり、記録に無いファイル単体の実測を作ることはしない。
+
 ## [1.8.0] - 2026-11-09
 
 ### Added

@@ -212,6 +212,29 @@ test("tool matrix columns are grouped and ordered by totals", async () => {
   assert.deepEqual(toolColumns([]), []);
 });
 
+test("blockBar: fill follows the ratio", async () => {
+  const { blockBar } = await import("../core/common.js");
+  assert.equal(blockBar(0), "░░░░░░░░░░");
+  assert.equal(blockBar(1), "██████████");
+  assert.equal(blockBar(0.5), "█████░░░░░");
+  assert.equal(blockBar(0.62, 8), "█████░░░");
+  assert.equal(blockBar(2), "██████████");
+  assert.equal(blockBar(-1), "░░░░░░░░░░");
+});
+
+test("token bars appear in document trees and the on-screen tree (Issue #32)", async () => {
+  const { renderSessionMarkdown } = await import("../core/document.js");
+  const { renderSessionHtml } = await import("../core/report.js");
+  const { st } = fixtureSessionTrace();
+  const md = renderSessionMarkdown(st);
+  // 到達の流れの各行にバーが付き、母数の注記がある
+  assert.ok(md.includes("█"));
+  assert.ok(md.includes("（バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です）"));
+  const html = renderSessionHtml(st);
+  assert.ok(html.includes('class="tbar"'));
+  assert.ok(html.includes("バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です"));
+});
+
 test("sparkline: glyph mapping and peak-preserving sampling", async () => {
   const { sparkline } = await import("../core/document.js");
   assert.equal(sparkline([0, 0.5, 1]), "▁▅█");

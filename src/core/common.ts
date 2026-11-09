@@ -196,3 +196,11 @@ export const GLOSSARY_EN: [string, string][] = [
 export function glossaryFor(lang: Lang = "ja"): [string, string][] {
   return lang === "en" ? GLOSSARY_EN : GLOSSARY;
 }
+
+/** 割合をブロック文字のバーにする（█ が満ちた分、░ が残り）。
+ *  ツリー行や文書のテキスト表現で、数値の大きさを目で比べられるようにする */
+export function blockBar(ratio: number, width = 10): string {
+  const c = Math.max(0, Math.min(1, Number.isFinite(ratio) ? ratio : 0));
+  const filled = Math.round(c * width);
+  return "█".repeat(filled) + "░".repeat(width - filled);
+}

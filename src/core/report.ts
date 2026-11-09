@@ -53,6 +53,7 @@ table.tmatrix th.tg{color:#222;font-weight:600;white-space:nowrap}
 .tg-chip:first-child{margin-left:0}
 svg text{fill:var(--muted);font-size:11px}
 .bar-legend{font-size:12px;color:var(--muted)}
+.tbar{display:inline-block;width:64px;height:8px;background:var(--line);border-radius:4px;vertical-align:middle;margin-left:6px;overflow:hidden}.tbar i{display:block;height:100%;background:var(--accent);border-radius:4px}
 table.totals td:not(:first-child),table.totals th:not(:first-child){text-align:right}`;
 
 function pageShell(title: string, body: string, lang: Lang = "ja"): string {
@@ -65,6 +66,7 @@ ${body}</body></html>`;
 
 function renderTreeHtml(nodes: TraceNode[], graph: Graph, lang: Lang = "ja"): string {
   const en = lang === "en";
+  const totalEst = nodes.reduce((a, n) => a + n.estTokens, 0);
   const byRel = new Map(nodes.map(n => [n.relToSkill, n]));
   const root = graph.order[0];
   const walk = (id: string, seen: Set<string>): string => {
@@ -81,9 +83,10 @@ function renderTreeHtml(nodes: TraceNode[], graph: Graph, lang: Lang = "ja"): st
       seen.add(id);
       if (gn.children.length) children = `<ul>${gn.children.map(c => walk(c, seen)).join("")}</ul>`;
     }
-    return `<li><span class="node" data-order="${tn?.order ?? ""}"${ev}>${gradeBadge(grade, lang)} ${esc(gn.relToSkill)}${gn.title ? ` <span class="tit">${esc(gn.title)}</span>` : ""}${bnd}${miss}${cyc} ${orderBadge} <span class="tok">~${fmt(gn.estTokens)} ${en ? "tokens" : "トークン"}</span></span>${children}</li>`;
+    return `<li><span class="node" data-order="${tn?.order ?? ""}"${ev}>${gradeBadge(grade, lang)} ${esc(gn.relToSkill)}${gn.title ? ` <span class="tit">${esc(gn.title)}</span>` : ""}${bnd}${miss}${cyc} ${orderBadge} <span class="tok">~${fmt(gn.estTokens)} ${en ? "tokens" : "トークン"}</span>${gn.estTokens > 0 && totalEst > 0 ? `<span class="tbar"><i style="width:${Math.round((gn.estTokens / totalEst) * 100)}%"></i></span>` : ""}</span>${children}</li>`;
   };
-  return `<ul class="tree">${walk(root.id, new Set())}</ul>`;
+  const legend = totalEst > 0 ? `<p class="bar-legend">${en ? "Bar length: share of this skill's total estimated tokens across all its files" : "バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です"}</p>` : "";
+  return `<ul class="tree">${walk(root.id, new Set())}</ul>${legend}`;
 }
 
 type FillSource = Pick<Trace, "contextCurrentSeries" | "lastContextCurrentTokens" | "contextTokenLimit" | "contextFillRatio">;

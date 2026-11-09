@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { GraphNode } from "./core/graph";
 import type { SessionTrace, SkillPart } from "./core/trace";
 import { gradeCertaintyLabel } from "./core/trace";
-import { firstContextUsageRatio, type Lang } from "./core/common";
+import { blockBar, firstContextUsageRatio, type Lang } from "./core/common";
 import { capSessionsBySource, type SessionInfo } from "./core/sessions";
 
 // ツリーの階層（0.4.0）: セッション履歴 ＞ セッション ＞ 発動スキル ＞ 参照ツリー。
@@ -322,6 +322,12 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         if (gn.missing) parts.push(this.L("参照先なし", "missing target"));
         if (gn.cycle) parts.push(this.L("循環", "cycle"));
         parts.push(this.L(`~${gn.estTokens} トークン`, `~${gn.estTokens} tokens`));
+        // そのスキルの全ファイルに対する推定トークンの割合をバーで添える（Issue #32）
+        const skillTotal = element.part.nodes.reduce((a, n) => a + n.estTokens, 0);
+        if (gn.estTokens > 0 && skillTotal > 0) {
+          const r = gn.estTokens / skillTotal;
+          parts.push(`${blockBar(r, 8)} ${Math.round(r * 100)}%`);
+        }
         item.label = gn.relToSkill;
         item.description = parts.join(this.lang === "en" ? " · " : " ・ ");
         item.tooltip = new vscode.MarkdownString([
@@ -331,6 +337,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
           tn ? `${this.L("根拠", "Evidence")}: ${tn.evidence}` : this.L("根拠: 対応付けなし", "Evidence: no match"),
           tn?.firstAt ? `${this.L("初出", "First seen")}: ${tn.firstAt}` : "",
           this.L(`推定トークン: ${gn.estTokens} ／ サイズ: ${gn.sizeBytes} bytes`, `Est. tokens: ${gn.estTokens} / size: ${gn.sizeBytes} bytes`),
+          skillTotal > 0 && gn.estTokens > 0 ? this.L(`割合: スキル全体の推定トークン（~${skillTotal}）の ${Math.round((gn.estTokens / skillTotal) * 100)}%`, `Share: ${Math.round((gn.estTokens / skillTotal) * 100)}% of the skill's total est. tokens (~${skillTotal})`) : "",
         ].filter(Boolean).join("\n"));
         item.iconPath = new vscode.ThemeIcon(
           gn.missing ? "warning" : grade === "A" ? "verified-filled" : grade === "B" ? "file-code" : grade === "C" ? "question" : "circle-outline",
