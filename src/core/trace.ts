@@ -314,7 +314,7 @@ export interface SessionTrace {
 export function buildSessionTrace(
   parsed: ParsedEvents,
   parts: { graph: Graph; skillDirAbs: string; rootHeading: string | null }[],
-  opts: { sessionId: string; workspaceAbs: string; lang?: Lang },
+  opts: { sessionId: string; workspaceAbs: string; lang?: Lang; undiscoveredSkills?: string[] },
 ): SessionTrace {
   const traces = parts.map(p => buildTrace(parsed, p.graph, {
     sessionId: opts.sessionId, workspaceAbs: opts.workspaceAbs, skillDirAbs: p.skillDirAbs, rootHeading: p.rootHeading, lang: opts.lang,
@@ -331,11 +331,18 @@ export function buildSessionTrace(
   const orderById = new Map(orderedIds.map((id, i) => [id, i + 1] as const));
   for (const t of traces) for (const n of t.nodes) n.order = n.firstAt ? (orderById.get(n.id) ?? null) : null;
 
+  // 発見できたスキルが無いセッションでも、ターン・実測・ツール実行は記録から
+  // 復元できる。空グラフで集計だけを行い、サマリを表示できるようにする
+  // （Kiro / Copilot Chat で「中身が見えることが先」とした扱いに揃える）
+  const aggregates = parts.length ? null : buildTrace(parsed, { rootId: "", nodes: new Map(), order: [] }, {
+    sessionId: opts.sessionId, workspaceAbs: opts.workspaceAbs, skillDirAbs: "", rootHeading: null, lang: opts.lang,
+  });
+
   // スキル外の読み取りは、全スキルのグラフの和集合に対して判定する
   const allNodes = traces.flatMap(t => t.nodes);
-  const outsideReads = (traces[0]?.outsideReads ?? []).filter(r => !pathBelongsToNodes(normPath(r.path), allNodes));
+  const base = traces[0] ?? aggregates ?? undefined;
+  const outsideReads = (base?.outsideReads ?? []).filter(r => !pathBelongsToNodes(normPath(r.path), allNodes));
 
-  const base = traces[0];
   return {
     source: "copilot",
     session: {
@@ -355,6 +362,7 @@ export function buildSessionTrace(
     toolExecutions: base?.toolExecutions ?? [],
     skills: traces.map((t, i) => ({ skillName: t.session.skillName, skillDir: t.session.skillDir, graph: parts[i].graph, nodes: t.nodes })),
     outsideReads,
+    undiscoveredSkills: opts.undiscoveredSkills,
   };
 }
 

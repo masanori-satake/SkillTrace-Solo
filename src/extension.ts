@@ -106,17 +106,30 @@ export function activate(context: vscode.ExtensionContext): void {
       const workspaceDir = (session.workspaceHint && existsSync(session.workspaceHint))
         ? session.workspaceHint
         : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
-      if (workspaceDir) {
-        const parsed = await parseEventsFile(session.eventsPath);
-        const skills = detectSkillsForSession(parsed, workspaceDir);
-        if (skills.length) {
-          const parts = skills.map(skill => {
-            let rootHeading: string | null = null;
-            try { rootHeading = firstHeading(readFileSync(join(skill.dir, "SKILL.md"), "utf8")); } catch { /* 見出しなし */ }
-            return { graph: buildGraph(skill.dir, workspaceDir), skillDirAbs: skill.dir, rootHeading };
-          });
-          trace = buildSessionTrace(parsed, parts, { sessionId: session.id, workspaceAbs: workspaceDir, lang: LANG });
-        }
+      const parsed = await parseEventsFile(session.eventsPath);
+      const skills = workspaceDir ? detectSkillsForSession(parsed, workspaceDir) : [];
+      const parts = skills.map(skill => {
+        let rootHeading: string | null = null;
+        try { rootHeading = firstHeading(readFileSync(join(skill.dir, "SKILL.md"), "utf8")); } catch { /* 見出しなし */ }
+        return { graph: buildGraph(skill.dir, workspaceDir), skillDirAbs: skill.dir, rootHeading };
+      });
+      // 記録そのものが持つ起動名（data.name）。現在のワークスペースで見つから
+      // ないスキルは、起動の事実だけでも注記として残す
+      const invokedNames: string[] = [];
+      for (const ev of parsed.events) {
+        if (ev.type !== "skill.invoked" && ev.type !== "skill.invoked_ref") continue;
+        const n = ev.data["name"];
+        if (typeof n === "string" && n && !invokedNames.includes(n)) invokedNames.push(n);
+      }
+      const discoveredNames = new Set(skills.map(sk => sk.name));
+      const undiscoveredSkills = invokedNames.filter(n => !discoveredNames.has(n));
+      // スキルが現在のワークスペースで見つからなくても、記録に中身があれば
+      // トレースを構築する（Kiro / Copilot Chat と同じ扱い: 中身が見えることが先）。
+      // 過去のセッションではスキルが移動・削除されていることが多く、発見を
+      // 前提にすると履歴のサマリが軒並み開けなかった
+      const hasContent = parsed.events.some(e => e.type === "assistant.turn_start" || e.type === "tool.execution_complete" || e.type === "skill.invoked" || e.type === "user.message");
+      if (parts.length || hasContent) {
+        trace = buildSessionTrace(parsed, parts, { sessionId: session.id, workspaceAbs: workspaceDir, lang: LANG, undiscoveredSkills });
       }
     } catch { trace = null; }
     buildCache.set(session.id, { mtimeMs: session.mtimeMs, trace });

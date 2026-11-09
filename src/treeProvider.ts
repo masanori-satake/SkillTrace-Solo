@@ -41,6 +41,15 @@ function baseName(p: string | null): string {
   return parts.length ? parts[parts.length - 1] : p;
 }
 
+/** 履歴ラベル用のワークスペース名。マルチルートの .code-workspace ファイルは
+ *  拡張子を落としてグリフ（⧉ = 複数フォルダの束）を付け、行を短く保つ。
+ *  フルパスはツールチップ側に残る */
+function workspaceLabel(p: string | null): string {
+  const base = baseName(p);
+  if (/\.code-workspace$/i.test(base)) return `${base.replace(/\.code-workspace$/i, "")} ⧉`;
+  return base;
+}
+
 function timeLabel(mtimeMs: number, lang: Lang = "ja"): string {
   const d = new Date(mtimeMs);
   const now = new Date();
@@ -242,7 +251,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         const s = element.session;
         const isLatest = this.sessions[0]?.id === s.id;
         const isDisplayed = this.displayedId === s.id;
-        item.label = `${timeLabel(s.mtimeMs, this.lang)} ${baseName(s.workspaceHint)}`.trim();
+        item.label = `${timeLabel(s.mtimeMs, this.lang)} ${workspaceLabel(s.workspaceHint)}`.trim();
         const invoked = this.invokedLabel(s);
         // 行は短く保つ（ホバー時のボタンを収めるため）。発動スキルは子項目とツールチップで示す
         const parts: string[] = [];
