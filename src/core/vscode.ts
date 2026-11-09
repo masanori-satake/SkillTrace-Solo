@@ -316,19 +316,47 @@ function lightScan(filePath: string): { title: string | null; hasRequests: boole
   try {
     const fd = openSync(filePath, "r");
     try {
-      const buf = Buffer.alloc(1024 * 1024);
-      const n = readSync(fd, buf, 0, buf.length, 0);
-      const text = buf.toString("utf8", 0, n);
-      // リクエストの実在判定: リクエストには必ず requestId が付き、追記は
-      // kind 2 の行で入る。どちらも無ければ「開いただけ」の空セッション
-      hasRequests = text.includes('"requestId"') || text.includes('"kind":2');
-      for (const line of text.split(/\r?\n/)) {
-        if (!line.includes("customTitle")) continue;
-        try {
-          const e = JSON.parse(line) as Json;
-          if (Array.isArray(e.k) && e.k[0] === "customTitle" && typeof e.v === "string" && e.v) { title = e.v; break; }
-        } catch { /* 次の行へ */ }
+      // 先頭だけで判定すると、前半の大きいファイルで後方のリクエストを見落とす。
+      // 1MiB ずつ読み進め、タイトルとリクエストの実在が両方そろうまで（無ければ最後まで）見る
+      const CHUNK = 1024 * 1024;
+      const buf = Buffer.alloc(CHUNK);
+      let pos = 0;
+      let leftover = "";
+      let tail = "";
+      const checkLine = (line: string): void => {
+        if (!hasRequests && line.includes('"kind":2')) {
+          // kind 2 の追記は、追記先が requests のときだけ「リクエストあり」とする
+          // （inputState や attachments への追記だけの空セッションを拾わないため）
+          try {
+            const e = JSON.parse(line) as Json;
+            if (Array.isArray(e.k) && e.k[0] === "requests") hasRequests = true;
+          } catch { /* 判定材料にしない */ }
+        }
+        if (!title && line.includes("customTitle")) {
+          try {
+            const e = JSON.parse(line) as Json;
+            if (Array.isArray(e.k) && e.k[0] === "customTitle" && typeof e.v === "string" && e.v) title = e.v;
+          } catch { /* 次の行へ */ }
+        }
+      };
+      for (;;) {
+        const n = readSync(fd, buf, 0, CHUNK, pos);
+        if (n <= 0) break;
+        pos += n;
+        const text = leftover + buf.toString("utf8", 0, n);
+        // リクエストには必ず requestId が付く（kind 1 の requests セットや
+        // ヘッダーのスナップショットにリクエストが入る場合もこれで拾える）
+        if (!hasRequests && (tail + text).includes('"requestId"')) hasRequests = true;
+        const lines = text.split(/\r?\n/);
+        leftover = lines.pop() ?? "";
+        for (const line of lines) {
+          checkLine(line);
+          if (hasRequests && title) break;
+        }
+        tail = text.slice(-32);
+        if (hasRequests && title) break;
       }
+      if (leftover) checkLine(leftover);
     } finally { closeSync(fd); }
   } catch { /* 読めなければタイトルなし・リクエストなし */ }
   return { title, hasRequests };
