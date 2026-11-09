@@ -266,6 +266,6 @@
     "check-version-bump": "node scripts/check-version.js --check-bump",
     "update-version": "node scripts/update-version.js"
   },
-  "version": "1.6.2",
+  "version": "1.6.3",
   "icon": "icon.png"
 }

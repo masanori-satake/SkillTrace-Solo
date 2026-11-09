@@ -11,7 +11,7 @@ import { firstHeading } from "../core/trace";
 import { renderSessionHtml } from "../core/report";
 import { renderSessionMarkdown } from "../core/document";
 
-// フィクスチャは実機プローブ（2026-11-09、職場の VS Code で vscode-probe を実行）の
+// フィクスチャは実機プローブ（2026-11-09、他環境の VS Code で vscode-probe を実行）の
 // 本物の chatSessions 記録。パス内のユーザー ID だけを probe-user に置換してある。
 // 正解値: 1リクエスト、読み取りは SKILL.md（スキルとして）→ level1 → level2、
 // promptTokens 15903 / completionTokens 391 / copilotCredits 0.238554…、

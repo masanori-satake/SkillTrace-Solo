@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.3] - 2026-11-09
+
+### Changed
+
+- Wording only: replaced the term used for the user's other environment in the README and a test comment (no behavior change).
+
+### 変更 (Changed)
+
+- 表記のみの変更: README とテストコメントで、もう一方の利用環境を指す語を「他環境」に統一した（挙動の変更なし）。
+
 ## [1.6.2] - 2026-11-09
 
 ### Fixed
