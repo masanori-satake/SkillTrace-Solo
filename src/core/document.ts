@@ -15,6 +15,95 @@ function unicodeBar(ratio: number | null | undefined, width = 20): string {
   return "█".repeat(filled) + "░".repeat(width - filled);
 }
 
+/** コンテキストウィンドウ使用量の系列を 0..1 の割合列にする（供給源の違いを吸収する）。
+ *  Copilot / Copilot Chat はトークン実測 ÷ 上限（上限が記録に無ければ系列の最大値）、
+ *  Kiro は記録された使用率そのもの。perTurn は横軸がターンか記録順か */
+function contextRatios(st: SessionTrace): { ratios: number[]; perTurn: boolean; relativeToMax: boolean } | null {
+  if (st.source === "kiro") {
+    const ratios = (st.contextUsageSeries ?? []).map(p => p.ratio);
+    return ratios.length ? { ratios, perTurn: false, relativeToMax: false } : null;
+  }
+  const series = st.contextCurrentSeries ?? [];
+  if (!series.length) return null;
+  // 上限が記録に無い場合は系列の最大値で割る。その場合の 100% は実際の
+  // 上限に対する使用率ではないため、表示側で相対表示だと明示する
+  const relativeToMax = !st.contextTokenLimit;
+  const denom = st.contextTokenLimit ?? Math.max(...series.map(p => p.tokens));
+  if (!denom) return null;
+  return { ratios: series.map(p => p.tokens / denom), perTurn: true, relativeToMax };
+}
+
+const SPARK_GLYPHS = "▁▂▃▄▅▆▇█";
+/** 割合列をブロック文字のスパークラインにする。点が多い場合は桶ごとの
+ *  最大値で間引く（膨らみのピークを落とさないため）。Markdown 用 */
+export function sparkline(ratios: number[], maxPoints = 48): string {
+  let pts = ratios;
+  if (ratios.length > maxPoints) {
+    pts = [];
+    const bucket = ratios.length / maxPoints;
+    for (let i = 0; i < maxPoints; i++) {
+      const slice = ratios.slice(Math.floor(i * bucket), Math.floor((i + 1) * bucket));
+      if (slice.length) pts.push(Math.max(...slice));
+    }
+  }
+  return pts.map(r => {
+    const c = Math.max(0, Math.min(1, r));
+    return SPARK_GLYPHS[Math.min(7, Math.floor(c * 8))];
+  }).join("");
+}
+
+/** 推移の Markdown 行（2点以上あるときだけ）。画面サマリには折れ線グラフが
+ *  既にあるため、文書コピー側の不足分として足す（Issue #30） */
+function contextTransitionMd(st: SessionTrace, lang: Lang = "ja"): string {
+  const en = lang === "en";
+  const s = contextRatios(st);
+  if (!s || s.ratios.length < 2) return "";
+  const peak = Math.max(...s.ratios);
+  const peakIdx = s.ratios.indexOf(peak);
+  const last = s.ratios[s.ratios.length - 1];
+  const unit = s.perTurn ? (en ? "turn" : "ターン") : (en ? "snapshot" : "記録");
+  const relNote = s.relativeToMax
+    ? (en ? " (the limit is not recorded, so the values are relative to the series maximum = 100%)" : "（上限が記録されていないため、系列の最大値を100%とした相対表示です）")
+    : "";
+  return en
+    ? `\nTransition (in ${s.perTurn ? "turn" : "recorded"} order): ${sparkline(s.ratios)} (peak ${(peak * 100).toFixed(1)}% at ${unit} ${peakIdx + 1} / final ${(last * 100).toFixed(1)}%)${relNote}`
+    : `\n推移（${s.perTurn ? "ターン" : "記録"}順）: ${sparkline(s.ratios)}（最大 ${(peak * 100).toFixed(1)}%・${unit} ${peakIdx + 1} ／ 最終 ${(last * 100).toFixed(1)}%）${relNote}`;
+}
+
+/** 推移の SVG（文書 HTML 用。貼り付け先で CSS が効かない前提で色は固定値） */
+function contextChartSvg(st: SessionTrace, lang: Lang = "ja"): string {
+  const en = lang === "en";
+  const s = contextRatios(st);
+  if (!s || s.ratios.length < 2) return "";
+  const ratios = s.ratios;
+  const W = 680, H = 200, mL = 46, mR = 12, mT = 16, mB = 26;
+  const iw = W - mL - mR, ih = H - mT - mB;
+  const X = (i: number) => mL + (ratios.length === 1 ? iw / 2 : (iw * i) / (ratios.length - 1));
+  const Y = (v: number) => mT + ih * (1 - Math.max(0, Math.min(1, v)));
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(r => {
+    const y = Y(r);
+    const dash = r === 1 ? ` stroke-dasharray="4 3"` : "";
+    return `<line x1="${mL}" y1="${y}" x2="${W - mR}" y2="${y}" stroke="#dddddd"${dash}/>`
+      + `<text x="${mL - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="#888888">${Math.round(r * 100)}%</text>`;
+  }).join("");
+  const pts = ratios.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const peak = Math.max(...ratios);
+  const peakIdx = ratios.indexOf(peak);
+  const dots = ratios.map((v, i) =>
+    `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${i === peakIdx ? 3.5 : 2}" fill="${i === peakIdx ? "#d97b29" : "#6cb2f5"}"/>`).join("");
+  const unit = s.perTurn ? (en ? "Turn" : "ターン") : (en ? "Snapshot" : "記録");
+  const xLabels = `<text x="${X(0)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#888888">${unit} 1</text>`
+    + `<text x="${X(ratios.length - 1)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#888888">${unit} ${ratios.length}</text>`;
+  const peakLabel = `<text x="${X(peakIdx).toFixed(1)}" y="${Math.max(11, Y(peak) - 8).toFixed(1)}" text-anchor="middle" font-size="11" fill="#d97b29">${en ? "Peak" : "最大"} ${(peak * 100).toFixed(1)}%</text>`;
+  const caption = s.relativeToMax
+    ? (en ? "Vertical: context window usage (relative to the series maximum = 100%, because the limit is not recorded) / Horizontal: " + (s.perTurn ? "turn" : "order of recorded snapshots") + ". The orange dot marks the peak."
+      : `縦軸: コンテキストウィンドウ使用量（上限が記録されていないため、系列の最大値を100%とした相対表示）／ 横軸: ${s.perTurn ? "ターン" : "記録された時点の順序"}。オレンジの点は最大の位置です。`)
+    : (en ? "Vertical: context window usage (share of the limit) / Horizontal: " + (s.perTurn ? "turn" : "order of recorded snapshots") + ". The orange dot marks the peak."
+      : `縦軸: コンテキストウィンドウ使用量（上限に対する割合）／ 横軸: ${s.perTurn ? "ターン" : "記録された時点の順序"}。オレンジの点は最大の位置です。`);
+  return `<svg width="${W}" height="${H}" style="background:#f4f6f8;border:1px solid #dddddd;border-radius:6px">${grid}<polyline points="${pts}" fill="none" stroke="#6cb2f5" stroke-width="2"/>${dots}${peakLabel}${xLabels}</svg>`
+    + `<p style="color:#888888;font-size:12px">${caption}</p>`;
+}
+
 function countsOf(nodes: TraceNode[]): Record<string, number> {
   const counts = { A: 0, B: 0, C: 0, N: 0 } as Record<string, number>;
   for (const n of nodes) counts[n.grade ?? "N"]++;
@@ -171,17 +260,18 @@ function startUsageText(st: SessionTrace, lang: Lang = "ja"): string {
 
 function contextMd(st: SessionTrace, lang: Lang = "ja"): string {
   const en = lang === "en";
+  const transition = contextTransitionMd(st, lang);
   if (st.source === "kiro") {
     const r = st.lastContextUsageRatio;
     const pct = r !== null && r !== undefined ? `${(r * 100).toFixed(1)}%` : "—";
-    return en
+    return (en
       ? `Final usage ratio ${pct} ${unicodeBar(r)} (the record holds usage-ratio snapshots only; absolute token counts and the limit are not recorded)`
-      : `最終使用率 ${pct} ${unicodeBar(r)}（記録は使用率のスナップショットのみで、トークンの絶対量と上限は記録されません）`;
+      : `最終使用率 ${pct} ${unicodeBar(r)}（記録は使用率のスナップショットのみで、トークンの絶対量と上限は記録されません）`) + transition;
   }
   const pct = st.contextFillRatio !== null ? `${(st.contextFillRatio * 100).toFixed(1)}%` : "—";
-  return en
+  return (en
     ? `Final usage ${fmt(st.lastContextCurrentTokens)} / limit ${fmt(st.contextTokenLimit)} tokens (${pct}) ${unicodeBar(st.contextFillRatio)}`
-    : `最終使用量 ${fmt(st.lastContextCurrentTokens)} / 上限 ${fmt(st.contextTokenLimit)} トークン（${pct}） ${unicodeBar(st.contextFillRatio)}`;
+    : `最終使用量 ${fmt(st.lastContextCurrentTokens)} / 上限 ${fmt(st.contextTokenLimit)} トークン（${pct}） ${unicodeBar(st.contextFillRatio)}`) + transition;
 }
 
 function glossaryMd(lang: Lang = "ja"): string {
@@ -386,17 +476,18 @@ ${note}`;
 
 function contextHtml(st: SessionTrace, lang: Lang = "ja"): string {
   const en = lang === "en";
+  const chart = contextChartSvg(st, lang);
   if (st.source === "kiro") {
     const r = st.lastContextUsageRatio;
     const pct = r !== null && r !== undefined ? `${(r * 100).toFixed(1)}%` : "—";
-    return en
+    return (en
       ? `<p>Final usage ratio ${pct} <span style="${H.mono}">${unicodeBar(r)}</span> (the record holds usage-ratio snapshots only; absolute token counts and the limit are not recorded)</p>`
-      : `<p>最終使用率 ${pct} <span style="${H.mono}">${unicodeBar(r)}</span>（記録は使用率のスナップショットのみで、トークンの絶対量と上限は記録されません）</p>`;
+      : `<p>最終使用率 ${pct} <span style="${H.mono}">${unicodeBar(r)}</span>（記録は使用率のスナップショットのみで、トークンの絶対量と上限は記録されません）</p>`) + chart;
   }
   const pct = st.contextFillRatio !== null ? `${(st.contextFillRatio * 100).toFixed(1)}%` : "—";
-  return en
+  return (en
     ? `<p>Final usage ${fmt(st.lastContextCurrentTokens)} / limit ${fmt(st.contextTokenLimit)} tokens (${pct}) <span style="${H.mono}">${unicodeBar(st.contextFillRatio)}</span></p>`
-    : `<p>最終使用量 ${fmt(st.lastContextCurrentTokens)} / 上限 ${fmt(st.contextTokenLimit)} トークン（${pct}） <span style="${H.mono}">${unicodeBar(st.contextFillRatio)}</span></p>`;
+    : `<p>最終使用量 ${fmt(st.lastContextCurrentTokens)} / 上限 ${fmt(st.contextTokenLimit)} トークン（${pct}） <span style="${H.mono}">${unicodeBar(st.contextFillRatio)}</span></p>`) + chart;
 }
 
 function glossaryHtml(lang: Lang = "ja"): string {

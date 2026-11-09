@@ -115,6 +115,24 @@ test("kiro summaries render credits and usage ratio instead of token tables", ()
   assert.ok(!md.includes("キャッシュ読取"));
 });
 
+test("kiro document: context section carries the transition (Issue #30)", () => {
+  const parsed = parseKiroMessages(messagesText());
+  const graph = buildGraph(kiroSkillDir, kiroWorkspace);
+  const trace = buildKiroSessionTrace(parsed, [{ graph, skillDirAbs: kiroSkillDir, disclosed: true }], {
+    sessionId: "sess_6d826121-2e9a-4628-a998-cefab29517dd",
+    workspaceAbs: kiroWorkspace,
+  });
+  // フィクスチャには使用率スナップショットが7点ある（最終 4.2921%）
+  assert.equal(trace.contextUsageSeries?.length, 7);
+  const md = renderSessionMarkdown(trace);
+  assert.ok(md.includes("推移（記録順）"));
+  assert.ok(md.includes("最終 4.3%"));
+  const frag = renderSessionHtmlFragment(trace);
+  assert.ok(frag.includes("<svg"));
+  assert.ok(frag.includes("<polyline"));
+  assert.ok(frag.includes("最大 4.3%"));
+});
+
 test("kiro trace: a session without skill activation still shows context loads and credits", () => {
   const text = [
     { id: "s1", timestamp: "2026-11-07T15:00:00.000Z", payload: { type: "session_start", content: "" } },
