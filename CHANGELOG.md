@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.4.2] - 2026-11-09
+## [1.4.3] - 2026-11-09
 
 ### Fixed
 
@@ -17,6 +17,23 @@
   Kiro のセッションが多い環境（数百件）では、古い Copilot の
   セッションが押し出されて1件も表示されなかった。これからは
   供給源ごとに新しい順30件までを表示する。
+
+## [1.4.2] - 2026-11-08
+
+### Fixed
+
+- **Path traversal prevention in temporary file creation.** In `skilltrace.openSummaryInBrowser`,
+  session IDs used to create temporary HTML files under `os.tmpdir()` are now sanitized
+  with `sanitizeFilenamePart` to restrict characters to alphanumeric, dash, and underscore,
+  preventing potential directory traversal or file manipulation.
+
+### 修正 (Fixed)
+
+- **ブラウザでサマリを開く際の一時ファイル作成におけるパストラバーサル防止。**
+  `skilltrace.openSummaryInBrowser` で一時ディレクトリ配下に HTML ファイルを書き出す際、
+  セッションIDに含まれうるパス区切り文字や相対パス表記（`../` 等）を `sanitizeFilenamePart`
+  でサニタイズ（英数字・ハイフン・アンダースコアのみを許可）し、安全なファイル名のみを
+  結合するように修正した。
 
 ## [1.4.1] - 2026-11-08
 
