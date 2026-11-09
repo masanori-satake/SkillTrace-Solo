@@ -212,6 +212,17 @@ test("tool matrix columns are grouped and ordered by totals", async () => {
   assert.deepEqual(toolColumns([]), []);
 });
 
+test("sparkline: glyph mapping and peak-preserving sampling", async () => {
+  const { sparkline } = await import("../core/document.js");
+  assert.equal(sparkline([0, 0.5, 1]), "▁▅█");
+  assert.equal(sparkline([0.25]), "▃");
+  // 100点を48点に間引いても、途中のピーク（最大値）は落ちない
+  const many = Array.from({ length: 100 }, (_, i) => (i === 77 ? 1 : 0.1));
+  const sampled = sparkline(many);
+  assert.equal([...sampled].length, 48);
+  assert.ok(sampled.includes("█"));
+});
+
 test("document: session markdown and html fragment", async () => {
   const { renderSessionMarkdown, renderSessionHtmlFragment } = await import("../core/document.js");
   const { st } = fixtureSessionTrace();

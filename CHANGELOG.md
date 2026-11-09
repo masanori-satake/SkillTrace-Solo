@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.0] - 2026-11-09
+
+### Added
+
+- The context window usage transition now travels with copied documents (Issue #30). The on-screen session summary already drew the transition as a line chart; the document copy (session and skill summaries) showed only the final value. Document HTML now embeds the same transition as an inline SVG chart with the peak marked, and Markdown shows it as a block-character sparkline with the peak position and value. Series are measured values only, never interpolated: per-turn tokens over the limit for Copilot and Copilot Chat, recorded usage-ratio snapshots for Kiro.
+
+### 追加 (Added)
+
+- コンテキストウィンドウ使用量の推移を、文書コピーにも載せるようにした（Issue #30）。画面のセッションサマリには従来から折れ線グラフがあったが、文書コピー（セッション／スキル両サマリ）では最終値だけだった。文書 HTML には最大の位置を示した SVG グラフを、Markdown にはブロック文字のスパークラインと最大の位置・値を入れる。系列は実測のみで補間しない（Copilot と Copilot Chat はターンごとのトークン ÷ 上限、Kiro は記録された使用率スナップショット）。
+
 ## [1.7.0] - 2026-11-09
 
 ### Added
