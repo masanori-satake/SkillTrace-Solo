@@ -5,7 +5,9 @@ import * as vscode from "vscode";
 import { buildGraph } from "./core/graph";
 import { parseEventsFile } from "./core/events";
 import { buildSessionTrace, firstHeading, type SessionTrace } from "./core/trace";
-import { renderSessionHtml, renderSkillHtml, renderSkillTotalsHtml } from "./core/report";
+import { renderFileUsageHtml, renderFileUsageMissingHtml, renderSessionHtml, renderSkillHtml, renderSkillTotalsHtml } from "./core/report";
+import { aggregateFileUsage, extractSessionFileUsage, type SessionFileUsage } from "./core/fileusage";
+import type { Graph } from "./core/graph";
 import { aggregateSessionFile, mergeSkillTotals, type SessionSkillUsage } from "./core/aggregate";
 import { capSessionsBySource, defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
 import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames } from "./core/kiro";
@@ -391,7 +393,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       summaryPanel = vscode.window.createWebviewPanel(
         "skilltraceSummary", title, vscode.ViewColumn.Beside,
-        { enableScripts: true, retainContextWhenHidden: true },
+        { enableScripts: true, enableCommandUris: true, retainContextWhenHidden: true },
       );
       summaryPanel.onDidDispose(() => { summaryPanel = null; });
       summaryPanel.webview.html = html;
@@ -477,6 +479,48 @@ export function activate(context: vscode.ExtensionContext): void {
           // 集計中に別のサマリ表示があったら、そちらを優先して上書きしない
           if (generation === panelGeneration) {
             showHtmlPanel(L("スキル別集計", "Skill totals"), renderSkillTotalsHtml(rows, { scanned: usages.length, skipped }, LANG));
+          }
+        },
+      );
+    }),
+    // ファイル単位の横断集計（Issue #41）: スキル別集計の行から呼ばれ、
+    // ファイルの一覧は今開いているワークスペース（とユーザー全局）の
+    // スキルから取る。到達は記録側のパス突き合わせで数える
+    vscode.commands.registerCommand("skilltrace.showFileUsage", async (nameArg?: unknown) => {
+      const name = typeof nameArg === "string" ? nameArg : "";
+      if (!name) return;
+      const generation = ++panelGeneration;
+      const roots = [...(vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? []), homedir()];
+      const graphs: Graph[] = [];
+      const seenDirs = new Set<string>();
+      for (const root of roots) {
+        if (!root || !existsSync(root)) continue;
+        for (const s of discoverSkills(root)) {
+          if (s.name.toLowerCase() !== name.toLowerCase()) continue;
+          const key = s.dir.toLowerCase();
+          if (seenDirs.has(key)) continue;
+          seenDirs.add(key);
+          try { graphs.push(buildGraph(s.dir, root)); } catch { /* 読めないスキルは飛ばす */ }
+        }
+      }
+      if (!graphs.length) {
+        showHtmlPanel(L("ファイル別の到達", "Per-file reach"), renderFileUsageMissingHtml(name, LANG));
+        return;
+      }
+      const list = capSessionsBySource(sessions, 30);
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `SkillTrace: ${L("ファイル別の到達を集計しています…", "Aggregating per-file reach…")}` },
+        async () => {
+          const usages: SessionFileUsage[] = [];
+          let skipped = 0;
+          for (const info of list) {
+            const u = extractSessionFileUsage(info);
+            if (u) usages.push(u); else skipped++;
+            await new Promise<void>(resolve => setImmediate(resolve));
+          }
+          if (generation === panelGeneration) {
+            const usage = aggregateFileUsage(graphs, usages, name);
+            showHtmlPanel(L("ファイル別の到達", "Per-file reach"), renderFileUsageHtml(usage, { scanned: usages.length, skipped }, LANG));
           }
         },
       );

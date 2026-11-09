@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.0] - 2026-11-10
+
+### Added
+
+- Per-file reach across sessions (Issue #41). The skill totals view now links each skill to a per-file table counting, across the sessions shown in the history, in how many sessions each reference file was read, was only mentioned, or had no recorded reach, with the last-read date. The file list comes from the reference graph of the skill as found in the currently open workspace; reach is matched by the paths recorded in each session, so sessions recorded in another location still count. "Read" rests on structural evidence in the records (tool arguments, read URIs, always-loaded context inclusions) and is coarser than the per-session traces; "no recorded reach" does not prove a file is never read. Files not referenced from the skill do not appear in the list. This is the evidence base for deciding how a skill's referenced information should be split and distributed.
+
+### 追加 (Added)
+
+- ファイル単位の横断集計（Issue #41）。スキル別集計の各スキルから、参照ファイルごとの表を開けるようにした。履歴に表示中のセッションを横断して、ファイルごとに「読み込まれた／言及のみ／到達なし」のセッション数と最終到達日を示す。ファイルの一覧は、今開いているワークスペースで見つかったスキルの参照グラフから取り、到達は各セッションの記録に残るパスで突き合わせるため、別の場所で記録されたセッションも数えられる。「読み込まれた」は記録の構造的な証拠（ツールの引数、読み取り URI、常時文脈への取り込み）に基づく判定で、セッション単位のトレースより粗く、「到達なし」は読まれていないことの証明ではない。スキルから参照されていないファイルは一覧に出ない。スキルの参照情報をどのように分割し、どの分量で分散させるかを判断する材料とする。
+
 ## [1.9.0] - 2026-11-09
 
 ### Added
