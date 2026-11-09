@@ -5,6 +5,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, Trace, TraceNode } from "./trace";
 import { formatLocalDateTime } from "./sessions";
+import type { SkillTotal } from "./aggregate";
 import { esc, fmt, fmtCredits, countTools, toolColumns, toolGroupsPresent, toolGroupLabel, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, glossaryFor, type Lang } from "./common";
 import { renderSessionMarkdown, renderSessionHtmlFragment, renderSkillMarkdown, renderSkillHtmlFragment } from "./document";
 export { esc, fmt };
@@ -51,7 +52,8 @@ table.tmatrix th.tg{color:#222;font-weight:600;white-space:nowrap}
 .tg-chip{display:inline-block;width:10px;height:10px;border:1px solid var(--line);border-radius:2px;margin:0 4px 0 12px;vertical-align:-1px}
 .tg-chip:first-child{margin-left:0}
 svg text{fill:var(--muted);font-size:11px}
-.bar-legend{font-size:12px;color:var(--muted)}`;
+.bar-legend{font-size:12px;color:var(--muted)}
+table.totals td:not(:first-child),table.totals th:not(:first-child){text-align:right}`;
 
 function pageShell(title: string, body: string, lang: Lang = "ja"): string {
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
@@ -459,4 +461,34 @@ ${en ? `<li>Arrival order numbers run across the whole session. If the same file
 ${glossarySection(lang)}
 ${PLAY_SCRIPT}`;
   return pageShell(en ? "Session summary" : "セッションサマリ", body, lang);
+}
+
+/** スキル別集計（Issue #31）の HTML。消費はセッション全体の実測で、
+ *  スキルへの按分をしていないことを注記で明示する */
+export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: number; skipped: number }, lang: Lang = "ja"): string {
+  const en = lang === "en";
+  const dash = "—";
+  const num = (v: number, has: boolean): string => (has ? fmt(v) : dash);
+  const cred = (v: number, has: boolean): string => (has ? fmtCredits(v) : dash);
+  const body: string[] = [];
+  body.push(`<h1>${en ? "Skill totals" : "スキル別集計"}</h1>`);
+  body.push(`<div class="note">${en
+    ? `Aggregated from the sessions shown in the history (up to 30 most recent sessions per source). Scanned ${meta.scanned} sessions${meta.skipped ? `; ${meta.skipped} could not be read and were skipped` : ""}.`
+    : `履歴に表示中のセッション（供給源ごとに新しい順30件まで）から集計しました。対象は ${meta.scanned} セッション${meta.skipped ? `（読み取れなかった ${meta.skipped} 件は除く）` : ""}。`}</div>`);
+  if (!rows.length) {
+    body.push(`<p>${en ? "No skill activations were found in these sessions." : "対象セッションにスキル起動がありませんでした。"}</p>`);
+    return pageShell(en ? "Skill totals" : "スキル別集計", body.join("\n"), lang);
+  }
+  body.push(`<table class="totals"><thead><tr><th>${en ? "Skill" : "スキル"}</th><th>${en ? "Sessions" : "セッション数"}</th><th>${en ? "Activations" : "起動回数"}</th><th>${en ? "Credits (Kiro)" : "クレジット（Kiro）"}</th><th>${en ? "Credits (Copilot Chat)" : "クレジット（Copilot Chat）"}</th><th>${en ? "Input tokens (Copilot)" : "入力トークン（Copilot）"}</th><th>${en ? "Output tokens (Copilot)" : "出力トークン（Copilot）"}</th><th>${en ? "Last used" : "最終利用"}</th></tr></thead><tbody>`);
+  for (const r of rows) {
+    body.push(`<tr><td>${esc(r.name)}</td><td>${fmt(r.sessions)}</td><td>${fmt(r.activations)}</td>`
+      + `<td>${cred(r.kiroCredits, r.kiroSessions > 0)}</td><td>${cred(r.chatCredits, r.chatSessions > 0)}</td>`
+      + `<td>${num(r.copilotInputTokens, r.copilotSessions > 0)}</td><td>${num(r.copilotOutputTokens, r.copilotSessions > 0)}</td>`
+      + `<td>${esc(r.lastUsedAt ? formatLocalDateTime(r.lastUsedAt, lang) : dash)}</td></tr>`);
+  }
+  body.push("</tbody></table>");
+  body.push(`<div class="note">${en
+    ? "Credits and tokens are measured per session as a whole, not apportioned per skill: when several skills were activated in one session, the same session total counts toward each of them. Values in different units are never added together. For Copilot Chat, activations are counted per session (the record does not distinguish repeated activations within a session)."
+    : "クレジットとトークンはセッション全体の実測で、スキルへの按分はしていません。複数のスキルが起動したセッションでは、同じセッション合計が各スキルに入ります。単位の異なる値は合算していません。Copilot Chat の起動回数は、記録の性質上セッション単位の有無で数えています。"}</div>`);
+  return pageShell(en ? "Skill totals" : "スキル別集計", body.join("\n"), lang);
 }

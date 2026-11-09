@@ -16,7 +16,8 @@ export interface OutsideEl { kind: "outside"; session: SessionInfo; read: Sessio
 export interface ContextGroupEl { kind: "contextGroup"; session: SessionInfo; loads: NonNullable<SessionTrace["contextLoads"]>; startRatio?: number | null }
 export interface ContextFileEl { kind: "contextFile"; session: SessionInfo; load: NonNullable<SessionTrace["contextLoads"]>[number] }
 export interface NoteEl { kind: "note"; session: SessionInfo; text: string }
-export type El = SessionEl | SkillEl | NodeEl | OutsideGroupEl | OutsideEl | ContextGroupEl | ContextFileEl | NoteEl;
+export interface TotalsEl { kind: "totals" }
+export type El = SessionEl | SkillEl | NodeEl | OutsideGroupEl | OutsideEl | ContextGroupEl | ContextFileEl | NoteEl | TotalsEl;
 
 export function elementKey(el: El): string {
   switch (el.kind) {
@@ -28,6 +29,7 @@ export function elementKey(el: El): string {
     case "contextGroup": return `c:${el.session.id}`;
     case "contextFile": return `c:${el.session.id}:${el.load.path}`;
     case "note": return `t:${el.session.id}:${el.text}`;
+    case "totals": return "totals";
   }
 }
 
@@ -241,6 +243,21 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
 
   // --- TreeDataProvider ---
   getTreeItem(element: El): vscode.TreeItem {
+    // スキル別集計の入口（履歴の先頭に固定表示する葉）。セッションに
+    // 紐づかないため、セッション前提の処理より前に返す
+    if (element.kind === "totals") {
+      const item = new StTreeItem(element);
+      item.id = elementKey(element);
+      const n = capSessionsBySource(this.sessions, 30).length;
+      item.label = this.L("スキル別集計", "Skill totals");
+      item.description = this.L(`${n} セッション`, `${n} sessions`);
+      item.iconPath = new vscode.ThemeIcon("graph");
+      item.collapsibleState = vscode.TreeItemCollapsibleState.None;
+      item.contextValue = "skilltraceTotals";
+      item.tooltip = this.L("履歴に表示中のセッションをまたいで、スキルごとの起動回数と実測の消費（クレジット／トークン）を合計します", "Totals of activations and measured consumption (credits / tokens) per skill, across the sessions shown in the history");
+      item.command = { command: "skilltrace.showSkillTotals", title: this.L("スキル別集計", "Skill totals") };
+      return item;
+    }
     const item = new StTreeItem(element);
     const epoch = this.collapseEpoch.get(element.session.id) ?? 0;
     item.id = elementKey(element) + ((epoch || this.renderEpoch) ? `#${epoch}.${this.renderEpoch}` : "");
@@ -390,7 +407,9 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
 
   async getChildren(element?: El): Promise<El[]> {
     if (!element) {
-      return capSessionsBySource(this.sessions, 30).map(session => ({ kind: "session", session } as SessionEl));
+      const capped = capSessionsBySource(this.sessions, 30);
+      const head: El[] = capped.length ? [{ kind: "totals" } as TotalsEl] : [];
+      return [...head, ...capped.map(session => ({ kind: "session", session } as SessionEl))];
     }
     switch (element.kind) {
       case "session": {
