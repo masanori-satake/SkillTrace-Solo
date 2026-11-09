@@ -2,6 +2,14 @@
 
 ## [1.5.1] - 2026-11-09
 
+### Changed
+
+- The history label for sessions recorded by VS Code's Copilot Chat now reads "Copilot Chat" instead of "VS Code", naming the agent surface rather than the editor. The same rename applies to the tooltip and the credit notes in summaries.
+
+### 変更 (Changed)
+
+- VS Code の Copilot Chat が記録したセッションの履歴ラベルを「VS Code」から「Copilot Chat」に変更した。エディタではなくエージェントの名前で示すため。ツールチップとサマリ内のクレジット注記も同じ表記に揃えた。
+
 ### Fixed
 
 - VS Code chat sessions with no requests (files VS Code creates as soon as a chat is opened) are no longer listed in the history. They carried no content and kept appearing as "No skill used" entries.

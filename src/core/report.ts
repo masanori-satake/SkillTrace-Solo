@@ -185,8 +185,8 @@ function usageBlock(trace: Trace | SessionTrace, lang: Lang = "ja"): string {
   // VS Code の記録にはトークン実測とクレジット実測の両方が残るため併記する
   if (trace.source === "vscode" && (trace.creditsTotal ?? 0) > 0) {
     const note = {
-      ja: "（各リクエストの copilotCredits の積算。VS Code の記録にはトークン実測も残ります）",
-      en: " (summed from each request's copilotCredits; VS Code records token usage as well)",
+      ja: "（各リクエストの copilotCredits の積算。Copilot Chat の記録にはトークン実測も残ります）",
+      en: " (summed from each request's copilotCredits; Copilot Chat records token usage as well)",
     };
     return `${tokenBlock}\n${creditsBlock(trace, lang, note)}`;
   }

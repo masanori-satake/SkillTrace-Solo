@@ -245,7 +245,7 @@ export function activate(context: vscode.ExtensionContext): void {
     lastSignature = signature;
 
     if (!list.length) {
-      treeView.message = L("セッションがまだありません。Copilot / Kiro / VS Code のチャットでスキルを使うセッションを実行すると、ここに履歴として自動で並びます。", "No sessions yet. Run a session that uses skills in Copilot / Kiro / VS Code chat and it will appear here automatically.");
+      treeView.message = L("セッションがまだありません。Copilot CLI / Kiro / Copilot Chat でスキルを使うセッションを実行すると、ここに履歴として自動で並びます。", "No sessions yet. Run a session that uses skills in Copilot CLI, Kiro, or Copilot Chat and it will appear here automatically.");
     } else {
       treeView.message = undefined;
     }
