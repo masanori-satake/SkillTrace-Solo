@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { buildGraph } from "../core/graph";
@@ -201,4 +202,22 @@ test("kiro english rendering: summary, matrix legend, markdown and copy are in E
   const frag = renderSessionHtmlFragment(trace, { lang: "en" });
   assert.ok(frag.includes("Legend (tool groups): "));
   assert.ok(!frag.includes("凡例"));
+});
+
+test("kiro listing: workspacePaths and rootPaths are unioned for skill discovery", () => {
+  // マルチルートでは2つの記録が食い違うことがある。片方にしか無いルートの
+  // スキルを「見つからない」と誤判定しないよう、和集合を探索対象にする
+  const home = mkdtempSync(join(tmpdir(), "skilltrace-kiro-"));
+  try {
+    const dir = join(home, "sessions", "bucket1", "sess_00000000-0000-4000-8000-000000000001");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "session.json"), JSON.stringify({
+      id: "sess_00000000-0000-4000-8000-000000000001", title: "multi",
+      workspacePaths: ["C:/ws/rootA"], rootPaths: ["C:/ws/rootA", "C:/ws/rootB"],
+    }));
+    writeFileSync(join(dir, "messages.jsonl"), "");
+    const sessions = listKiroSessions(home);
+    assert.equal(sessions.length, 1);
+    assert.deepEqual(sessions[0].workspacePaths, ["C:/ws/rootA", "C:/ws/rootB"]);
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });

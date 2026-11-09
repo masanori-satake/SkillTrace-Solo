@@ -136,11 +136,17 @@ export function cacheWriteObservation(turns: { turn: number; cacheWriteTokens: n
 }
 
 /** 記録で起動が確認できたが、現在のワークスペースで見つからなかったスキルへの注記文（無ければ空文字列） */
-export function undiscoveredSkillsNote(names: string[] | undefined, lang: Lang = "ja"): string {
+export function undiscoveredSkillsNote(names: string[] | undefined, lang: Lang = "ja", workspace?: string): string {
   if (!names?.length) return "";
-  return lang === "en"
+  const base = lang === "en"
     ? `The record shows these skills were activated, but they were not found in the current workspace (they may have been moved, renamed or deleted): ${names.join(", ")}`
     : `記録では次のスキルが起動していますが、現在のワークスペースでは見つかりませんでした（移動・改名・削除された可能性があります）: ${names.join(", ")}`;
+  // 見つからない理由が「別のワークスペースで実行した」ことにある場合に、
+  // 利用者が次に何をすればいいか分かるよう、実行時の場所と開く操作を案内する
+  if (!workspace) return base;
+  return base + (lang === "en"
+    ? ` This session ran in ${workspace}. Open that workspace to see the reference tree.`
+    : `このセッションは ${workspace} で実行されました。そのワークスペースを開くと、参照ツリーを表示できます。`);
 }
 
 /** Kiro: 最初に記録された文脈使用率（contextUsage の最初のスナップショット。

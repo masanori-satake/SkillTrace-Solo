@@ -64,7 +64,10 @@ export function listKiroSessions(kiroHome: string): KiroSessionInfo[] {
         title: typeof meta.title === "string" ? meta.title : null,
         createdAt: typeof meta.createdAt === "string" ? meta.createdAt : null,
         modelId: typeof meta.modelId === "string" ? meta.modelId : null,
-        workspacePaths: strings(meta.workspacePaths),
+        // マルチルートでは workspacePaths と rootPaths が食い違うことがある。
+        // スキル探索で片方しか見ないと、もう片方のルートにあるスキルを
+        // 「見つからない」と誤判定するため、和集合を探索対象にする
+        workspacePaths: [...new Set([...strings(meta.workspacePaths), ...strings(meta.rootPaths)])],
         rootPaths: strings(meta.rootPaths),
       });
     }

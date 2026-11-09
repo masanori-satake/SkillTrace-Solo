@@ -402,7 +402,10 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         // 記録では起動が確認できたのに、現在のワークスペースで見つからないスキル。
         // 何も出さないと「開いたのに空」という無言の失敗になるため、注記として出す
         for (const name of trace.undiscoveredSkills ?? []) {
-          out.push({ kind: "note", session: element.session, text: this.L(`起動したスキル「${name}」は現在のワークスペースで見つかりませんでした`, `The activated skill "${name}" was not found in the current workspace`) } as NoteEl);
+          const hint = element.session.workspaceHint;
+          out.push({ kind: "note", session: element.session, text: this.L(
+            `起動したスキル「${name}」は現在のワークスペースで見つかりませんでした${hint ? `（このセッションは ${hint} で実行されました。開くと参照ツリーを表示できます）` : ""}`,
+            `The activated skill "${name}" was not found in the current workspace${hint ? ` (this session ran in ${hint}; open it to see the reference tree)` : ""}`) } as NoteEl);
         }
         // トレースはあるのに表示できる項目が無い場合も、空の展開で終わらせない
         if (!out.length) {
