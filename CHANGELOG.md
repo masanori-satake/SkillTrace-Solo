@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.13.1] - 2026-11-10
+
+### Added
+
+- Learning documents, part 2 (Issue #5; Japanese only, as with part 1). Two new documents take the user's point of view — the inconveniences felt when a skill does not deliver its intended benefit — instead of the maker's structural view. 06 "Start from symptoms" is an index from nine symptoms (context already pressured before starting, heavy on every use, everything read when only a part is needed, documents that are never actually loaded, consumption that varies, context overflow, not reproducible in another environment, a skill that will not activate, a vague sense of declining quality) to the first display to check. 07 "Troubleshooting by symptom" works each symptom through as symptom / how to tell from the displays / what to do, including how to hand the findings to the skill's maker with tree and document copies.
+
+### 追加 (Added)
+
+- 学習ドキュメント第2弾（Issue #5。日本語のみは第1弾と同じ）。2本を追加した。作り手の構造の視点ではなく、利用者が感じる不便さ（提供したい効用が出ていない現象）から入る構成。06「現象から引く」は、現象9件（使い始める前からの圧迫、使うたびに重い、一部だけ知りたいのに全部読み込まれる、読んでくれない、消費のばらつき、あふれ、環境で再現しない、起動しない、精度が落ちた気がする）から最初に見る表示へ案内する索引。07「現象別のトラブルシューティング」は、現象ごとに「現象／判別／対処」で切り分け、判別結果をツリーコピーや文書コピーで作り手へ渡す方法までをまとめた。
+
 ## [1.13.0] - 2026-11-10
 
 ### Added
