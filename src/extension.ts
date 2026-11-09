@@ -5,8 +5,9 @@ import * as vscode from "vscode";
 import { buildGraph } from "./core/graph";
 import { parseEventsFile } from "./core/events";
 import { buildSessionTrace, firstHeading, type SessionTrace } from "./core/trace";
-import { renderSessionHtml, renderSkillHtml } from "./core/report";
-import { defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
+import { renderSessionHtml, renderSkillHtml, renderSkillTotalsHtml } from "./core/report";
+import { aggregateSessionFile, mergeSkillTotals, type SessionSkillUsage } from "./core/aggregate";
+import { capSessionsBySource, defaultSessionStateDir, discoverSkills, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
 import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames } from "./core/kiro";
 import { buildVSCodeSessionTrace, defaultVSCodeStorageDir, listVSCodeChatSessions, parseVSCodeChatSessionFile, scanVSCodeActivationNames } from "./core/vscode";
 import { normPath } from "./core/graph";
@@ -166,7 +167,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   treeView.onDidExpandElement(e => {
     provider.setExpanded(elementKey(e.element), true);
-    provider.clearCollapsed(e.element.session.id);
+    if (e.element.kind !== "totals") provider.clearCollapsed(e.element.session.id);
   }, null, context.subscriptions);
   treeView.onDidCollapseElement(e => {
     provider.setExpanded(elementKey(e.element), false);
@@ -332,7 +333,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 特定できるよう、コマンド引数（ツリー要素）から対象を解決する。
   const sessionFromArg = (arg: unknown): SessionInfo | undefined => {
     const el = asElement(arg);
-    if (el) return el.session;
+    if (el) return el.kind === "totals" ? undefined : el.session;
     return sessions.find(s => s.id === displayedId);
   };
   const traceFromArg = async (arg: unknown): Promise<{ session: SessionInfo; trace: SessionTrace } | null> => {
@@ -445,6 +446,28 @@ export function activate(context: vscode.ExtensionContext): void {
       if (displayedId) { buildCache.delete(displayedId); provider.invalidateTrace(displayedId); }
       lastSignature = "";
       refreshSessions();
+    }),
+    // スキル別集計（Issue #31）: 履歴に表示中のセッションをその場で読み、
+    // スキル単位に寄せてパネルに表示する。記録は読み取りのみ
+    vscode.commands.registerCommand("skilltrace.showSkillTotals", async () => {
+      const list = capSessionsBySource(sessions, 30);
+      if (!list.length) {
+        void vscode.window.showInformationMessage(`SkillTrace: ${L("履歴にセッションがありません", "No sessions in the history")}`);
+        return;
+      }
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `SkillTrace: ${L("スキル別集計を作っています…", "Building skill totals…")}` },
+        async () => {
+          const usages: SessionSkillUsage[] = [];
+          let skipped = 0;
+          for (const info of list) {
+            const u = aggregateSessionFile(info);
+            if (u) usages.push(u); else skipped++;
+          }
+          const rows = mergeSkillTotals(usages);
+          showHtmlPanel(L("スキル別集計", "Skill totals"), renderSkillTotalsHtml(rows, { scanned: usages.length, skipped }, LANG));
+        },
+      );
     }),
     vscode.commands.registerCommand("skilltrace.showSummary", async (arg?: unknown) => {
       const resolved = await traceFromArg(arg);

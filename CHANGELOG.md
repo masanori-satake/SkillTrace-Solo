@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.7.0] - 2026-11-09
+
+### Added
+
+- Per-skill totals across the history (Issue #31). A "Skill totals" entry at the top of the history aggregates the sessions shown there (up to 30 most recent per source) by skill: session count, activation count, and measured consumption — credits for Kiro and Copilot Chat, input/output tokens for Copilot — with different units never added together. Credits and tokens are whole-session measurements, not apportioned per skill; when several skills were activated in one session, the same session total counts toward each of them, and the panel says so. For Copilot Chat, activations are counted per session, as its records do not distinguish repeated activations.
+
+### 追加 (Added)
+
+- 履歴をまたいだスキル別集計（Issue #31）。履歴の先頭に「スキル別集計」の入口を追加し、履歴に表示中のセッション（供給源ごとに新しい順30件まで）をスキル単位に集計する。セッション数、起動回数、実測の消費（Kiro と Copilot Chat はクレジット、Copilot は入力／出力トークン）で、単位の異なる値は合算しない。クレジットとトークンはセッション全体の実測でスキルへの按分はしておらず、複数のスキルが起動したセッションでは同じセッション合計が各スキルに入る旨をパネルに明記した。Copilot Chat の起動回数は、記録の性質上セッション単位の有無で数える。
+
 ## [1.6.3] - 2026-11-09
 
 ### Changed

@@ -20,5 +20,6 @@
   "command.displaySession": "Display This Session",
   "command.openSkillSummary": "Show This Skill Summary",
   "command.toggleExpandCollapse": "Expand/Collapse All",
-  "skilltrace.description": "See which skill files GitHub Copilot or Amazon Kiro actually loaded. SkillTrace overlays Copilot / Kiro session records onto a skill's reference graph and shows, per file, how certain its arrival is, the measured usage, and how full the context window became. 100% local, no tracking — a measurement tool and learning aid for Agent Skills."
+  "skilltrace.description": "See which skill files GitHub Copilot or Amazon Kiro actually loaded. SkillTrace overlays Copilot / Kiro session records onto a skill's reference graph and shows, per file, how certain its arrival is, the measured usage, and how full the context window became. 100% local, no tracking — a measurement tool and learning aid for Agent Skills.",
+  "command.showSkillTotals": "Show Skill Totals"
 }

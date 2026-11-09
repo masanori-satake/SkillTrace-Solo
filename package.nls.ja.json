@@ -20,5 +20,6 @@
   "command.displaySession": "このセッションを表示",
   "command.openSkillSummary": "このスキルのサマリを表示",
   "command.toggleExpandCollapse": "すべて展開／折りたたむ",
-  "skilltrace.description": "GitHub Copilot と Amazon Kiro がスキル実行時に実際に読み込んだファイルを可視化します。Copilot / Kiro のセッション記録をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測、コンテキストウィンドウ使用量を表示します。100%ローカル処理、トラッキングなし。Agent Skills の計測ツール兼学習補助ツールです。"
+  "skilltrace.description": "GitHub Copilot と Amazon Kiro がスキル実行時に実際に読み込んだファイルを可視化します。Copilot / Kiro のセッション記録をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測、コンテキストウィンドウ使用量を表示します。100%ローカル処理、トラッキングなし。Agent Skills の計測ツール兼学習補助ツールです。",
+  "command.showSkillTotals": "スキル別集計を表示"
 }

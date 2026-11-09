@@ -29,6 +29,11 @@
       },
       {
         "category": "SkillTrace",
+        "command": "skilltrace.showSkillTotals",
+        "title": "%command.showSkillTotals%"
+      },
+      {
+        "category": "SkillTrace",
         "command": "skilltrace.openLearning",
         "icon": "$(book)",
         "title": "%command.openLearning%"
@@ -266,6 +271,6 @@
     "check-version-bump": "node scripts/check-version.js --check-bump",
     "update-version": "node scripts/update-version.js"
   },
-  "version": "1.6.3",
+  "version": "1.7.0",
   "icon": "icon.png"
 }
