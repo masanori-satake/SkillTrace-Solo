@@ -6,6 +6,7 @@ import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, Trace, TraceNode } from "./trace";
 import { formatLocalDateTime } from "./sessions";
 import type { SkillTotal } from "./aggregate";
+import type { SkillFileUsage } from "./fileusage";
 import { esc, fmt, fmtCredits, countTools, toolColumns, toolGroupsPresent, toolGroupLabel, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, glossaryFor, type Lang } from "./common";
 import { renderSessionMarkdown, renderSessionHtmlFragment, renderSkillMarkdown, renderSkillHtmlFragment } from "./document";
 export { esc, fmt };
@@ -484,7 +485,8 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
   }
   body.push(`<table class="totals"><thead><tr><th>${en ? "Skill" : "スキル"}</th><th>${en ? "Sessions" : "セッション数"}</th><th>${en ? "Activations" : "起動回数"}</th><th>${en ? "Credits (Kiro)" : "クレジット（Kiro）"}</th><th>${en ? "Credits (Copilot Chat)" : "クレジット（Copilot Chat）"}</th><th>${en ? "Input tokens (Copilot)" : "入力トークン（Copilot）"}</th><th>${en ? "Output tokens (Copilot)" : "出力トークン（Copilot）"}</th><th>${en ? "Last used" : "最終利用"}</th></tr></thead><tbody>`);
   for (const r of rows) {
-    body.push(`<tr><td>${esc(r.name)}</td><td>${fmt(r.sessions)}</td><td>${fmt(r.activations)}</td>`
+    const fileLink = `<a href="command:skilltrace.showFileUsage?${encodeURIComponent(JSON.stringify([r.name]))}">${en ? "By file" : "ファイル別"}</a>`;
+    body.push(`<tr><td>${esc(r.name)} <span class="tok">${fileLink}</span></td><td>${fmt(r.sessions)}</td><td>${fmt(r.activations)}</td>`
       + `<td>${cred(r.kiroCredits, r.kiroSessions > 0)}</td><td>${cred(r.chatCredits, r.chatSessions > 0)}</td>`
       + `<td>${num(r.copilotInputTokens, r.copilotSessions > 0)}</td><td>${num(r.copilotOutputTokens, r.copilotSessions > 0)}</td>`
       + `<td>${esc(r.lastUsedAt ? formatLocalDateTime(r.lastUsedAt, lang) : dash)}</td></tr>`);
@@ -494,4 +496,61 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
     ? "Credits and tokens are measured per session as a whole, not apportioned per skill: when several skills were activated in one session, the same session total counts toward each of them. Values in different units are never added together. For Copilot Chat, activations are counted per session (the record does not distinguish repeated activations within a session)."
     : "クレジットとトークンはセッション全体の実測で、スキルへの按分はしていません。複数のスキルが起動したセッションでは、同じセッション合計が各スキルに入ります。単位の異なる値は合算していません。Copilot Chat の起動回数は、記録の性質上セッション単位の有無で数えています。"}</div>`);
   return pageShell(en ? "Skill totals" : "スキル別集計", body.join("\n"), lang);
+}
+
+// ファイル単位の横断集計（Issue #41）: スキルの分割方法の判断材料として、
+// 参照ファイルごとに「読み込まれたセッション数」を寄せる
+export function renderFileUsageHtml(results: SkillFileUsage[], meta: { scanned: number; skipped: number; unattributed: number }, lang: Lang = "ja"): string {
+  const en = lang === "en";
+  const dash = "—";
+  const name = results[0]?.name ?? "";
+  const title = en ? `Per-file reach — ${name}` : `ファイル別の到達 — ${name}`;
+  const multiple = results.length > 1;
+  const body: string[] = [];
+  body.push(`<h1>${esc(title)}</h1>`);
+  body.push(`<p><a href="command:skilltrace.showSkillTotals">${en ? "← Back to skill totals" : "← スキル別集計に戻る"}</a></p>`);
+  body.push(`<div class="note">${en
+    ? `Counts the sessions shown in the history (up to 30 most recent per source), out of ${meta.scanned} scanned${meta.skipped ? `; ${meta.skipped} could not be read and were skipped` : ""}. The file list comes from the reference graph of the skill as found in the currently open workspace.`
+    : `履歴に表示中のセッション（供給源ごとに新しい順30件まで）から集計しました。走査したのは ${meta.scanned} セッション${meta.skipped ? `（読み取れなかった ${meta.skipped} 件は除く）` : ""}。ファイルの一覧は、今開いているワークスペースで見つかったスキルの参照グラフから取っています。`}</div>`);
+  if (multiple) {
+    body.push(`<div class="note">${en
+      ? "Skills with the same name exist in more than one location, so the results are split per location. Within one location, the placements (.agents / .github / .kiro) are treated as copies of one skill. Sessions are counted toward a location only when the skill folder recorded in the session belongs to it."
+      : "同名のスキルが複数の場所にあるため、場所ごとに分けて集計しています。同じ場所の中の各配置（.agents / .github / .kiro）は、1つのスキルのコピーとしてまとめています。セッションは、記録に残るスキルフォルダがその場所に属する場合だけ数えます。"}</div>`);
+    if (meta.unattributed > 0) {
+      body.push(`<div class="note">${en
+        ? `${meta.unattributed} session(s) activated a skill of this name but could not be attributed to any location (no folder in the record, or a folder that is not open), so they are not counted anywhere above.`
+        : `この名前のスキルを起動したセッションのうち ${meta.unattributed} 件は、場所を特定できなかったため（記録にフォルダが無い、または開いていない場所のため）上のどこにも数えていません。`}</div>`);
+    }
+  }
+  for (const usage of results) {
+    if (multiple) body.push(`<h2>${esc(usage.dirLabel)}</h2>`);
+    body.push(`<p>${en
+      ? `Sessions in which this skill was activated: ${usage.invokedSessions}`
+      : `このスキルが起動したセッション: ${usage.invokedSessions} 件`}</p>`);
+    if (!usage.rows.length) {
+      body.push(`<p>${en ? "No files were found in the reference graph of this skill." : "このスキルの参照グラフにファイルがありませんでした。"}</p>`);
+      continue;
+    }
+    body.push(`<table class="totals"><thead><tr><th>${en ? "File" : "ファイル"}</th><th>${en ? "Read in (sessions)" : "読み込まれた（セッション）"}</th><th>${en ? "Mentioned only" : "言及のみ"}</th><th>${en ? "No reach recorded" : "到達なし"}</th><th>${en ? "Last read" : "最終到達"}</th></tr></thead><tbody>`);
+    for (const r of usage.rows) {
+      body.push(`<tr><td>${esc(r.rel)}</td><td>${fmt(r.readSessions)}</td><td>${fmt(r.mentionSessions)}</td><td>${fmt(r.noneSessions)}</td><td>${esc(r.lastReadAt ? formatLocalDateTime(r.lastReadAt, lang) : dash)}</td></tr>`);
+    }
+    body.push("</tbody></table>");
+  }
+  body.push(`<div class="note">${en
+    ? "\"Read in\" is based on structural evidence in the records (tool arguments, read URIs, always-loaded context inclusions) and is coarser than the per-session traces. \"No reach recorded\" means only that no reach was confirmed in sessions that have records — it does not prove the file is never read. Files not referenced from the skill (and therefore absent from the graph) are not listed."
+    : "「読み込まれた」は、記録に残る構造的な証拠（ツールの引数、読み取り URI、常時文脈への取り込み）に基づく判定で、セッション単位のトレースより粗いものです。「到達なし」は、記録のあるセッションで到達が確認できなかったという意味で、読まれていないことの証明ではありません。スキルから参照されておらず参照グラフに現れないファイルは、この一覧には出ません。"}</div>`);
+  return pageShell(title, body.join("\n"), lang);
+}
+
+// ファイル別集計の対象スキルが、今開いているワークスペースで見つからない場合
+export function renderFileUsageMissingHtml(name: string, lang: Lang = "ja"): string {
+  const en = lang === "en";
+  const title = en ? `Per-file reach — ${name}` : `ファイル別の到達 — ${name}`;
+  const body = `<h1>${esc(title)}</h1>`
+    + `<p><a href="command:skilltrace.showSkillTotals">${en ? "← Back to skill totals" : "← スキル別集計に戻る"}</a></p>`
+    + `<p>${en
+      ? "The file list for this view comes from the skill as found in the currently open workspace, and this skill was not found there. Open the workspace or folder that contains the skill, then try again."
+      : "この表示のファイル一覧は、今開いているワークスペースで見つかったスキルから取りますが、このスキルは見つかりませんでした。そのスキルを含むワークスペース（またはフォルダ）を開いてから、もう一度お試しください。"}</p>`;
+  return pageShell(title, body, lang);
 }

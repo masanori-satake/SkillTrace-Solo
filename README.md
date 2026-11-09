@@ -1,6 +1,6 @@
 # SkillTrace-Solo
 
-[![Version](https://img.shields.io/badge/version-v1.9.0-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-v1.10.0-blue.svg)](package.json)
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/masanori-satake.skilltrace-solo.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)
 [![Open VSX](https://img.shields.io/open-vsx/v/masanori-satake/skilltrace-solo?label=Open%20VSX)](https://open-vsx.org/extension/masanori-satake/skilltrace-solo)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/masanori-satake/SkillTrace-Solo)](https://github.com/masanori-satake/SkillTrace-Solo/releases)
@@ -18,7 +18,7 @@
 
 When GitHub Copilot or Amazon Kiro runs a skill, it follows references from `SKILL.md` into `references/` and beyond — but nothing on screen tells you how far it really got, what it cost, or how full the context window became. SkillTrace overlays the session records the agents already write (Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`; Kiro: `~/.kiro/sessions/<bucket>/sess_<uuid>/`; VS Code chat: `workspaceStorage/<hash>/chatSessions/<id>.jsonl`) onto the skill's reference graph, and reports, per file, the certainty that it arrived, the measured usage (tokens for Copilot, credits for Kiro), and the context window usage. No setup is required: the records are written by default, and past sessions can be analysed retroactively.
 
-Current version: **v1.9.0**
+Current version: **v1.10.0**
 
 ---
 
@@ -66,7 +66,10 @@ Current version: **v1.9.0**
 6. **Per-skill totals across the history**
    - The "Skill totals" entry at the top of the history aggregates the sessions shown in the history (up to 30 most recent per source) by skill: sessions, activations, and measured consumption (Kiro / Copilot Chat credits, Copilot tokens), with different units never added together. Credits and token counts are whole-session measurements, not apportioned per skill — when several skills ran in one session, the same session total counts toward each of them.
 
-7. **A learning aid, not just a meter**
+7. **Per-file reach across sessions**
+   - From the skill totals, each skill opens a per-file table: across the history sessions in which the skill was activated, how many sessions read each reference file, only mentioned it, or show no recorded reach, with the last-read date. The file list comes from the skill's reference graph in the currently open workspace. This is evidence for deciding how a skill's referenced information should be split. A file with no recorded reach is not thereby unread or unneeded — it may be read in sessions outside the aggregated set — so treat it as a candidate to check individually before folding anything back. The counts are per file: whether files were read together in the same session cannot be told from this table, so check individual sessions for co-reading.
+
+8. **A learning aid, not just a meter**
    - Bundled learning docs (`docs/learning/`) explain the concepts behind the displays — "read" vs "loaded into context", token kinds and credits, and how Copilot's and Kiro's session records compare — using real session numbers. Open them from the "SkillTrace: Open Learning Docs" command.
 
 ---
@@ -76,7 +79,7 @@ Current version: **v1.9.0**
 
 - From the Visual Studio Marketplace: search for **SkillTrace-Solo**, or install from the [Marketplace page](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo). Updates arrive through VS Code as usual.
 - From a VSIX file:
-  1. Download `skilltrace-solo-1.9.0.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
+  1. Download `skilltrace-solo-1.10.0.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
   2. In VS Code, run "Extensions: Install from VSIX..." from the Command Palette and select the file.
 
 ---
@@ -197,7 +200,7 @@ MIT — see [LICENSE](LICENSE).
 
 GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` から `references/` やその先へ参照を辿ります。しかし画面のどこを見ても、実際にどこまで辿り着いたか、いくら消費したか、コンテキストウィンドウがどれだけ埋まったかは分かりません。SkillTrace は、エージェントが標準で書き出しているセッション記録（Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`、Kiro: `~/.kiro/sessions/<バケット>/sess_<UUID>/`、VS Code チャット: `workspaceStorage/<ハッシュ>/chatSessions/<ID>.jsonl`）をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測（Copilot はトークン、Kiro はクレジット）、コンテキストウィンドウ使用量を表示します。設定は不要で、記録は標準で書かれるため、過去のセッションも後から分析できます。
 
-現在のバージョン: **v1.9.0**
+現在のバージョン: **v1.10.0**
 
 ---
 
@@ -245,7 +248,10 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 6. **履歴をまたいだスキル別集計**
    - 履歴の先頭にある「スキル別集計」から、履歴に表示中のセッション（供給源ごとに新しい順30件まで）をスキル単位に集計できます。セッション数、起動回数、実測の消費（Kiro / Copilot Chat のクレジット、Copilot のトークン）で、単位の異なる値は合算しません。クレジットとトークンはセッション全体の実測で、スキルへの按分はしていません。複数のスキルが起動したセッションでは、同じセッション合計が各スキルに入ります。
 
-7. **計測ツールであり、学習の道具でもある**
+7. **ファイル単位の横断集計**
+   - スキル別集計から、スキルごとに参照ファイル単位の表を開けます。そのスキルが起動した履歴セッションを横断して、ファイルごとに「読み込まれた／言及のみ／到達なし」のセッション数と最終到達日を示します。ファイルの一覧は、今開いているワークスペースのスキルの参照グラフから取ります。スキルの参照情報をどう分割するかの判断材料です。記録上「到達なし」のファイルが未読・不要という意味ではありません（集計対象外のセッションで読まれている可能性があります）。畳み戻す前に個別に確認するための候補として扱ってください。件数はファイル単位の集計で、同じセッションで一緒に読まれたかどうかはこの表からは分かりません。同時読み込みの関係は個別のセッションで確認してください。
+
+8. **計測ツールであり、学習の道具でもある**
    - 同梱の学習ドキュメント（`docs/learning/`）が、表示の背後にある概念 — 「読んだ」と「コンテキストに読み込まれた」の違い、トークンの種類とクレジット、Copilot と Kiro のセッション記録の対比 — を、実セッションの数値で解説します。「SkillTrace: 学習ドキュメントを開く」コマンドから開けます。
 
 ---
@@ -255,7 +261,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 
 - Visual Studio Marketplace から: **SkillTrace-Solo** で検索するか、[Marketplace のページ](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)からインストールしてください。更新は通常どおり VS Code 経由で届きます。
 - VSIX ファイルから:
-  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.9.0.vsix` をダウンロードする
+  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.10.0.vsix` をダウンロードする
   2. VS Code のコマンドパレットで「Extensions: Install from VSIX...」を実行し、ファイルを選ぶ
 
 ---

@@ -33,6 +33,10 @@
         "title": "%command.showSkillTotals%"
       },
       {
+        "command": "skilltrace.showFileUsage",
+        "title": "%command.showFileUsage%"
+      },
+      {
         "category": "SkillTrace",
         "command": "skilltrace.openLearning",
         "icon": "$(book)",
@@ -219,6 +223,12 @@
           "command": "skilltrace.copySkillSummaryMarkdown",
           "when": "view == skilltrace-tree && viewItem == skilltraceSkill"
         }
+      ],
+      "commandPalette": [
+        {
+          "command": "skilltrace.showFileUsage",
+          "when": "false"
+        }
       ]
     },
     "views": {
@@ -271,6 +281,6 @@
     "check-version-bump": "node scripts/check-version.js --check-bump",
     "update-version": "node scripts/update-version.js"
   },
-  "version": "1.9.0",
+  "version": "1.10.0",
   "icon": "icon.png"
 }
