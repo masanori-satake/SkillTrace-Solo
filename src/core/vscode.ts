@@ -310,34 +310,69 @@ function workspaceHintOf(hashDir: string): string | null {
 
 /** 列挙用の軽量スキャン: 先頭 1MB だけ読み、ヘッダーと customTitle だけ拾う
  *  （chatSessions のファイルは数 MB になりうるため、履歴表示で全文は読まない） */
-function lightScan(filePath: string): { title: string | null } {
+function lightScan(filePath: string): { title: string | null; hasRequests: boolean } | null {
+  let title: string | null = null;
+  let hasRequests = false;
   try {
     const fd = openSync(filePath, "r");
     try {
-      const buf = Buffer.alloc(1024 * 1024);
-      const n = readSync(fd, buf, 0, buf.length, 0);
-      const text = buf.toString("utf8", 0, n);
-      for (const line of text.split(/\r?\n/)) {
-        if (!line.includes("customTitle")) continue;
-        try {
-          const e = JSON.parse(line) as Json;
-          if (Array.isArray(e.k) && e.k[0] === "customTitle" && typeof e.v === "string" && e.v) return { title: e.v };
-        } catch { /* 次の行へ */ }
+      // 先頭だけで判定すると、前半の大きいファイルで後方のリクエストを見落とす。
+      // 1MiB ずつ読み進め、タイトルとリクエストの実在が両方そろうまで（無ければ最後まで）見る
+      const CHUNK = 1024 * 1024;
+      const buf = Buffer.alloc(CHUNK);
+      let pos = 0;
+      let leftover = "";
+      let tail = "";
+      const checkLine = (line: string): void => {
+        if (!hasRequests && line.includes('"kind":2')) {
+          // kind 2 の追記は、追記先が requests のときだけ「リクエストあり」とする
+          // （inputState や attachments への追記だけの空セッションを拾わないため）
+          try {
+            const e = JSON.parse(line) as Json;
+            if (Array.isArray(e.k) && e.k[0] === "requests") hasRequests = true;
+          } catch { /* 判定材料にしない */ }
+        }
+        if (!title && line.includes("customTitle")) {
+          try {
+            const e = JSON.parse(line) as Json;
+            if (Array.isArray(e.k) && e.k[0] === "customTitle" && typeof e.v === "string" && e.v) title = e.v;
+          } catch { /* 次の行へ */ }
+        }
+      };
+      for (;;) {
+        const n = readSync(fd, buf, 0, CHUNK, pos);
+        if (n <= 0) break;
+        pos += n;
+        const text = leftover + buf.toString("utf8", 0, n);
+        // リクエストには必ず requestId が付く（kind 1 の requests セットや
+        // ヘッダーのスナップショットにリクエストが入る場合もこれで拾える）
+        if (!hasRequests && (tail + text).includes('"requestId"')) hasRequests = true;
+        const lines = text.split(/\r?\n/);
+        leftover = lines.pop() ?? "";
+        for (const line of lines) {
+          checkLine(line);
+          if (hasRequests && title) break;
+        }
+        tail = text.slice(-32);
+        if (hasRequests && title) break;
       }
+      if (leftover) checkLine(leftover);
     } finally { closeSync(fd); }
-  } catch { /* 読めなければタイトルなし */ }
-  return { title: null };
+  } catch { return null; }
+  return { title, hasRequests };
 }
 
 /** 列挙用タイトルのキャッシュ（ファイルパス + mtimeMs が同じなら再スキャンしない）。
  *  履歴の再描画のたびに全セッションを lightScan すると、件数が多い環境で重くなる */
-const titleCache = new Map<string, { mtimeMs: number; title: string | null }>();
-function cachedTitle(eventsPath: string, mtimeMs: number): string | null {
-  const hit = titleCache.get(eventsPath);
-  if (hit && hit.mtimeMs === mtimeMs) return hit.title;
-  const title = lightScan(eventsPath).title;
-  titleCache.set(eventsPath, { mtimeMs, title });
-  return title;
+const scanCache = new Map<string, { mtimeMs: number; title: string | null; hasRequests: boolean }>();
+function cachedScan(eventsPath: string, mtimeMs: number): { title: string | null; hasRequests: boolean } | null {
+  const hit = scanCache.get(eventsPath);
+  if (hit && hit.mtimeMs === mtimeMs) return hit;
+  const scan = lightScan(eventsPath);
+  // 読み取り失敗はキャッシュしない（失敗を「空セッション」の確定として
+  // 保存すると、読めるようになっても mtime が変わるまで隠れたままになる）
+  if (scan) scanCache.set(eventsPath, { mtimeMs, ...scan });
+  return scan;
 }
 
 export function listVSCodeChatSessions(storageDir: string): SessionInfo[] {
@@ -358,6 +393,10 @@ export function listVSCodeChatSessions(storageDir: string): SessionInfo[] {
       try {
         const st = statSync(eventsPath);
         if (!st.isFile()) continue;
+        const scan = cachedScan(eventsPath, st.mtimeMs);
+        // VS Code はチャットを開いただけでリクエストの無いセッションファイルを
+        // 作る。中身の無い履歴が増えるだけなので、列挙から外す
+        if (!scan?.hasRequests) continue;
         out.push({
           id: f.replace(/\.jsonl$/, ""),
           dir: chatDir,
@@ -365,7 +404,7 @@ export function listVSCodeChatSessions(storageDir: string): SessionInfo[] {
           mtimeMs: st.mtimeMs,
           workspaceHint: hint,
           source: "vscode",
-          title: cachedTitle(eventsPath, st.mtimeMs),
+          title: scan.title,
           workspacePaths: hint ? [hint] : [],
         });
       } catch { /* skip */ }

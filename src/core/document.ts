@@ -154,7 +154,7 @@ function measuredMd(st: SessionTrace, lang: Lang = "ja"): string {
     : `| ターン | 入力 | キャッシュ読取 | キャッシュ書込 | 出力 | 推論 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n${rows}\n| 合計 | ${fmt(t.inputTokens)} | ${fmt(t.cacheReadTokens)} | ${fmt(t.cacheWriteTokens)} | ${fmt(t.outputTokens)} | ${fmt(t.reasoningTokens)} |\n\n${breakdown}${obs ? `\n\n${obs}` : ""}`;
   // VS Code の記録にはクレジット実測（各リクエストの copilotCredits）も残るため併記する
   if (st.source === "vscode" && (st.creditsTotal ?? 0) > 0) {
-    const note = en ? `\n\nVS Code also records credit usage (each request's copilotCredits).` : `\n\nVS Code の記録にはクレジット実測（各リクエストの copilotCredits）も残ります。`;
+    const note = en ? `\n\nCopilot Chat also records credit usage (each request's copilotCredits).` : `\n\nCopilot Chat の記録にはクレジット実測（各リクエストの copilotCredits）も残ります。`;
     return `${tokenMd}\n\n${en ? "Credit usage" : "クレジット実測"}:\n\n${creditsMd(st, lang)}${note}`;
   }
   return tokenMd;
@@ -375,7 +375,7 @@ ${note}`;
 ${breakdown}${obs ? `<p>${esc(obs)}</p>` : ""}`;
   // VS Code の記録にはクレジット実測（各リクエストの copilotCredits）も残るため併記する
   if (st.source === "vscode" && (st.creditsTotal ?? 0) > 0) {
-    const note = en ? `<p>VS Code also records credit usage (each request's copilotCredits).</p>` : `<p>VS Code の記録にはクレジット実測（各リクエストの copilotCredits）も残ります。</p>`;
+    const note = en ? `<p>Copilot Chat also records credit usage (each request's copilotCredits).</p>` : `<p>Copilot Chat の記録にはクレジット実測（各リクエストの copilotCredits）も残ります。</p>`;
     return `${tokenHtml}
 <h3>${en ? "Credit usage" : "クレジット実測"}</h3>
 ${creditsHtml(st, lang)}

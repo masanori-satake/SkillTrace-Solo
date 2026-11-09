@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { buildGraph } from "../core/graph";
@@ -28,6 +29,8 @@ test("vscode chat sessions are listed from the workspaceStorage layout", () => {
   assert.equal(sessions[0].source, "vscode");
   assert.equal(sessions[0].title, "vscode-probe 合言葉取得");
   assert.ok(sessions[0].workspaceHint?.endsWith("vscode-probe-workspace/vscode-probe-workspace"));
+  // リクエストの無い「開いただけ」のセッションファイルは列挙されない
+  assert.ok(!sessions.some(x => x.id.startsWith("eeeeeeee")));
 });
 
 test("vscode delta log replays into requests with reads and usage", () => {
@@ -164,4 +167,42 @@ test("vscode replay: dangerous keys in delta paths never touch Object.prototype"
   assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined);
   assert.equal(parsed.title, "通常の更新は通る");
   assert.equal(parsed.requests.length, 0);
+});
+
+test("vscode listing: kind 2 appends to non-request paths do not count as requests", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skilltrace-scan-"));
+  try {
+    const chatDir = join(dir, "hash1", "chatSessions");
+    mkdirSync(chatDir, { recursive: true });
+    const header = JSON.stringify({ kind: 0, v: { version: 3, creationDate: 1000, sessionId: "x", requests: [] } });
+    // attachments への追記だけのファイルは空セッション扱い
+    writeFileSync(join(chatDir, "a.jsonl"), [
+      header,
+      JSON.stringify({ kind: 2, k: ["inputState", "attachments"], v: [{ id: "1" }] }),
+    ].join("\n"));
+    // requests への追記があるファイルは列挙される
+    writeFileSync(join(chatDir, "b.jsonl"), [
+      header,
+      JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r1", timestamp: 2000, message: { text: "hi" }, response: [], promptTokens: 1, completionTokens: 1, copilotCredits: 0 }] }),
+    ].join("\n"));
+    const sessions = listVSCodeChatSessions(dir);
+    assert.deepEqual(sessions.map(x => x.id), ["b"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("vscode listing: requests beyond the first 1 MiB are still detected", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skilltrace-scan-"));
+  try {
+    const chatDir = join(dir, "hash1", "chatSessions");
+    mkdirSync(chatDir, { recursive: true });
+    const header = JSON.stringify({ kind: 0, v: { version: 3, creationDate: 1000, sessionId: "x", requests: [] } });
+    const padding = JSON.stringify({ kind: 1, k: ["inputState", "inputText"], v: "x".repeat(1100 * 1024) });
+    writeFileSync(join(chatDir, "big.jsonl"), [
+      header,
+      padding,
+      JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r1", timestamp: 2000, message: { text: "hi" }, response: [], promptTokens: 1, completionTokens: 1, copilotCredits: 0 }] }),
+    ].join("\n"));
+    const sessions = listVSCodeChatSessions(dir);
+    assert.deepEqual(sessions.map(x => x.id), ["big"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
