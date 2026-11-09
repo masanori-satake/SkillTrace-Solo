@@ -79,21 +79,34 @@ export function capSessionsBySource(sessions: SessionInfo[], perSource: number):
 // 発動したスキル名を返す（全文パースは表示中のセッションだけに行う）。
 // 候補が無い・読めない場合は null（未判定）。発動が無ければ空配列。
 export function scanInvokedSkillNames(eventsPath: string, candidates: { name: string; dir: string }[]): string[] | null {
-  if (!candidates.length) return null;
   let text: string;
   try { text = readFileSync(eventsPath, "utf8"); } catch { return null; }
   const names: string[] = [];
+  let sawInvoked = false;
   for (const line of text.split(/\r?\n/)) {
     if (!line.includes("skill.invoked")) continue;
-    let strings: string[] = [];
-    try { strings = collectStrings(JSON.parse(line)); } catch { continue; }
-    const norm = strings.map(s => normPath(s));
+    sawInvoked = true;
+    let ev: unknown;
+    try { ev = JSON.parse(line); } catch { continue; }
+    // 記録そのものが持つスキル名（data.name）を正とする。スキルが現在の
+    // ワークスペースから消えていても、起動の事実はラベルに残す
+    const data = (ev as { data?: unknown }).data;
+    if (typeof data === "object" && data !== null) {
+      const n = (data as Record<string, unknown>).name;
+      if (typeof n === "string" && n && !names.includes(n)) names.push(n);
+    }
+    // 名前が無い形式向けに、候補（現在のワークスペースのスキル）との照合も残す
+    const strings = collectStrings(ev);
+    const norm = strings.map(x => normPath(x));
     for (const c of candidates) {
       if (names.includes(c.name)) continue;
-      if (norm.some(s => s.includes(normPath(c.dir))) || norm.some(s => s === c.name.toLowerCase())) names.push(c.name);
+      if (norm.some(x => x.includes(normPath(c.dir))) || norm.some(x => x === c.name.toLowerCase())) names.push(c.name);
     }
   }
-  return names;
+  if (names.length) return names;
+  // 読めた以上、起動行が無ければ「未使用」で確定。起動行があるのに名前を
+  // 特定できなかった場合だけ未判定（null）とする
+  return sawInvoked ? null : [];
 }
 
 const SKILL_ROOTS = [".github/skills", ".agents/skills", ".kiro/skills", ".claude/skills"];

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0] - 2026-11-09
+
+### Changed
+
+- History labels shorten multi-root workspace files: `name.code-workspace` is shown as `name ⧉` (the full path remains in the tooltip).
+- Copilot CLI sessions now show their summaries even when the skills they used are no longer in the workspace (moved, renamed, or deleted). Measured turns, token totals, tool executions, and outside reads are rebuilt from the record alone, and invocations whose skill cannot be found are noted by name — the same treatment Kiro and Copilot Chat sessions already had. History labels for Copilot sessions also read invocation names from the record itself.
+
+### 変更 (Changed)
+
+- 履歴ラベルで、マルチルートのワークスペースファイル（`名前.code-workspace`）を「名前 ⧉」と短く表示するようにした（フルパスはツールチップに残る）。
+- Copilot CLI のセッションで、使ったスキルが現在のワークスペースに無くなっていても（移動・改名・削除）、サマリが表示されるようにした。ターン・トークン実測・ツール実行・スキル外の読み取りは記録だけで復元し、見つからないスキルの起動は名前の注記として残す。Kiro / Copilot Chat と同じ扱い。履歴ラベルも、記録そのものが持つ起動名を読むようにした。
+
 ## [1.5.1] - 2026-11-09
 
 ### Changed

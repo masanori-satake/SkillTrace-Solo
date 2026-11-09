@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { buildGraph } from "../core/graph";
 import { parseEventsText } from "../core/events";
 import { buildSessionTrace, buildTrace, firstHeading, gradeCertaintyLabel } from "../core/trace";
-import { capSessionsBySource, formatLocalDateTime, type SessionInfo } from "../core/sessions";
+import { capSessionsBySource, formatLocalDateTime, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
 import { langFromEnv, sanitizeFilenamePart } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
 
@@ -351,4 +352,31 @@ test("vscode-probe: sessions recorded by VS Code's Copilot agent host (CLI forma
   assert.equal(st.outsideReads.length, 0);
   assert.equal(st.totals.inputTokens, 119282);
   assert.equal(st.totals.cacheReadTokens, 89202);
+});
+
+test("copilot: a session trace builds even when no skill is discoverable in the workspace", () => {
+  // 過去のセッションではスキルが移動・削除されていることが多く、発見できた
+  // スキルが無くても実測（ターン・トークン）と起動の事実はサマリで見えること
+  const probeRoot = join(root, "vscode-probe");
+  const parsed = parseEventsText(readFileSync(join(probeRoot, "events.jsonl"), "utf8"));
+  const st = buildSessionTrace(parsed, [], { sessionId: "past", workspaceAbs: "", undiscoveredSkills: ["vscode-probe"] });
+  assert.equal(st.skills.length, 0);
+  assert.equal(st.totals.inputTokens, 119282);
+  assert.equal(st.totals.cacheReadTokens, 89202);
+  assert.ok(st.turns.length > 0);
+  assert.ok(st.toolExecutions.length > 0);
+  assert.deepEqual(st.undiscoveredSkills, ["vscode-probe"]);
+});
+
+test("copilot: history labels read invocation names from the record itself", () => {
+  const probeRoot = join(root, "vscode-probe");
+  // 候補（現在のワークスペースのスキル）が無くても、記録の data.name から拾える
+  assert.deepEqual(scanInvokedSkillNames(join(probeRoot, "events.jsonl"), []), ["vscode-probe"]);
+  // 起動行の無い記録は、読めた時点で「未使用」で確定する
+  const dir = mkdtempSync(join(tmpdir(), "skilltrace-label-"));
+  try {
+    const p = join(dir, "events.jsonl");
+    writeFileSync(p, JSON.stringify({ type: "session.start", data: {} }) + "\n" + JSON.stringify({ type: "user.message", data: {} }) + "\n");
+    assert.deepEqual(scanInvokedSkillNames(p, []), []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
