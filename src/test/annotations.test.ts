@@ -85,6 +85,20 @@ test("ts はタイムゾーンを考慮した時刻で比べる（改訂判定�
   assert.equal(parseAnnotationFile(sameInstant, "personal")[0].value, "ok");
 });
 
+test("ミリ秒未満の差も順序に反映する（新しい retract が古い注釈に負けない）", () => {
+  // Date.parse は .123900 と .123100 を同じミリ秒に切り捨てるため、時刻比較が
+  // ミリ秒止まりだと、後ろにある古い注釈が新しい retract を上書きして復活する
+  const text = [
+    line({ ...base, id: "a1", ts: "2026-11-11T00:00:00.123900Z", kind: "retract" }),
+    line({ ...base, id: "a1", ts: "2026-11-11T00:00:00.123100Z", kind: "verdict", value: "good" }),
+    line({ ...base, id: "a2", ts: "2026-11-11T00:00:00.123100Z", kind: "note", text: "古い方" }),
+    line({ ...base, id: "a2", ts: "2026-11-11T00:00:00.123900Z", kind: "note", text: "新しい方" }),
+  ].join("\n");
+  const out = parseAnnotationFile(text, "personal");
+  assert.deepEqual(out.map(a => a.id), ["a2"]);
+  assert.equal(out[0].text, "新しい方");
+});
+
 test("供給源の対応付け", () => {
   assert.equal(specSourceFor(undefined), "copilot-cli");
   assert.equal(specSourceFor("copilot"), "copilot-cli");

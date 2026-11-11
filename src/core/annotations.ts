@@ -92,19 +92,41 @@ function parseLine(line: string, scope: AnnotationScope): Annotation | null {
   };
 }
 
-/** ts の時刻としての値。ISO 8601 はタイムゾーン付きで書けるため、文字列の
- *  まま比べると異なるオフセット同士で前後が逆転する。解釈できない ts は
- *  「最も古い」として一貫した順序に置く（比較ごとに扱いを変えない） */
-function tsEpoch(ts: string): number {
+/** ts を「秒＋小数秒の桁列」の組に分解する。ISO 8601 はタイムゾーン付きで
+ *  書けるため文字列のままでは比べられず、Date.parse はミリ秒で切り捨てる
+ *  ため小数秒の差（例: .123900 と .123100）が消えてしまう。ISO 形式として
+ *  解釈できない場合は Date.parse に委ね、それも駄目なら null（最も古い扱い） */
+function instantKey(ts: string): [number, string] | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\s*(Z|[+-]\d{2}:?\d{2})?$/.exec(ts.trim());
+  if (m) {
+    const dt = new Date(0);
+    dt.setUTCFullYear(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    dt.setUTCHours(Number(m[4]), Number(m[5]), m[6] ? Number(m[6]) : 0, 0);
+    let offsetSec = 0;
+    const zone = m[8];
+    if (zone && zone !== "Z") {
+      const digits = zone.slice(1).replace(":", "");
+      offsetSec = (zone.startsWith("-") ? -1 : 1) * (Number(digits.slice(0, 2)) * 3600 + Number(digits.slice(2, 4)) * 60);
+    }
+    return [dt.getTime() / 1000 - offsetSec, m[7] ?? ""];
+  }
   const t = Date.parse(ts);
-  return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
+  if (Number.isNaN(t)) return null;
+  const sec = Math.floor(t / 1000);
+  return [sec, String(t - sec * 1000).padStart(3, "0")];
 }
 
-/** ts を時刻として比べる（改訂判定と並べ替えの共通方針） */
+/** ts を時刻として比べる（改訂判定と並べ替えの共通方針）。
+ *  解釈できない ts は「最も古い」として一貫した順序に置く */
 export function compareTs(a: string, b: string): number {
-  const ea = tsEpoch(a);
-  const eb = tsEpoch(b);
-  return ea < eb ? -1 : ea > eb ? 1 : 0;
+  const ka = instantKey(a);
+  const kb = instantKey(b);
+  if (ka === null || kb === null) return ka === kb ? 0 : ka === null ? -1 : 1;
+  if (ka[0] !== kb[0]) return ka[0] < kb[0] ? -1 : 1;
+  const len = Math.max(ka[1].length, kb[1].length);
+  const fa = ka[1].padEnd(len, "0");
+  const fb = kb[1].padEnd(len, "0");
+  return fa < fb ? -1 : fa > fb ? 1 : 0;
 }
 
 /**
