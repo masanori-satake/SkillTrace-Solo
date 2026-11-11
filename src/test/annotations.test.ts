@@ -99,6 +99,21 @@ test("ミリ秒未満の差も順序に反映する（新しい retract が古�
   assert.equal(out[0].text, "新しい方");
 });
 
+test("範囲外・実在しない日時は無効として最も古く扱う（繰り上がりで retract を負かさない）", () => {
+  // setUTCHours(99) は翌々日へ繰り上がるため、検証しないと不正な ts が未来扱いになる
+  const text = [
+    line({ ...base, id: "a1", ts: "2026-11-11T99:00:00Z", kind: "verdict", value: "good" }),
+    line({ ...base, id: "a1", ts: "2026-11-12T00:00:00Z", kind: "retract" }),
+    line({ ...base, id: "a2", ts: "2026-02-30T00:00:00Z", kind: "note", text: "実在しない日付" }),
+    line({ ...base, id: "a2", ts: "2026-02-01T00:00:00Z", kind: "note", text: "有効な方" }),
+    line({ ...base, id: "a3", ts: "2026-11-11T00:00:00+99:99", kind: "note", text: "範囲外オフセット" }),
+    line({ ...base, id: "a3", ts: "2026-11-10T00:00:00Z", kind: "note", text: "有効な方" }),
+  ].join("\n");
+  const out = parseAnnotationFile(text, "personal");
+  assert.deepEqual(out.map(a => a.id), ["a2", "a3"]);
+  assert.ok(out.every(a => a.text === "有効な方"));
+});
+
 test("供給源の対応付け", () => {
   assert.equal(specSourceFor(undefined), "copilot-cli");
   assert.equal(specSourceFor("copilot"), "copilot-cli");

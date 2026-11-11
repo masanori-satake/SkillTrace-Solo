@@ -99,15 +99,29 @@ function parseLine(line: string, scope: AnnotationScope): Annotation | null {
 function instantKey(ts: string): [number, string] | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\s*(Z|[+-]\d{2}:?\d{2})?$/.exec(ts.trim());
   if (m) {
-    const dt = new Date(0);
-    dt.setUTCFullYear(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    dt.setUTCHours(Number(m[4]), Number(m[5]), m[6] ? Number(m[6]) : 0, 0);
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const h = Number(m[4]);
+    const mi = Number(m[5]);
+    const s = m[6] ? Number(m[6]) : 0;
+    // 範囲外の要素は setUTC* が翌日以降へ繰り上げてしまうため、先に弾く
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return null;
     let offsetSec = 0;
     const zone = m[8];
     if (zone && zone !== "Z") {
       const digits = zone.slice(1).replace(":", "");
-      offsetSec = (zone.startsWith("-") ? -1 : 1) * (Number(digits.slice(0, 2)) * 3600 + Number(digits.slice(2, 4)) * 60);
+      const oh = Number(digits.slice(0, 2));
+      const om = Number(digits.slice(2, 4));
+      if (oh > 23 || om > 59) return null;
+      offsetSec = (zone.startsWith("-") ? -1 : 1) * (oh * 3600 + om * 60);
     }
+    const dt = new Date(0);
+    dt.setUTCFullYear(y, mo - 1, d);
+    dt.setUTCHours(h, mi, s, 0);
+    // 実在しない日付（2月30日など）は繰り上がるため、往復で一致を確認する
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d
+      || dt.getUTCHours() !== h || dt.getUTCMinutes() !== mi || dt.getUTCSeconds() !== s) return null;
     return [dt.getTime() / 1000 - offsetSec, m[7] ?? ""];
   }
   const t = Date.parse(ts);
