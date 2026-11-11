@@ -58,6 +58,33 @@ test("同じ id は最新の ts が有効になり、retract で取り消され�
   assert.equal(out[0].scope, "shared");
 });
 
+test("turn が指定されているのに正の整数でない行は無効（セッション全体へ化けない）", () => {
+  const mk = (turn: unknown) => line({ ...base, id: "t1", ts: "2026-11-11T01:00:00Z", kind: "verdict", value: "good", target: { source: "copilot-cli", session: "sess-1", turn } });
+  for (const bad of ["1", 0, -2, 1.5, null, true]) {
+    assert.equal(parseAnnotationFile(mk(bad), "personal").length, 0, `turn=${String(bad)} は無効`);
+  }
+  assert.equal(parseAnnotationFile(mk(2), "personal")[0].turn, 2);
+  assert.equal(parseAnnotationFile(line({ ...base, id: "t2", ts: "2026-11-11T01:00:00Z", kind: "verdict", value: "ok" }), "personal")[0].turn, undefined);
+});
+
+test("ts はタイムゾーンを考慮した時刻で比べる（改訂判定と並べ替え）", () => {
+  // 12:05+09:00 は 03:05Z で、05:00Z より古い。文字列比較だと新しいと誤判定する
+  const text = [
+    line({ ...base, id: "a1", ts: "2026-11-11T05:00:00Z", kind: "verdict", value: "good" }),
+    line({ ...base, id: "a1", ts: "2026-11-11T12:05:00+09:00", kind: "verdict", value: "bad" }),
+    line({ ...base, id: "a2", ts: "2026-11-11T04:00:00Z", kind: "note", text: "先" }),
+  ].join("\n");
+  const out = parseAnnotationFile(text, "personal");
+  assert.equal(out.find(a => a.id === "a1")?.value, "good");
+  assert.deepEqual(out.map(a => a.id), ["a2", "a1"]);
+  // 同じ瞬間の別表記（12:00+09:00 = 03:00Z）では、後方の行が勝つ
+  const sameInstant = [
+    line({ ...base, id: "b1", ts: "2026-11-11T03:00:00Z", kind: "verdict", value: "bad" }),
+    line({ ...base, id: "b1", ts: "2026-11-11T12:00:00+09:00", kind: "verdict", value: "ok" }),
+  ].join("\n");
+  assert.equal(parseAnnotationFile(sameInstant, "personal")[0].value, "ok");
+});
+
 test("供給源の対応付け", () => {
   assert.equal(specSourceFor(undefined), "copilot-cli");
   assert.equal(specSourceFor("copilot"), "copilot-cli");

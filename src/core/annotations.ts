@@ -68,7 +68,11 @@ function parseLine(line: string, scope: AnnotationScope): Annotation | null {
   if (!isRecord(obj.target)) return null;
   if (typeof obj.target.source !== "string" || !obj.target.source) return null;
   if (typeof obj.target.session !== "string" || !obj.target.session) return null;
-  const turn = typeof obj.target.turn === "number" && Number.isFinite(obj.target.turn) ? obj.target.turn : undefined;
+  // turn が指定されているのに正の整数でない行は無効とする。黙って省略扱いに
+  // すると、ターン対象の評価がセッション全体の評価として表示されてしまう
+  if (obj.target.turn !== undefined
+    && (typeof obj.target.turn !== "number" || !Number.isInteger(obj.target.turn) || obj.target.turn < 1)) return null;
+  const turn = typeof obj.target.turn === "number" ? obj.target.turn : undefined;
   return {
     id: obj.id,
     ts: obj.ts,
@@ -88,26 +92,39 @@ function parseLine(line: string, scope: AnnotationScope): Annotation | null {
   };
 }
 
+/** ts の時刻としての値。ISO 8601 はタイムゾーン付きで書けるため、文字列の
+ *  まま比べると異なるオフセット同士で前後が逆転する。解釈できない ts は
+ *  「最も古い」として一貫した順序に置く（比較ごとに扱いを変えない） */
+function tsEpoch(ts: string): number {
+  const t = Date.parse(ts);
+  return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
+}
+
+/** ts を時刻として比べる（改訂判定と並べ替えの共通方針） */
+export function compareTs(a: string, b: string): number {
+  const ea = tsEpoch(a);
+  const eb = tsEpoch(b);
+  return ea < eb ? -1 : ea > eb ? 1 : 0;
+}
+
 /**
  * 1ファイル分の JSONL を解釈し、改訂・取り消しを解決した注釈一覧を返す。
- * 同じ id では ts が最新の行が有効（ts が同値なら後方の行）。retract は取り消し。
+ * 同じ id では ts（時刻）が最新の行が有効（同時刻なら後方の行）。retract は取り消し。
  */
 export function parseAnnotationFile(text: string, scope: AnnotationScope): Annotation[] {
-  const byId = new Map<string, { ann: Annotation | null; ts: string; pos: number }>();
-  let pos = 0;
+  const byId = new Map<string, { ann: Annotation | null; ts: string }>();
   for (const line of text.split(/\r?\n/)) {
-    pos++;
     const trimmed = line.trim();
     if (!trimmed) continue;
     const ann = parseLine(trimmed, scope);
     if (!ann) continue;
     const prev = byId.get(ann.id);
-    if (prev && (prev.ts > ann.ts || (prev.ts === ann.ts && prev.pos > pos))) continue;
-    byId.set(ann.id, { ann: ann.kind === "retract" ? null : ann, ts: ann.ts, pos });
+    if (prev && compareTs(prev.ts, ann.ts) > 0) continue;
+    byId.set(ann.id, { ann: ann.kind === "retract" ? null : ann, ts: ann.ts });
   }
   const out: Annotation[] = [];
   for (const e of byId.values()) if (e.ann) out.push(e.ann);
-  return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  return out.sort((a, b) => compareTs(a.ts, b.ts));
 }
 
 /** フォルダ群の署名（ファイル名+更新時刻+サイズ）。キャッシュの無効化判定用 */
@@ -147,7 +164,7 @@ export function loadAnnotations(dirs: { dir: string; scope: AnnotationScope }[])
       }
     }
   }
-  for (const list of out.values()) list.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  for (const list of out.values()) list.sort((a, b) => compareTs(a.ts, b.ts));
   return out;
 }
 

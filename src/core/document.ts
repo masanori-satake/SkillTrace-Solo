@@ -8,7 +8,7 @@ import type { SessionTrace, SkillPart, TraceNode } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
 import { esc, fmt, fmtCredits, blockBar, countTools, toolColumns, toolGroupsPresent, toolGroupLabel, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, glossaryFor, type Lang } from "./common";
 import { formatLocalDateTime } from "./sessions";
-import { formatAnnotationValue, type Annotation } from "./annotations";
+import { compareTs, formatAnnotationValue, type Annotation } from "./annotations";
 
 function unicodeBar(ratio: number | null | undefined, width = 20): string {
   if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return "";
@@ -322,7 +322,7 @@ function annotationsMd(st: SessionTrace, lang: Lang): string {
   if (!list?.length) return "";
   const en = lang === "en";
   const sessionLevel = list.filter(a => a.turn === undefined);
-  const turnLevel = list.filter(a => a.turn !== undefined).sort((x, y) => (x.turn! - y.turn!) || (x.ts < y.ts ? -1 : 1));
+  const turnLevel = list.filter(a => a.turn !== undefined).sort((x, y) => (x.turn! - y.turn!) || compareTs(x.ts, y.ts));
   const wrap = (s: string) => (en ? `(${s})` : `（${s}）`);
   const lines: string[] = [];
   for (const a of sessionLevel) lines.push(`- ${annotationBody(a, lang)}${wrap(annotationMeta(a, lang))}`);
@@ -356,7 +356,7 @@ function annotationsHtml(st: SessionTrace, lang: Lang): string {
   if (!list?.length) return "";
   const en = lang === "en";
   const sessionLevel = list.filter(a => a.turn === undefined);
-  const turnLevel = list.filter(a => a.turn !== undefined).sort((x, y) => (x.turn! - y.turn!) || (x.ts < y.ts ? -1 : 1));
+  const turnLevel = list.filter(a => a.turn !== undefined).sort((x, y) => (x.turn! - y.turn!) || compareTs(x.ts, y.ts));
   const item = (a: Annotation, prefix = "") =>
     `<li>${prefix}${annotationBodyHtml(a, lang)} <span style="${H.muted}">(${esc(annotationMeta(a, lang))})</span></li>`;
   const legend = `<p style="font-size:12px;color:#666;margin:4px 0">${en ? "Verdict legend: " : "評価の凡例: "}${(["good", "ok", "bad"] as const).map(v => verdictPill(v)).join(" ")}</p>`;
