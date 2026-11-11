@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.14.0] - 2026-11-11
+
+### Added
+
+- Session annotations, phase 1: read and display (Issue #49). Verdicts and notes about a session (or a single turn) can be kept in annotation files — `.skilltrace-annotations/ann-<producer>.jsonl`, in the home folder (personal) and/or the workspace folder (shared) — without ever writing into the Copilot / Kiro / VS Code session records themselves. The specification is published in the repository as docs/session-annotations.md, so other extensions and external tools can append their own information (for example typed values such as an acceptance rate) in the same format. The history shows the latest session verdict in the row label and tooltip (good / ok / bad), and the session summary gains an "Annotations" section — session-level entries plus a per-turn list — in both the on-screen summary and the document copy, with values formatted by their declared type (percent shown as a percentage, durations as minutes/seconds, and so on) and a legend for the verdict colours. Sessions without annotations display exactly as before.
+
+### 追加 (Added)
+
+- セッション注釈のフェーズ1（読み取りと表示。Issue #49）。セッション（またはその中のターン）への評価やメモを、Copilot / Kiro / VS Code のセッション記録には一切書き込まず、注釈ファイル（`.skilltrace-annotations/ann-<producer>.jsonl`。個人用はホームフォルダ、共有用はワークスペースフォルダ）に記録できるようにした。仕様は docs/session-annotations.md としてリポジトリに公開し、他の拡張機能や外部ツールも同じ形式で情報（合格率のような型つきの値など）を追記できる。履歴ではセッション全体への最新の評価（good / ok / bad）を行のラベルとツールチップに表示し、セッションサマリには「注釈」の節（セッション全体への注釈＋ターンごとの一覧）を追加した。画面サマリと文書コピーの両方に含まれ、値は宣言された型に従って整形される（percent はパーセント表示、duration は分秒表示など）。評価の色には凡例を付けた。注釈の無いセッションの表示は従来と完全に同じ。
+
 ## [1.13.1] - 2026-11-10
 
 ### Added

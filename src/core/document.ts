@@ -8,6 +8,7 @@ import type { SessionTrace, SkillPart, TraceNode } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
 import { esc, fmt, fmtCredits, blockBar, countTools, toolColumns, toolGroupsPresent, toolGroupLabel, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, glossaryFor, type Lang } from "./common";
 import { formatLocalDateTime } from "./sessions";
+import { formatAnnotationValue, type Annotation } from "./annotations";
 
 function unicodeBar(ratio: number | null | undefined, width = 20): string {
   if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return "";
@@ -297,6 +298,76 @@ function treeMd(part: SkillPart, lang: Lang = "ja"): string {
     : "\n\n（バーの長さは、このスキルの全ファイルの推定トークン合計に対する割合です）");
 }
 
+// ---------------- 注釈（docs/session-annotations.md） ----------------
+
+function annotationBody(a: Annotation, lang: Lang): string {
+  const parts: string[] = [];
+  if (a.kind === "verdict") parts.push(`[${String(a.value ?? "")}]`);
+  const formatted = a.value !== undefined && a.kind !== "verdict" ? formatAnnotationValue(a, lang) : "";
+  if (a.label && formatted) parts.push(`${a.label}: ${formatted}`);
+  else if (formatted) parts.push(formatted);
+  if (a.text) parts.push(a.text.replace(/\s*\n\s*/g, " "));
+  if (a.tags?.length) parts.push(a.tags.map(t => `#${t}`).join(" "));
+  return parts.filter(Boolean).join(" ");
+}
+
+function annotationMeta(a: Annotation, lang: Lang): string {
+  const en = lang === "en";
+  const scope = a.scope === "shared" ? (en ? "shared" : "共有") : (en ? "personal" : "個人");
+  return `${a.producer}${a.author ? ` / ${a.author}` : ""} · ${formatLocalDateTime(a.ts, lang)} · ${scope}`;
+}
+
+function annotationsMd(st: SessionTrace, lang: Lang): string {
+  const list = st.annotations;
+  if (!list?.length) return "";
+  const en = lang === "en";
+  const sessionLevel = list.filter(a => a.turn === undefined);
+  const turnLevel = list.filter(a => a.turn !== undefined).sort((x, y) => (x.turn! - y.turn!) || (x.ts < y.ts ? -1 : 1));
+  const wrap = (s: string) => (en ? `(${s})` : `（${s}）`);
+  const lines: string[] = [];
+  for (const a of sessionLevel) lines.push(`- ${annotationBody(a, lang)}${wrap(annotationMeta(a, lang))}`);
+  if (turnLevel.length) {
+    lines.push("", `### ${en ? "Annotations on turns" : "ターンへの注釈"}`, "");
+    for (const a of turnLevel) lines.push(`- ${en ? "Turn" : "ターン"} ${a.turn}: ${annotationBody(a, lang)}${wrap(annotationMeta(a, lang))}`);
+  }
+  return `\n\n## ${en ? "Annotations" : "注釈"}\n\n${en
+    ? "Verdicts and notes recorded in annotation files (.skilltrace-annotations), never in the original session records. Verdicts use three levels: good (went well) / ok / bad."
+    : "評価やメモは元のセッション記録には書き込まれず、注釈ファイル（.skilltrace-annotations）に記録されたものです。verdict は good（上手くいった）／ ok（普通）／ bad（良くなかった）の3段階です。"}\n\n${lines.join("\n")}`;
+}
+
+function verdictPill(value: unknown): string {
+  const color = value === "good" ? "#3d9970" : value === "ok" ? "#3a6ea5" : value === "bad" ? "#c0392b" : "#888888";
+  return `<span style="display:inline-block;padding:0 7px;border-radius:10px;background:${color};color:#ffffff;font-weight:700;font-size:11px">${esc(String(value ?? ""))}</span>`;
+}
+
+function annotationBodyHtml(a: Annotation, lang: Lang): string {
+  const parts: string[] = [];
+  if (a.kind === "verdict") parts.push(verdictPill(a.value));
+  const formatted = a.value !== undefined && a.kind !== "verdict" ? formatAnnotationValue(a, lang) : "";
+  if (a.label && formatted) parts.push(`${esc(a.label)}: ${esc(formatted)}`);
+  else if (formatted) parts.push(esc(formatted));
+  if (a.text) parts.push(esc(a.text));
+  if (a.tags?.length) parts.push(a.tags.map(t => `#${esc(t)}`).join(" "));
+  return parts.filter(Boolean).join(" ");
+}
+
+function annotationsHtml(st: SessionTrace, lang: Lang): string {
+  const list = st.annotations;
+  if (!list?.length) return "";
+  const en = lang === "en";
+  const sessionLevel = list.filter(a => a.turn === undefined);
+  const turnLevel = list.filter(a => a.turn !== undefined).sort((x, y) => (x.turn! - y.turn!) || (x.ts < y.ts ? -1 : 1));
+  const item = (a: Annotation, prefix = "") =>
+    `<li>${prefix}${annotationBodyHtml(a, lang)} <span style="${H.muted}">(${esc(annotationMeta(a, lang))})</span></li>`;
+  const legend = `<p style="font-size:12px;color:#666;margin:4px 0">${en ? "Verdict legend: " : "評価の凡例: "}${(["good", "ok", "bad"] as const).map(v => verdictPill(v)).join(" ")}</p>`;
+  return `<h2 style="${H.h2}">${en ? "Annotations" : "注釈"}</h2>
+<p>${en
+    ? "Verdicts and notes recorded in annotation files (.skilltrace-annotations), never in the original session records."
+    : "評価やメモは元のセッション記録には書き込まれず、注釈ファイル（.skilltrace-annotations）に記録されたものです。"}</p>
+${legend}
+<ul>${sessionLevel.map(a => item(a)).join("")}</ul>${turnLevel.length ? `<h3 style="${H.h3}">${en ? "Annotations on turns" : "ターンへの注釈"}</h3><ul>${turnLevel.map(a => item(a, `${en ? "Turn" : "ターン"} ${a.turn}: `)).join("")}</ul>` : ""}`;
+}
+
 export function renderSessionMarkdown(st: SessionTrace, opts?: DocumentOptions): string {
   const lang = opts?.lang ?? "ja";
   const en = lang === "en";
@@ -338,7 +409,7 @@ ${measuredMd(st, lang)}
 
 ## ${en ? "Context window usage" : "コンテキストウィンドウ使用量"}
 
-${contextMd(st, lang)}${outside}${notesMd(true, opts)}
+${contextMd(st, lang)}${outside}${annotationsMd(st, lang)}${notesMd(true, opts)}
 `;
 }
 
@@ -551,6 +622,7 @@ ${contextLoads}
 ${measuredHtml(st, lang)}
 <h2 style="${H.h2}">${en ? "Context window usage" : "コンテキストウィンドウ使用量"}</h2>
 ${contextHtml(st, lang)}${outside}
+${annotationsHtml(st, lang)}
 ${notesHtmlSections(true, opts)}
 </div>`;
 }

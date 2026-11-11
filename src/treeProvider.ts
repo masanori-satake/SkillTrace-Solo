@@ -76,6 +76,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
     private readonly ensureTrace: (session: SessionInfo) => Promise<SessionTrace | null>,
     private readonly invokedLabel: (session: SessionInfo) => string[] | null,
     private readonly lang: Lang = "ja",
+    private readonly annotationBadge?: (session: SessionInfo) => { verdict: string | null; count: number } | null,
   ) {}
 
   /** 表示言語で出し分ける短いラベル */
@@ -277,6 +278,8 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         if (isDisplayed) parts.push(this.L("表示中", "Showing"));
         if (isLatest) parts.push(this.L("最新", "Latest"));
         if (invoked !== null && invoked.length === 0) parts.push(this.L("スキル未使用", "No skill used"));
+        const ann = this.annotationBadge?.(s) ?? null;
+        if (ann?.verdict) parts.push(this.L(`評価 ${ann.verdict}`, `Verdict ${ann.verdict}`));
         item.description = parts.join(this.lang === "en" ? " · " : " ・ ");
         item.tooltip = new vscode.MarkdownString([
           `**${this.L("セッション", "Session")} ${s.id}**`,
@@ -286,6 +289,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
           s.source === "kiro" ? `${this.L("記録", "Record")}: Kiro` : s.source === "vscode" ? `${this.L("記録", "Record")}: Copilot Chat` : `${this.L("記録", "Record")}: Copilot`,
           s.workspaceHint ? `${this.L("ワークスペース", "Workspace")}: ${s.workspaceHint}` : "",
           `${this.L("起動したスキル", "Activated skills")}: ${invoked === null ? this.L("未判定", "undetermined") : invoked.length ? invoked.join(", ") : this.L("なし", "none")}`,
+          ann ? `${this.L("注釈", "Annotations")}: ${ann.count}${this.L(" 件", "")}${ann.verdict ? this.L(`（最新の評価: ${ann.verdict}。good = 上手くいった / ok = 普通 / bad = 良くなかった）`, ` (latest verdict: ${ann.verdict}; good = went well / ok / bad)`) : ""}` : "",
         ].filter(Boolean).join("\n"));
         item.iconPath = new vscode.ThemeIcon(isDisplayed ? "eye" : "history");
         item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded

@@ -295,6 +295,9 @@ export interface SessionTrace {
   lastContextUsageRatio?: number | null;
   /** Kiro: 常時文脈としてコンテキストに読み込まれた文書（steering_inclusion 等の documents） */
   contextLoads?: { path: string; at: string | null }[];
+  /** セッション／ターンへの注釈（docs/session-annotations.md）。元の記録には
+   *  含まれず、表示時に注釈フォルダから合流する。無ければ undefined */
+  annotations?: import("./annotations").Annotation[];
   /** 記録では起動が確認できたが、現在のワークスペースで見つからなかったスキル名。
    *  起動の判定を「発見できたスキル」との照合だけで行うと、移動・改名・削除された
    *  スキルの起動が記録から消えてしまうため、名前だけでも残す（2026-11-08 の不具合対応） */
