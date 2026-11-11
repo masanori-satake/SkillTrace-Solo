@@ -18,6 +18,7 @@ import { renderSessionCopy } from "./core/copy";
 import { renderSessionMarkdown, renderSkillMarkdown } from "./core/document";
 import { TraceTreeProvider, elementKey, type El, type NodeEl, type SkillEl } from "./treeProvider";
 import { langFromEnv, sanitizeFilenamePart, type Lang } from "./core/common";
+import { annotationDirs, annotationSignature, latestSessionVerdict, loadAnnotations, specSourceFor, type Annotation } from "./core/annotations";
 
 // 0.4.0 の状態モデル:
 // - セッションは「取り込む」ものではなく、履歴として常時並ぶ（手動取り込みは廃止）
@@ -162,7 +163,26 @@ export function activate(context: vscode.ExtensionContext): void {
     return result;
   };
 
-  const provider = new TraceTreeProvider(buildTraceFor, invokedLabel, LANG);
+  // 注釈（docs/session-annotations.md）: フォルダ群を署名でキャッシュして読む。
+  // セッション記録には触らない（読み取りのみ）
+  let annCache: { signature: string; map: Map<string, Annotation[]> } | null = null;
+  const annotationMap = (): Map<string, Annotation[]> => {
+    const dirs = annotationDirs((vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath));
+    const signature = annotationSignature(dirs);
+    if (!annCache || annCache.signature !== signature) {
+      annCache = { signature, map: loadAnnotations(dirs) };
+    }
+    return annCache.map;
+  };
+  const annotationsFor = (session: SessionInfo): Annotation[] =>
+    annotationMap().get(`${specSourceFor(session.source)}:${session.id}`) ?? [];
+  const annotationBadge = (session: SessionInfo): { verdict: string | null; count: number } | null => {
+    const list = annotationsFor(session);
+    if (!list.length) return null;
+    return { verdict: latestSessionVerdict(list), count: list.length };
+  };
+
+  const provider = new TraceTreeProvider(buildTraceFor, invokedLabel, LANG, annotationBadge);
   // 折りたたみは自前のトグルボタンで担うため、組み込みの「すべて折りたたむ」は出さない
   const treeView = vscode.window.createTreeView("skilltrace-tree", { treeDataProvider: provider, showCollapseAll: false });
   context.subscriptions.push(treeView);
@@ -373,6 +393,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const session = sessionFromArg(arg);
     if (!session) return null;
     const trace = await provider.getOrBuildTrace(session);
+    if (trace) trace.annotations = annotationsFor(session);
     return trace ? { session, trace } : null;
   };
 
