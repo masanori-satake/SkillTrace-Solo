@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.14.1] - 2026-11-13
+
+### Added
+
+- Learning documents: a video explainer on the mechanisms behind the series — how information is loaded into the context, how tokens and credits are consumed, why accuracy degrades as context grows (context rot, lost in the middle), and the countermeasures (prompt caching, compaction, layered memory). The video was generated with Gemini Notebook (NotebookLM) and is published on YouTube; its slides ship with the documents as PDF and PowerPoint under docs/learning/media/, linked from the learning index (docs/learning/README.md).
+
+### 追加 (Added)
+
+- 学習ドキュメントに動画解説を追加。シリーズの背景にある LLM のコンテキストの仕組み（コンテキストへの読み込み、トークンとクレジットの消費、長くなるほど精度が落ちる問題（Context Rot、Lost in the Middle）と、その対処（プロンプトキャッシュ、compaction、階層メモリ））を扱う。動画は Gemini Notebook（NotebookLM）で生成し YouTube で公開、スライドは PDF と PowerPoint を docs/learning/media/ に同梱した。索引（docs/learning/README.md）からリンクしている。
+
 ## [1.14.0] - 2026-11-11
 
 ### Added
