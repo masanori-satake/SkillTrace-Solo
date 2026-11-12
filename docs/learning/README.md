@@ -43,6 +43,17 @@ LLM エージェントの仕組みを理解するための読み物です。
 | [06](06-start-from-symptoms.md) | 現象から引く — おかしいと感じたら、まずどこを見るか | 第2弾の入口。スキルを使っていて感じる不便さ（現象）の一覧から、最初に見る表示へ案内する索引。現象9件と、見る前に知っておくとよいこと（記録なしの扱い、推定と実測の区別、判別結果の渡し方） |
 | [07](07-troubleshooting-by-symptom.md) | 現象別のトラブルシューティング — 効用が出ていないときの切り分けと対処 | 現象ごとに「現象／判別／対処」の3点セットで切り分ける実務編。圧迫・重さ・読んでくれない・消費のばらつき・あふれ・環境で再現しない・起動しない・精度低下の9件と、判別結果を作り手へ渡す方法 |
 
+## 動画解説
+
+このシリーズの背景にある、LLM のコンテキストの仕組みを動画でも解説しています。
+コンテキストへの読み込みの仕組み、トークンとクレジットの消費、コンテキストが
+長くなるほど精度が落ちる問題（Context Rot、Lost in the Middle）と、その対処
+（プロンプトキャッシュ、compaction、階層メモリ）までを扱います。
+Gemini Notebook（NotebookLM）で生成した動画とスライドです。
+
+- 動画: [Context Engineering: The Architecture of LLM Attention and Memory](https://youtu.be/Tu9frpRp8OA)（YouTube）
+- スライド: [PDF](media/LLM_Context_Engineering.pdf) / [PowerPoint](media/LLM_Context_Engineering.pptx)
+
 ## 実例セッションの基礎データ（全編で使う）
 
 2026-11-07、ダミースキル phase0-probe（SKILL.md → references 2つ → スキル外のメモ1つ、
