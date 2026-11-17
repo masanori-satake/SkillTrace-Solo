@@ -239,6 +239,70 @@ test("ターン対象の評価はセッション全体の評価に混ざらな�
   }
 });
 
+test("メモの改訂は同じ id の新しい行で、新しい本文だけが有効になる", () => {
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-annw-"));
+  try {
+    const { personal, list } = dirsOf(root);
+    const turnTarget = { ...TARGET, turn: 2 };
+    const first = buildNoteRecord({ target: turnTarget, text: "最初のメモ" }, { now: T0 });
+    appendAnnotationRecord(personal, first);
+
+    const revision = buildNoteRecord(
+      { target: turnTarget, text: "書き直したメモ" },
+      { now: T1, id: first.id as string, notBeforeTs: formatAnnotationTs(T0) },
+    );
+    appendAnnotationRecord(personal, revision);
+
+    const raw = readFileSync(join(personal, "ann-skilltrace-solo.jsonl"), "utf8");
+    assert.equal(raw.trim().split("\n").length, 2, "改訂前の行も履歴として残る");
+    const anns = loadAnnotations(list).get("copilot-cli:sess-1");
+    assert.ok(anns);
+    assert.equal(anns.length, 1, "有効なメモは改訂後の1件だけ");
+    assert.equal(anns[0].kind, "note");
+    assert.equal(anns[0].text, "書き直したメモ");
+    assert.equal(anns[0].turn, 2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("改訂の現在時刻が元の行より古くても、notBeforeTs により読み手に採用される", () => {
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-annw-"));
+  try {
+    const { personal, list } = dirsOf(root);
+    // 元の行は T2（先行した時計で書かれた想定）、改訂側の時計は T0 まで後退している
+    const first = buildVerdictRecord({ target: TARGET, value: "bad" }, { now: T2 });
+    appendAnnotationRecord(personal, first);
+    const revision = buildVerdictRecord(
+      { target: TARGET, value: "good" },
+      { now: T0, id: first.id as string, notBeforeTs: formatAnnotationTs(T2) },
+    );
+    assert.equal(revision.ts, formatAnnotationTs(T2), "ts は元の行まで引き上げられる");
+    appendAnnotationRecord(personal, revision);
+
+    const anns = loadAnnotations(list).get("copilot-cli:sess-1");
+    assert.ok(anns);
+    assert.equal(anns.length, 1);
+    assert.equal(latestSessionVerdict(anns), "good", "同時刻では後方の行（改訂）が優先される");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("取り消しの現在時刻が元の行より古くても、notBeforeTs により取り消しが効く", () => {
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-annw-"));
+  try {
+    const { personal, list } = dirsOf(root);
+    const first = buildNoteRecord({ target: TARGET, text: "消えるはずのメモ" }, { now: T2 });
+    appendAnnotationRecord(personal, first);
+    const loaded = loadAnnotations(list).get("copilot-cli:sess-1")![0];
+    appendAnnotationRecord(personal, buildRetractRecord(loaded, { now: T0, notBeforeTs: formatAnnotationTs(T2) }));
+    assert.equal(loadAnnotations(list).get("copilot-cli:sess-1"), undefined);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("不正な入力は書かずにエラーにする（3段階以外の値、ターンが正の整数でない、メモ本文なし）", () => {
   assert.throws(() => buildVerdictRecord({ target: TARGET, value: "great" as never }, { now: T0 }));
   assert.throws(() => buildVerdictRecord({ target: { ...TARGET, turn: 0 }, value: "good" }, { now: T0 }));

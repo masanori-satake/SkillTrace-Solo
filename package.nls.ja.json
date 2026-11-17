@@ -28,6 +28,6 @@
   "command.enableWorkspaceFilter": "履歴を現在のワークスペースに絞る",
   "command.disableWorkspaceFilter": "全セッションを表示（絞り込みオフ）",
   "command.annotateSessionVerdict": "セッションの評価を追加／変更",
-  "command.annotateTurn": "ターンに評価・メモを追加",
+  "command.annotateTurn": "ターンに評価・メモを追加／変更",
   "command.retractAnnotation": "自分の注釈を取り消す"
 }

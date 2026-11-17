@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ANNOTATION_DIR_NAME, type Annotation, type AnnotationScope, type Verdict } from "./annotations";
+import { ANNOTATION_DIR_NAME, compareTs, type Annotation, type AnnotationScope, type Verdict } from "./annotations";
 
 /** SkillTrace-Solo 自身の producer 識別子（ファイル名と一致させる。§2.1） */
 export const ANNOTATION_PRODUCER = "skilltrace-solo";
@@ -56,6 +56,14 @@ export interface AnnotationWriteOptions {
   id?: string;
   /** 書き込み時刻。省略時は現在時刻 */
   now?: Date;
+  /**
+   * 改訂・取り消しのときの下限時刻（元の行の ts）。読み手は同じ id の中で
+   * ts が最新の行を採用するため（§6）、現在時刻が元の行より古い（時計の
+   * 後退、共有ファイルを先行した時計の別マシンが書いた等）と、改訂行が
+   * 黙って無視されてしまう。その場合は元の ts をそのまま使う。同時刻では
+   * 後方の行が優先される読み手の規則により、改訂が有効になる
+   */
+  notBeforeTs?: string;
   producerVersion?: string;
 }
 
@@ -72,10 +80,12 @@ function targetObject(t: AnnotationTargetInput): Record<string, unknown> {
 }
 
 function baseRecord(kind: string, target: AnnotationTargetInput, opts: AnnotationWriteOptions): Record<string, unknown> {
+  let ts = formatAnnotationTs(opts.now ?? new Date());
+  if (opts.notBeforeTs && compareTs(ts, opts.notBeforeTs) < 0) ts = opts.notBeforeTs;
   const rec: Record<string, unknown> = {
     v: 1,
     id: opts.id ?? randomUUID(),
-    ts: formatAnnotationTs(opts.now ?? new Date()),
+    ts,
     producer: ANNOTATION_PRODUCER,
   };
   if (opts.producerVersion) rec.producer_version = opts.producerVersion;
