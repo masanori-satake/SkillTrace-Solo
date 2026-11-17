@@ -9,7 +9,7 @@ import { renderFileUsageHtml, renderFileUsageMissingHtml, renderSessionHtml, ren
 import { aggregateFileUsageGroups, extractSessionFileUsage, type FileUsageGroup, type SessionFileUsage } from "./core/fileusage";
 import type { Graph } from "./core/graph";
 import { aggregateSessionFile, mergeSkillTotals, type SessionSkillUsage } from "./core/aggregate";
-import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
+import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, formatLocalDateTime, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
 import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames } from "./core/kiro";
 import { buildVSCodeSessionTrace, defaultVSCodeStorageDir, listVSCodeChatSessions, parseVSCodeChatSessionFile, scanVSCodeActivationNames } from "./core/vscode";
 import { normPath } from "./core/graph";
@@ -18,7 +18,8 @@ import { renderSessionCopy } from "./core/copy";
 import { renderSessionMarkdown, renderSkillMarkdown } from "./core/document";
 import { TraceTreeProvider, elementKey, type El, type NodeEl, type SkillEl } from "./treeProvider";
 import { langFromEnv, sanitizeFilenamePart, type Lang } from "./core/common";
-import { annotationDirs, annotationSignature, latestSessionVerdict, loadAnnotations, specSourceFor, type Annotation } from "./core/annotations";
+import { annotationDirs, annotationSignature, latestSessionVerdict, loadAnnotations, specSourceFor, ANNOTATION_DIR_NAME, type Annotation, type AnnotationScope, type Verdict } from "./core/annotations";
+import { appendAnnotationRecord, buildNoteRecord, buildRetractRecord, buildVerdictRecord, isOwnAnnotation, locateOwnAnnotationDir, personalAnnotationDir, sharedAnnotationDir, type AnnotationTargetInput } from "./core/annotationWriter";
 
 // 0.4.0 の状態モデル:
 // - セッションは「取り込む」ものではなく、履歴として常時並ぶ（手動取り込みは廃止）
@@ -430,12 +431,18 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   let summaryPanel: vscode.WebviewPanel | null = null;
+  /** サマリパネルに表示中のセッション（注釈を書いたときに表示を追随させるため） */
+  let summarySessionId: string | null = null;
   // 共有パネルへの表示要求の世代。集計のように時間がかかる処理は、開始時の
   // 世代を覚えておき、完了時に世代が進んでいたら（後発の表示が勝っていたら）
   // 自分の結果で上書きしない
   let panelGeneration = 0;
-  const showHtmlPanel = (title: string, html: string): void => {
+  const showHtmlPanel = (title: string, html: string, sessionId: string | null = null): void => {
     panelGeneration++;
+    // 表示するページと対象セッションは一緒に更新する。セッションサマリ以外を
+    // 表示したら対象セッションは解除され、注釈の書き込み後追随が別のページを
+    // セッションサマリで置き換えることはなくなる
+    summarySessionId = sessionId;
     try {
       if (summaryPanel) {
         summaryPanel.title = title;
@@ -447,7 +454,7 @@ export function activate(context: vscode.ExtensionContext): void {
         "skilltraceSummary", title, vscode.ViewColumn.Beside,
         { enableScripts: true, enableCommandUris: ["skilltrace.showSkillTotals", "skilltrace.showFileUsage"], retainContextWhenHidden: true },
       );
-      summaryPanel.onDidDispose(() => { summaryPanel = null; });
+      summaryPanel.onDidDispose(() => { summaryPanel = null; summarySessionId = null; });
       summaryPanel.webview.html = html;
     } catch (err) {
       void vscode.window.showErrorMessage(`SkillTrace: ${L("サマリを表示できませんでした", "Could not display the summary")} — ${err instanceof Error ? err.message : String(err)}`);
@@ -590,7 +597,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("skilltrace.showSummary", async (arg?: unknown) => {
       const resolved = await traceFromArg(arg);
       if (!resolved) { void vscode.window.showWarningMessage(L("SkillTrace: 対象セッションでスキル起動を検出できませんでした。", "SkillTrace: No skill activation was detected in the target session.")); return; }
-      showHtmlPanel(L("セッションサマリ", "Session summary"), renderSessionHtml(resolved.trace, docOptions()));
+      showHtmlPanel(L("セッションサマリ", "Session summary"), renderSessionHtml(resolved.trace, docOptions()), resolved.session.id);
     }),
     vscode.commands.registerCommand("skilltrace.openSkillSummary", async (arg: unknown) => {
       const el = asElement(arg);
@@ -666,6 +673,306 @@ export function activate(context: vscode.ExtensionContext): void {
       const docPath = join(context.extensionPath, "docs", "learning", "README.md");
       if (!existsSync(docPath)) { void vscode.window.showWarningMessage(L("SkillTrace: 学習ドキュメントが見つかりません。", "SkillTrace: Learning documents not found.")); return; }
       await vscode.window.showTextDocument(vscode.Uri.file(docPath), { preview: false });
+    }),
+  );
+
+  // ---- セッション注釈の書き手側（フェーズ2。仕様 docs/session-annotations.md §6・§7） ----
+  // 書くのは自分の ann-skilltrace-solo.jsonl だけ。他の書き手のファイルと
+  // セッション記録には一切触らない。改訂・取り消しは元の注釈と同じファイルへ追記する
+  const producerVersion = typeof context.extension.packageJSON?.version === "string" ? context.extension.packageJSON.version : undefined;
+
+  const annotationTargetFor = (session: SessionInfo, trace: SessionTrace | null, turn?: number): AnnotationTargetInput => ({
+    source: specSourceFor(session.source),
+    session: session.id,
+    turn,
+    sessionStarted: trace?.session.startedAt ?? undefined,
+    workspace: session.workspaceHint ?? trace?.session.workspace ?? undefined,
+  });
+
+  /** 書き込み後の表示追随: 注釈キャッシュを捨て、ツリー（バッジ含む）と、
+   *  そのセッションのサマリを開いていればその表示も作り直す */
+  const refreshAfterAnnotationWrite = async (session: SessionInfo): Promise<void> => {
+    annCache = null;
+    provider.refreshAll();
+    lastSignature = "";
+    refreshSessions();
+    if (summaryPanel && summarySessionId === session.id) {
+      // トレース取得の待機中に別の表示へ切り替わったりパネルが閉じたりした
+      // 場合は、後発の表示を上書きしない（世代とパネル参照で再確認する）
+      const panel = summaryPanel;
+      const generation = panelGeneration;
+      const trace = await provider.getOrBuildTrace(session);
+      if (trace && summaryPanel === panel && panelGeneration === generation && summarySessionId === session.id) {
+        trace.annotations = annotationsFor(session);
+        showHtmlPanel(L("セッションサマリ", "Session summary"), renderSessionHtml(trace, docOptions()), session.id);
+      }
+    }
+  };
+
+  const pickVerdictValue = async (current?: Verdict | null): Promise<Verdict | null> => {
+    const items: (vscode.QuickPickItem & { value: Verdict })[] = [
+      { label: `good — ${L("上手くいった", "went well")}`, value: "good" },
+      { label: `ok — ${L("普通", "ok")}`, value: "ok" },
+      { label: `bad — ${L("良くなかった", "bad")}`, value: "bad" },
+    ];
+    const pick = await vscode.window.showQuickPick(items, {
+      placeHolder: current
+        ? L(`評価を選んでください（現在: ${current}）`, `Choose a verdict (current: ${current})`)
+        : L("評価を選んでください", "Choose a verdict"),
+    });
+    return pick?.value ?? null;
+  };
+
+  /** メモ入力。キャンセルは undefined、確定（空欄含む）は文字列を返す */
+  const pickAnnotationText = async (current: string | undefined, required: boolean): Promise<string | undefined> => {
+    const text = await vscode.window.showInputBox({
+      prompt: required ? L("メモの本文", "Note text") : L("メモ（任意）", "Note (optional)"),
+      placeHolder: required ? undefined : L("空欄のまま確定すると、メモなしで記録します", "Leave empty to record without a note"),
+      value: current ?? "",
+    });
+    return text === undefined ? undefined : text.trim();
+  };
+
+  /** 新規注釈の書き込み先を選ぶ。既定は個人用。共有用は §7-4 の確認を挟む */
+  const pickNewAnnotationTarget = async (session: SessionInfo): Promise<{ dir: string; scope: AnnotationScope } | null> => {
+    const roots = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath);
+    if (!roots.length) return { dir: personalAnnotationDir(), scope: "personal" };
+    const pick = await vscode.window.showQuickPick([
+      { label: L("個人用（既定）", "Personal (default)"), detail: L("このマシンの中だけに残ります", "Stays on this machine only"), scope: "personal" as AnnotationScope },
+      { label: L("共有用（ワークスペース）", "Shared (workspace)"), detail: L("ワークスペースのフォルダに書き、Git 管理されうる", "Written into the workspace folder; may be managed by Git"), scope: "shared" as AnnotationScope },
+    ], { placeHolder: L("注釈の書き込み先", "Where to write the annotation") });
+    if (!pick) return null;
+    if (pick.scope === "personal") return { dir: personalAnnotationDir(), scope: "personal" };
+    let root = roots.length === 1 ? roots[0] : roots.find(r => {
+      const hint = session.workspaceHint;
+      return hint ? normPath(hint) === normPath(r) || normPath(hint).startsWith(normPath(r) + "/") : false;
+    });
+    if (!root) {
+      const rootPick = await vscode.window.showQuickPick(
+        roots.map(r => ({ label: r, root: r })),
+        { placeHolder: L("共有先のワークスペース", "Workspace to share into") },
+      );
+      if (!rootPick) return null;
+      root = rootPick.root;
+    }
+    const sharedDir = sharedAnnotationDir(root);
+    const answer = await vscode.window.showWarningMessage(
+      L(`共有用フォルダ（${sharedDir}）に書きます。内容は Git 管理され、リポジトリの閲覧者に見える可能性があります。`, `This writes to the shared folder (${sharedDir}). The content may be managed by Git and visible to anyone who can read the repository.`),
+      { modal: true },
+      L("共有用に書く", "Write to shared"),
+    );
+    if (!answer) return null;
+    return { dir: sharedDir, scope: "shared" };
+  };
+
+  /** 改訂・取り消しの追記先: 元の注釈があるフォルダ。個人用は置き場所が固定
+   *  なのでそこへ倒すが、共有用は元のフォルダが見つからなければ中止する
+   *  （別のワークスペースの共有フォルダへ改訂行を書いても元の注釈は変わらず、
+   *  確認なしに別リポジトリへ書き込むことになるため） */
+  const writeDirForExisting = (a: Annotation): string | null => {
+    const dirs = annotationDirs((vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath));
+    const loc = locateOwnAnnotationDir(dirs, a.id);
+    if (loc) return loc.dir;
+    return a.scope === "personal" ? personalAnnotationDir() : null;
+  };
+
+  /** 既存注釈への追記でも、共有用フォルダへ書く場合は §7-4 の確認を挟む
+   *  （新規作成時だけでなく、改訂・取り消しも共有先への書き込みであるため） */
+  const confirmSharedAppend = async (a: Annotation, dir: string): Promise<boolean> => {
+    if (a.scope !== "shared") return true;
+    const answer = await vscode.window.showWarningMessage(
+      L(`この注釈は共有用フォルダ（${dir}）にあります。変更・取り消しも同じフォルダへ追記され、Git 管理され、リポジトリの閲覧者に見える可能性があります。`, `This annotation is in the shared folder (${dir}). The change will be appended to the same folder, may be managed by Git, and may be visible to anyone who can read the repository.`),
+      { modal: true },
+      L("共有用に書く", "Write to shared"),
+    );
+    return !!answer;
+  };
+
+  const ownVerdictAnnotation = (session: SessionInfo, turn: number | undefined): Annotation | undefined => {
+    const list = annotationsFor(session).filter(a => isOwnAnnotation(a) && a.kind === "verdict" && a.turn === turn);
+    return list[list.length - 1];
+  };
+
+  const describeAnnotation = (a: Annotation): string => {
+    const where = a.turn !== undefined ? `${L("ターン", "Turn")} ${a.turn}` : L("セッション全体", "Whole session");
+    const what = a.kind === "verdict" ? `${L("評価", "Verdict")} ${String(a.value ?? "")}` : a.kind === "note" ? L("メモ", "Note") : a.kind;
+    return `${where}: ${what}${a.text ? ` — ${a.text}` : ""}`;
+  };
+
+  const appendAndRefresh = async (session: SessionInfo, dir: string, record: Record<string, unknown>): Promise<boolean> => {
+    try {
+      appendAnnotationRecord(dir, record);
+    } catch (err) {
+      void vscode.window.showErrorMessage(`SkillTrace: ${L("注釈を書けませんでした", "Could not write the annotation")} — ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+    await refreshAfterAnnotationWrite(session);
+    return true;
+  };
+
+  context.subscriptions.push(
+    // セッション全体への評価（追加・変更）。自分の評価が既にある場合は、
+    // 同じ id の新しい行として改訂する（§6）
+    vscode.commands.registerCommand("skilltrace.annotateSessionVerdict", async (arg?: unknown) => {
+      const session = sessionFromArg(arg);
+      if (!session) { void vscode.window.showInformationMessage(L("SkillTrace: 対象セッションがありません。", "SkillTrace: No target session.")); return; }
+      const existing = ownVerdictAnnotation(session, undefined);
+      const value = await pickVerdictValue(existing?.value === "good" || existing?.value === "ok" || existing?.value === "bad" ? existing.value : null);
+      if (!value) return;
+      const text = await pickAnnotationText(existing?.text, false);
+      if (text === undefined) return;
+      const trace = await provider.getOrBuildTrace(session);
+      if (existing) {
+        const dir = writeDirForExisting(existing);
+        if (!dir) { void vscode.window.showErrorMessage(L("SkillTrace: 元の注釈のフォルダが見つからないため、変更できませんでした。", "SkillTrace: Could not find the folder of the original annotation.")); return; }
+        if (!(await confirmSharedAppend(existing, dir))) return;
+        const record = buildVerdictRecord(
+          { target: annotationTargetFor(session, trace), value, text: text || undefined },
+          { id: existing.id, producerVersion, notBeforeTs: existing.ts },
+        );
+        if (await appendAndRefresh(session, dir, record)) {
+          void vscode.window.showInformationMessage(L(`SkillTrace: セッションの評価を変更しました（${value}）`, `SkillTrace: Updated the session verdict (${value})`));
+        }
+        return;
+      }
+      const target = await pickNewAnnotationTarget(session);
+      if (!target) return;
+      const record = buildVerdictRecord(
+        { target: annotationTargetFor(session, trace), value, text: text || undefined },
+        { producerVersion },
+      );
+      if (await appendAndRefresh(session, target.dir, record)) {
+        void vscode.window.showInformationMessage(L(`SkillTrace: セッションの評価を記録しました（${value}）`, `SkillTrace: Recorded the session verdict (${value})`));
+      }
+    }),
+    // ターンへの評価・メモ。ターン番号はサマリ表示の数え方（1 始まり）で付ける
+    vscode.commands.registerCommand("skilltrace.annotateTurn", async (arg?: unknown) => {
+      const session = sessionFromArg(arg);
+      if (!session) { void vscode.window.showInformationMessage(L("SkillTrace: 対象セッションがありません。", "SkillTrace: No target session.")); return; }
+      const trace = await provider.getOrBuildTrace(session);
+      const turnCount = trace ? Math.max(trace.turns.length, trace.creditTurns?.length ?? 0) : 0;
+      if (!trace || turnCount === 0) {
+        void vscode.window.showInformationMessage(L("SkillTrace: このセッションにはターンが記録されていません。", "SkillTrace: No turns are recorded in this session."));
+        return;
+      }
+      const items: (vscode.QuickPickItem & { turn: number })[] = [];
+      for (let i = 0; i < turnCount; i++) {
+        const t = trace.turns[i];
+        const c = trace.creditTurns?.find(x => x.turn === i);
+        const detail = c
+          ? `${c.credits} credits`
+          : t ? L(`入力 ${t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens} / 出力 ${t.outputTokens}`, `in ${t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens} / out ${t.outputTokens}`) : "";
+        items.push({ label: `${L("ターン", "Turn")} ${i + 1}`, description: detail, turn: i + 1 });
+      }
+      const turnPick = await vscode.window.showQuickPick(items, { placeHolder: L("注釈を付けるターン", "Turn to annotate") });
+      if (!turnPick) return;
+      const turn = turnPick.turn;
+      const kindPick = await vscode.window.showQuickPick([
+        { label: L("評価", "Verdict"), annKind: "verdict" as const },
+        { label: L("メモ", "Note"), annKind: "note" as const },
+      ], { placeHolder: L("注釈の種類", "Kind of annotation") });
+      if (!kindPick) return;
+      if (kindPick.annKind === "note") {
+        // このターンに自分のメモが既にある場合は、新規追加か既存メモの変更かを選べる。
+        // 変更は評価と同じく、同じ id の新しい行を追記して行う（§6）
+        const ownNotes = annotationsFor(session).filter(a => isOwnAnnotation(a) && a.kind === "note" && a.turn === turn);
+        let existingNote: Annotation | undefined;
+        if (ownNotes.length) {
+          const notePick = await vscode.window.showQuickPick([
+            { label: L("新しいメモを追加", "Add a new note"), note: undefined as Annotation | undefined },
+            ...ownNotes.map(a => ({
+              label: L("既存のメモを変更", "Change an existing note"),
+              description: a.text ?? "",
+              detail: `${formatLocalDateTime(a.ts, LANG)} · ${a.scope === "shared" ? L("共有", "shared") : L("個人", "personal")}`,
+              note: a as Annotation | undefined,
+            })),
+          ], { placeHolder: L("メモの付け方", "How to add the note") });
+          if (!notePick) return;
+          existingNote = notePick.note;
+        }
+        const text = await pickAnnotationText(existingNote?.text, true);
+        if (text === undefined) return;
+        if (!text) { void vscode.window.showWarningMessage(L("SkillTrace: メモの本文が空のため、記録しませんでした。", "SkillTrace: The note was empty, so nothing was recorded.")); return; }
+        if (existingNote) {
+          const dir = writeDirForExisting(existingNote);
+          if (!dir) { void vscode.window.showErrorMessage(L("SkillTrace: 元の注釈のフォルダが見つからないため、変更できませんでした。", "SkillTrace: Could not find the folder of the original annotation.")); return; }
+          if (!(await confirmSharedAppend(existingNote, dir))) return;
+          const record = buildNoteRecord(
+            { target: annotationTargetFor(session, trace, turn), text },
+            { id: existingNote.id, producerVersion, notBeforeTs: existingNote.ts },
+          );
+          if (await appendAndRefresh(session, dir, record)) {
+            void vscode.window.showInformationMessage(L(`SkillTrace: ターン ${turn} のメモを変更しました。`, `SkillTrace: Updated the note on turn ${turn}.`));
+          }
+          return;
+        }
+        const target = await pickNewAnnotationTarget(session);
+        if (!target) return;
+        const record = buildNoteRecord({ target: annotationTargetFor(session, trace, turn), text }, { producerVersion });
+        if (await appendAndRefresh(session, target.dir, record)) {
+          void vscode.window.showInformationMessage(L(`SkillTrace: ターン ${turn} にメモを記録しました。`, `SkillTrace: Recorded a note on turn ${turn}.`));
+        }
+        return;
+      }
+      const existing = ownVerdictAnnotation(session, turn);
+      const value = await pickVerdictValue(existing?.value === "good" || existing?.value === "ok" || existing?.value === "bad" ? existing.value : null);
+      if (!value) return;
+      const text = await pickAnnotationText(existing?.text, false);
+      if (text === undefined) return;
+      if (existing) {
+        const dir = writeDirForExisting(existing);
+        if (!dir) { void vscode.window.showErrorMessage(L("SkillTrace: 元の注釈のフォルダが見つからないため、変更できませんでした。", "SkillTrace: Could not find the folder of the original annotation.")); return; }
+        if (!(await confirmSharedAppend(existing, dir))) return;
+        const record = buildVerdictRecord(
+          { target: annotationTargetFor(session, trace, turn), value, text: text || undefined },
+          { id: existing.id, producerVersion, notBeforeTs: existing.ts },
+        );
+        if (await appendAndRefresh(session, dir, record)) {
+          void vscode.window.showInformationMessage(L(`SkillTrace: ターン ${turn} の評価を変更しました（${value}）`, `SkillTrace: Updated the verdict on turn ${turn} (${value})`));
+        }
+        return;
+      }
+      const target = await pickNewAnnotationTarget(session);
+      if (!target) return;
+      const record = buildVerdictRecord(
+        { target: annotationTargetFor(session, trace, turn), value, text: text || undefined },
+        { producerVersion },
+      );
+      if (await appendAndRefresh(session, target.dir, record)) {
+        void vscode.window.showInformationMessage(L(`SkillTrace: ターン ${turn} に評価を記録しました（${value}）`, `SkillTrace: Recorded a verdict on turn ${turn} (${value})`));
+      }
+    }),
+    // 自分の注釈の取り消し（§6: 同じ id で kind: "retract" の行を追記する）
+    vscode.commands.registerCommand("skilltrace.retractAnnotation", async (arg?: unknown) => {
+      const session = sessionFromArg(arg);
+      if (!session) { void vscode.window.showInformationMessage(L("SkillTrace: 対象セッションがありません。", "SkillTrace: No target session.")); return; }
+      const own = annotationsFor(session).filter(isOwnAnnotation);
+      if (!own.length) {
+        void vscode.window.showInformationMessage(L("SkillTrace: このセッションに自分の注釈はありません。", "SkillTrace: You have no annotations on this session."));
+        return;
+      }
+      const pick = await vscode.window.showQuickPick(
+        own.map(a => ({
+          label: describeAnnotation(a),
+          detail: `${formatLocalDateTime(a.ts, LANG)} · ${a.scope === "shared" ? L("共有", "shared") : L("個人", "personal")}`,
+          annotation: a,
+        })),
+        { placeHolder: L("取り消す注釈", "Annotation to retract") },
+      );
+      if (!pick) return;
+      const answer = await vscode.window.showWarningMessage(
+        L("この注釈を取り消しますか？（取り消しの記録が追記され、元の行は履歴として残ります）", "Retract this annotation? (A retraction record is appended; the original line stays as history.)"),
+        { modal: true },
+        L("取り消す", "Retract"),
+      );
+      if (!answer) return;
+      const dir = writeDirForExisting(pick.annotation);
+      if (!dir) { void vscode.window.showErrorMessage(L("SkillTrace: 元の注釈のフォルダが見つからないため、取り消せませんでした。", "SkillTrace: Could not find the folder of the original annotation.")); return; }
+      if (!(await confirmSharedAppend(pick.annotation, dir))) return;
+      const record = buildRetractRecord(pick.annotation, { producerVersion, notBeforeTs: pick.annotation.ts });
+      if (await appendAndRefresh(session, dir, record)) {
+        void vscode.window.showInformationMessage(L("SkillTrace: 注釈を取り消しました。", "SkillTrace: Retracted the annotation."));
+      }
     }),
   );
 

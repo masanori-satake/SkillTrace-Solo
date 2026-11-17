@@ -26,5 +26,8 @@
   "config.filterToCurrentWorkspace": "Show only sessions related to the currently open workspace folders in the history. Sessions whose workspace cannot be determined from their records are hidden while this is on. Can also be toggled with the filter button in the history view title bar.",
   "command.toggleWorkspaceFilter": "Toggle Workspace Filter",
   "command.enableWorkspaceFilter": "Filter History to Current Workspace",
-  "command.disableWorkspaceFilter": "Show All Sessions (Workspace Filter Off)"
+  "command.disableWorkspaceFilter": "Show All Sessions (Workspace Filter Off)",
+  "command.annotateSessionVerdict": "Add or Change Session Verdict",
+  "command.annotateTurn": "Add or Change a Verdict or Note on a Turn",
+  "command.retractAnnotation": "Retract My Annotation"
 }
