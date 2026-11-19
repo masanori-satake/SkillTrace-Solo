@@ -6,8 +6,8 @@
 // 按分はできない。そのため消費は「そのスキルが起動したセッションの
 // 合計」として寄せる。複数のスキルが起動したセッションでは、同じ
 // セッション合計が各スキルに入る（表示側でその旨を明記する）。
-import { readFileSync } from "node:fs";
 import { parseEventsText } from "./events";
+import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
 import { parseKiroMessages } from "./kiro";
 import type { SessionInfo } from "./sessions";
 import { parseVSCodeChatSessionText, skillNameFromPath } from "./vscode";
@@ -121,10 +121,11 @@ export function aggregateVSCodeSessionText(text: string, meta: { sessionId: stri
   };
 }
 
-/** セッションの記録ファイルを読んで集計分を作る。読めなければ null */
+/** セッションの記録ファイルを読んで集計分を作る。読めなければ null。
+ *  大きすぎる・通常ファイルでない記録も読めなかったものとして扱う（監査 F3） */
 export function aggregateSessionFile(info: SessionInfo): SessionSkillUsage | null {
-  let text: string;
-  try { text = readFileSync(info.eventsPath, "utf8"); } catch { return null; }
+  const text = readTextFileWithinLimit(info.eventsPath, MAX_RECORD_BYTES);
+  if (text === null) return null;
   const meta = { sessionId: info.id, mtimeMs: info.mtimeMs };
   try {
     if (info.source === "kiro") return aggregateKiroSessionText(text, meta);

@@ -2,8 +2,8 @@
 // 照合は「文字列の中にパスが含まれるか」の部分一致（絶対パス／特徴的なサフィックス）。
 // グレード: A=内容がコンテキストへ読み込まれた証拠 / B=読み取りツール成功 / C=言及のみ。
 // 記録がないノードは「記録なし」とだけ表示し、「未到達」とは言わない。
-import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
+import { HEADING_PREFIX_BYTES, readFilePrefix } from "./readfile";
 import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
 import { findNumber, findString, type ParsedEvents } from "./events";
 import type { Lang } from "./common";
@@ -120,14 +120,13 @@ export function buildTrace(parsed: ParsedEvents, graph: Graph, opts: { sessionId
   let rootInvokedA: { at: string | null } | null = null;
   let lastCtxAny: number | null = null;
 
-  const PATH_RE = /(?:[a-zA-Z]:)?(?:[\\/][^\\/:*?"<>|\s]+)+?\.(?:md|markdown|txt|json|ya?ml|toml|xml|csv)/g;
   function noteOutside(ev: (typeof events)[number]): void {
     for (const s of ev.strings) {
-      for (const m of s.matchAll(PATH_RE)) {
-        const p = normPath(m[0]);
+      for (const raw of extractRecordedPaths(s)) {
+        const p = normPath(raw);
         if (pathBelongsToNodes(p, nodesById.values())) continue;
         if (!outsideReads.has(p)) {
-          outsideReads.set(p, { path: m[0], at: ev.at, tool: findString(ev.data, ["toolName"]) ?? ev.type });
+          outsideReads.set(p, { path: raw, at: ev.at, tool: findString(ev.data, ["toolName"]) ?? ev.type });
         }
       }
     }
@@ -176,7 +175,7 @@ export function buildTrace(parsed: ParsedEvents, graph: Graph, opts: { sessionId
           else failedReads.push({ nodeId: n.id });
         }
         if (!success) {
-          for (const s of ev.strings) for (const m of s.matchAll(PATH_RE)) failedOutsidePaths.add(normPath(m[0]));
+          for (const s of ev.strings) for (const raw of extractRecordedPaths(s)) failedOutsidePaths.add(normPath(raw));
         }
         if (mentioned.length === 0) noteOutside(ev);
         break;
@@ -265,10 +264,103 @@ export function buildTrace(parsed: ParsedEvents, graph: Graph, opts: { sessionId
   };
 }
 
-// スキル外ファイルのタイトル（絶対パスで実在する場合だけ、最初の見出しを読む）
-function readOutsideTitle(p: string): string | null {
+// スキル外ファイルのタイトル（絶対パスで実在する場合だけ、最初の見出しを読む）。
+// 3供給源（trace / kiro / vscode）で共有する実装。見出しは先頭付近にある前提で、
+// 先頭 HEADING_PREFIX_BYTES だけを読む（全文読みはしない。通常ファイルで
+// ないものは読まない。監査 F4）
+export function readOutsideTitle(p: string): string | null {
   if (!/^[a-zA-Z]:[\\/]/.test(p) && !p.startsWith("/")) return null;
-  try { return firstHeading(readFileSync(p, "utf8")); } catch { return null; }
+  const head = readFilePrefix(p, HEADING_PREFIX_BYTES);
+  return head === null ? null : firstHeading(head);
+}
+
+// --- 記録文字列からのパス抽出 ---
+// 以前は正規表現 /(?:[a-zA-Z]:)?(?:[\\/][^\\/:*?"<>|\s]+)+?\.(?:md|markdown|txt|json|ya?ml|toml|xml|csv)/g
+// を使っていたが、遅延量指定子の再展開で入力長に対して二乗の計算量になる
+// （監査 F2: 48 KB で約 4.8 秒）。同じ一致結果を返す線形な状態機械に置き換えた。
+// 一致の形: 鎖 = （ドライブレター + ':'）?（区切り セグメント）+ の連なりの末尾に
+// 拡張子が付いたもの。正規表現版の一致は鎖の中で最後に成立した拡張子まで
+// 伸びるため、鎖を走査しながら最後の成立位置を覚え、鎖が閉じた時点で
+// 確定させる。確定後は一致の直後から走査を再開する（matchAll と同じ）。
+const PATH_EXTS = ["md", "markdown", "txt", "json", "yaml", "yml", "toml", "xml", "csv"];
+
+function isPathSep(ch: string): boolean {
+  return ch === "/" || ch === "\\";
+}
+function isPathSegChar(ch: string): boolean {
+  return ch !== "\\" && ch !== "/" && ch !== ":" && ch !== "*" && ch !== "?" && ch !== '"' &&
+    ch !== "<" && ch !== ">" && ch !== "|" && !/\s/.test(ch);
+}
+/** ドット位置から始まる拡張子の終わり（元の正規表現の選択順で最初に合うもの）。
+ *  合わなければ -1 */
+function pathExtEndAt(s: string, dot: number): number {
+  for (const ext of PATH_EXTS) if (s.startsWith(ext, dot + 1)) return dot + 1 + ext.length;
+  return -1;
+}
+
+export function extractRecordedPaths(s: string): string[] {
+  const out: string[] = [];
+  const n = s.length;
+  let i = 0;
+  let inChain = false;
+  let chainStart = -1;
+  let pendingDrive = false;
+  let segLen = 0;
+  let lastEnd = -1;
+
+  const closeChain = (): boolean => {
+    const hadEnd = lastEnd > 0;
+    if (hadEnd) {
+      out.push(s.slice(chainStart, lastEnd));
+      i = lastEnd;
+    }
+    inChain = false;
+    chainStart = -1;
+    pendingDrive = false;
+    segLen = 0;
+    lastEnd = -1;
+    return hadEnd;
+  };
+
+  while (i < n) {
+    const c = s[i];
+    if (!inChain) {
+      if (isPathSep(c)) {
+        inChain = true; chainStart = i; pendingDrive = false; segLen = 0; lastEnd = -1;
+      } else if (/[a-zA-Z]/.test(c) && s[i + 1] === ":" && i + 2 < n && isPathSep(s[i + 2])) {
+        inChain = true; chainStart = i; pendingDrive = true; segLen = 0; lastEnd = -1;
+      }
+      i++;
+      continue;
+    }
+    if (isPathSep(c)) {
+      if (pendingDrive) { pendingDrive = false; segLen = 0; i++; continue; }
+      if (segLen === 0) {
+        // 空セグメント: 鎖はここで閉じる。この区切り自体は次の鎖の開始になりうるため、
+        // 一致が無かった場合は i を進めずに次の周回で鎖を開始する
+        closeChain();
+        continue;
+      }
+      segLen = 0; i++; continue;
+    }
+    if (c === ":") {
+      if (pendingDrive && i === chainStart + 1) { i++; continue; }
+      // 鎖はここで閉じる。直前の文字がドライブレターなら、そこから新しい鎖が始まる
+      const restart = i > 0 && /[a-zA-Z]/.test(s[i - 1]) && i + 1 < n && isPathSep(s[i + 1]) ? i - 1 : -1;
+      const hadEnd = closeChain();
+      if (!hadEnd) i = restart >= 0 ? restart : i + 1;
+      continue;
+    }
+    if (!isPathSegChar(c)) { closeChain(); continue; }
+    if (c === "." && !pendingDrive && segLen > 0) {
+      const end = pathExtEndAt(s, i);
+      if (end > 0) lastEnd = end;
+    }
+    segLen++;
+    i++;
+  }
+  if (inChain) closeChain();
+  return out;
 }
 
 // --- セッション全体のトレース（複数スキル対応） ---

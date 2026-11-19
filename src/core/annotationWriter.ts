@@ -9,10 +9,11 @@
 //   別のフォルダに書くと読み手側で旧行と新行が別々に解決され、両方残ってしまう。
 // - 1 行 = 1 オブジェクトの完全な JSON を追記する（整形出力しない）。
 import { randomUUID } from "node:crypto";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ANNOTATION_DIR_NAME, compareTs, type Annotation, type AnnotationScope, type Verdict } from "./annotations";
+import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
 
 /** SkillTrace-Solo 自身の producer 識別子（ファイル名と一致させる。§2.1） */
 export const ANNOTATION_PRODUCER = "skilltrace-solo";
@@ -173,8 +174,9 @@ export function locateOwnAnnotationDir(
   for (const d of dirs) {
     const file = join(d.dir, ownAnnotationFileName());
     if (!existsSync(file)) continue;
-    let text: string;
-    try { text = readFileSync(file, "utf8"); } catch { continue; }
+    // 大きすぎる・通常ファイルでないものは読み飛ばす（監査 F3）
+    const text = readTextFileWithinLimit(file, MAX_RECORD_BYTES);
+    if (text === null) continue;
     for (const line of text.split(/\r?\n/)) {
       if (!line.includes(id)) continue;
       try {

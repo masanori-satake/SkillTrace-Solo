@@ -225,3 +225,29 @@ test("vscode listing: requests beyond the first 1 MiB are still detected", () =>
     assert.deepEqual(sessions.map(x => x.id), ["big"]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("vscode replay: a huge index in a delta line is ignored instead of inflating the array (audit F1)", () => {
+  // 監査 PoC: インデックス 30,000,000 の1行で約 9.5 秒・約 488 MB を消費した
+  const text = [
+    JSON.stringify({ kind: 0, v: { sessionId: "s", creationDate: 1, requests: [] } }),
+    JSON.stringify({ kind: 1, k: ["requests", 30000000], v: { message: { text: "x" } } }),
+    JSON.stringify({ kind: 2, k: ["requests", 20000000], v: [{ kind: "toolInvocationSerialized", toolId: "t" }] }),
+    JSON.stringify({ kind: 1, k: ["requests", 0], v: { message: { text: "real" }, timestamp: 2 } }),
+  ].join("\n");
+  const started = Date.now();
+  const parsed = parseVSCodeChatSessionText(text);
+  assert.ok(Date.now() - started < 3000, "replay must stay fast");
+  // 巨大インデックスの行は無効として読み飛ばされ、正規の行だけが残る
+  assert.equal(parsed.requests.length, 1);
+  assert.equal(parsed.requests[0].userMessage, "real");
+});
+
+test("vscode replay: a single append cannot grow an array without bound (audit F1)", () => {
+  const big = Array.from({ length: 200_000 }, () => ({}));
+  const text = [
+    JSON.stringify({ kind: 0, v: { sessionId: "s", creationDate: 1, requests: [] } }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: big }),
+  ].join("\n");
+  const parsed = parseVSCodeChatSessionText(text);
+  assert.equal(parsed.requests.length, 100_000);
+});

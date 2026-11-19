@@ -8,7 +8,8 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
 import { collectStrings, type ParseHealth } from "./events";
-import { firstHeading, type Grade, type OutsideRead, type SessionTrace, type TraceNode } from "./trace";
+import { readOutsideTitle, type Grade, type OutsideRead, type SessionTrace, type TraceNode } from "./trace";
+import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
 import type { Lang } from "./common";
 
 /** 起動（disclose_context）したスキルの SKILL.md の確度。
@@ -133,8 +134,8 @@ export function isKiroToolSuccess(payload: Record<string, unknown>): boolean {
  *  読めない場合は null。スキルが現在のワークスペースで見つからない場合でも、
  *  「記録では起動していた」こと自体は分かるようにするためのもの */
 export function scanKiroActivationNames(eventsPath: string): string[] | null {
-  let text: string;
-  try { text = readFileSync(eventsPath, "utf8"); } catch { return null; }
+  const text = readTextFileWithinLimit(eventsPath, MAX_RECORD_BYTES);
+  if (text === null) return null;
   const names: string[] = [];
   for (const line of text.split(/\r?\n/)) {
     if (!line.includes("disclose_context")) continue;
@@ -162,8 +163,19 @@ export function scanKiroInvokedSkillNames(eventsPath: string, candidates: { name
 }
 
 export async function parseKiroMessagesFile(path: string): Promise<KiroParsed> {
-  const { readFile } = await import("node:fs/promises");
-  return parseKiroMessages(await readFile(path, "utf8"));
+  const { readFile, stat } = await import("node:fs/promises");
+  // 記録ファイルの読み込みには上限を付ける（監査 F3）。大きすぎる・
+  // 通常ファイルでない場合は、読めなかったものとして例外にする
+  // （呼び出し側は「対象外」として扱う）
+  const st = await stat(path);
+  if (!st.isFile() || st.size > MAX_RECORD_BYTES) {
+    throw new Error("Session record is too large or not a regular file");
+  }
+  const buf = await readFile(path);
+  if (buf.length > MAX_RECORD_BYTES) {
+    throw new Error("Session record is too large or not a regular file");
+  }
+  return parseKiroMessages(buf.toString("utf8"));
 }
 
 export function parseKiroMessages(text: string): KiroParsed {
@@ -282,11 +294,6 @@ function matchNodes(text: string, nodesById: Map<string, GraphNode>): GraphNode[
     }
   }
   return hits;
-}
-
-function readOutsideTitle(p: string): string | null {
-  if (!/^[a-zA-Z]:[\\/]/.test(p) && !p.startsWith("/")) return null;
-  try { return firstHeading(readFileSync(p, "utf8")); } catch { return null; }
 }
 
 export interface KiroSkillPartInput {

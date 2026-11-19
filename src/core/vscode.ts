@@ -11,7 +11,8 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
 import type { ParseHealth } from "./events";
-import { firstHeading, type Grade, type OutsideRead, type SessionTrace, type TraceNode } from "./trace";
+import { readOutsideTitle, type Grade, type OutsideRead, type SessionTrace, type TraceNode } from "./trace";
+import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
 import type { SessionInfo } from "./sessions";
 import type { Lang } from "./common";
 
@@ -80,6 +81,23 @@ function isSafeKey(key: unknown): boolean {
   return key !== "__proto__" && key !== "constructor" && key !== "prototype";
 }
 
+/** 差分ログの配列インデックスの上限。実在するリクエスト数や応答パート数より
+ *  十分に大きく、記録由来の巨大な数値で配列が膨らまない値にする
+ *  （2026-11-20 のセキュリティ監査 F1: インデックス 30,000,000 の1行で
+ *  約 9.5 秒・約 488 MB を消費した） */
+const MAX_DIFF_INDEX = 100_000;
+
+/** 1回の追記（kind 2）で増える要素数の上限。巨大な配列値の spread で
+ *  例外になったり配列が膨らんだりしないようにする */
+const MAX_APPEND_ITEMS = 100_000;
+
+/** キー経路の節を配列インデックスとして解釈する。上限を超える・
+ *  整数でない・負のものは無効（-1）として、その行を読み飛ばす */
+function diffIndex(key: unknown): number {
+  const idx = typeof key === "number" ? key : /^\d+$/.test(String(key)) ? Number(key) : -1;
+  return Number.isInteger(idx) && idx >= 0 && idx <= MAX_DIFF_INDEX ? idx : -1;
+}
+
 /** 差分ログの再生: キー経路への値セット。数値の節は配列の添字として扱う */
 function setPath(state: unknown, path: unknown[], value: unknown): void {
   let cur: unknown = state;
@@ -89,7 +107,7 @@ function setPath(state: unknown, path: unknown[], value: unknown): void {
     const nextKey = path[i + 1];
     const wantArray = typeof nextKey === "number" || (typeof nextKey === "string" && /^\d+$/.test(nextKey));
     if (Array.isArray(cur)) {
-      const idx = typeof key === "number" ? key : /^\d+$/.test(String(key)) ? Number(key) : -1;
+      const idx = diffIndex(key);
       if (idx < 0) return;
       while (cur.length <= idx) cur.push(null);
       if (!isObj(cur[idx]) && !Array.isArray(cur[idx])) cur[idx] = wantArray ? [] : {};
@@ -104,7 +122,7 @@ function setPath(state: unknown, path: unknown[], value: unknown): void {
   }
   const last = path[path.length - 1];
   if (Array.isArray(cur)) {
-    const idx = typeof last === "number" ? last : /^\d+$/.test(String(last)) ? Number(last) : -1;
+    const idx = diffIndex(last);
     if (idx < 0) return;
     while (cur.length <= idx) cur.push(null);
     cur[idx] = value;
@@ -126,7 +144,7 @@ function appendAtPath(state: unknown, path: unknown[], value: unknown, indexHint
     const nextKey = path[i + 1];
     const wantArray = typeof nextKey === "number" || (typeof nextKey === "string" && /^\d+$/.test(nextKey));
     if (Array.isArray(cur)) {
-      const idx = typeof key === "number" ? key : /^\d+$/.test(String(key)) ? Number(key) : -1;
+      const idx = diffIndex(key);
       if (idx < 0) return;
       while (cur.length <= idx) cur.push(null);
       if (!isObj(cur[idx]) && !Array.isArray(cur[idx])) cur[idx] = wantArray ? [] : {};
@@ -142,7 +160,7 @@ function appendAtPath(state: unknown, path: unknown[], value: unknown, indexHint
   const last = path[path.length - 1];
   let target: unknown[];
   if (Array.isArray(cur)) {
-    const idx = typeof last === "number" ? last : /^\d+$/.test(String(last)) ? Number(last) : -1;
+    const idx = diffIndex(last);
     if (idx < 0) return;
     while (cur.length <= idx) cur.push(null);
     if (!Array.isArray(cur[idx])) cur[idx] = [];
@@ -156,7 +174,7 @@ function appendAtPath(state: unknown, path: unknown[], value: unknown, indexHint
   if (typeof indexHint === "number" && Number.isFinite(indexHint) && indexHint >= 0 && target.length > indexHint) {
     target.length = Math.floor(indexHint);
   }
-  if (Array.isArray(value)) target.push(...value);
+  if (Array.isArray(value)) target.push(...value.slice(0, MAX_APPEND_ITEMS));
   else target.push(value);
 }
 
@@ -293,7 +311,12 @@ export function parseVSCodeChatSessionText(text: string): VSCodeParsed {
 }
 
 export function parseVSCodeChatSessionFile(eventsPath: string): VSCodeParsed {
-  return parseVSCodeChatSessionText(readFileSync(eventsPath, "utf8"));
+  // 記録ファイルの読み込みには上限を付ける（監査 F3）。大きすぎる・
+  // 通常ファイルでない場合は、読めなかったものとして例外にする
+  // （呼び出し側は「対象外」として扱う）
+  const text = readTextFileWithinLimit(eventsPath, MAX_RECORD_BYTES);
+  if (text === null) throw new Error("Session record is too large or not a regular file");
+  return parseVSCodeChatSessionText(text);
 }
 
 // --- 列挙 ---
@@ -425,8 +448,8 @@ export function listVSCodeChatSessions(storageDir: string): SessionInfo[] {
 // --- 履歴ラベル用の軽量スキャン ---
 // 記録で「スキルとして読み込まれた」SKILL.md のスキル名を返す。読めなければ null（未判定）。
 export function scanVSCodeActivationNames(eventsPath: string): string[] | null {
-  let text: string;
-  try { text = readFileSync(eventsPath, "utf8"); } catch { return null; }
+  const text = readTextFileWithinLimit(eventsPath, MAX_RECORD_BYTES);
+  if (text === null) return null;
   const names: string[] = [];
   const push = (n: string | null): void => { if (n && !names.includes(n)) names.push(n); };
   for (const m of text.matchAll(/Reading skill \[([^\]]+)\]/g)) push(m[1]);
@@ -453,11 +476,6 @@ function matchNodes(text: string, nodesById: Map<string, GraphNode>): GraphNode[
     }
   }
   return hits;
-}
-
-function readOutsideTitle(p: string): string | null {
-  if (!/^[a-zA-Z]:[\\/]/.test(p) && !p.startsWith("/")) return null;
-  try { return firstHeading(readFileSync(p, "utf8")); } catch { return null; }
 }
 
 export interface VSCodeSkillPartInput {

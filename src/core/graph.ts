@@ -1,8 +1,9 @@
 // 静的グラフ: SKILL.md から参照を辿ってファイルの木を作る。
 // 規則（SkillMap-Solo と統一）: 深さ上限なし、スキルディレクトリ外は「スキル外」ノード、
 // 循環は葉で打ち切り、存在しない参照先は missing として残す。
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { MAX_GRAPH_FILE_BYTES } from "./readfile";
 
 export function normPath(p: string): string {
   let s = String(p).replace(/\\/g, "/");
@@ -114,7 +115,13 @@ export function buildGraph(skillDirAbs: string, workspaceAbs: string): Graph {
     if (expanded.has(node.id) || node.missing) continue;
     expanded.add(node.id);
     let text = "";
-    try { text = readFileSync(node.absPath, "utf8"); } catch { node.missing = true; continue; }
+    // 参照先が巨大なファイルや通常ファイルでない場合は、読み飛ばして
+    // missing 相当として扱う（監査 F4: 参照はワークスペース外も取りうる）
+    try {
+      const st = statSync(node.absPath);
+      if (!st.isFile() || st.size > MAX_GRAPH_FILE_BYTES) { node.missing = true; continue; }
+      text = readFileSync(node.absPath, "utf8");
+    } catch { node.missing = true; continue; }
     node.sizeBytes = Buffer.byteLength(text, "utf8");
     node.estTokens = estimateTokens(text);
     node.title = firstHeadingLine(text);

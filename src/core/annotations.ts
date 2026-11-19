@@ -5,9 +5,10 @@
 // - 注釈は `.skilltrace-annotations` フォルダに書き手ごとの JSONL で置かれ、
 //   ここでは個人用（ホーム）と共有用（ワークスペース）の両方を読んで合流する。
 // - 壊れた行はその行だけを飛ばし、知らない項目・kind・型は無視する（仕様の読み手規則）。
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
 import type { Lang } from "./common";
 import { formatLocalDateTime } from "./sessions";
 
@@ -191,8 +192,9 @@ export function loadAnnotations(dirs: { dir: string; scope: AnnotationScope }[])
     let names: string[];
     try { names = readdirSync(dir); } catch { continue; }
     for (const name of names.filter(n => ANNOTATION_FILE_RE.test(n)).sort()) {
-      let text: string;
-      try { text = readFileSync(join(dir, name), "utf8"); } catch { continue; }
+      // 大きすぎる・通常ファイルでない注釈ファイルは読み飛ばす（監査 F3）
+      const text = readTextFileWithinLimit(join(dir, name), MAX_RECORD_BYTES);
+      if (text === null) continue;
       for (const ann of parseAnnotationFile(text, scope)) {
         const key = `${ann.source}:${ann.session}`;
         const list = out.get(key);

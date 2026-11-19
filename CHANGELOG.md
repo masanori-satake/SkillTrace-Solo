@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.15.1] - 2026-11-20
+
+### Fixed
+
+- Hardening against crafted or oversized record files (security audit 2026-11-20; all four findings were cases where an imported record — someone else's session record or a shared annotation file — could stall the extension host or make it read unbounded amounts of data). (1) VS Code chatSessions delta logs: a numeric key path is now capped as an array index (100,000) and a single append is capped in elements, so a line such as `{"kind":1,"k":["requests",30000000]}` no longer inflates an array (measured before the fix at roughly 9.5 s and 488 MB of heap for one such line); lines over the cap are ignored. (2) Path extraction from Copilot event strings no longer uses the backtracking-prone regular expression whose cost grew quadratically with input length (about 4.8 s at 48 KB); it is now a linear scan that returns the same matches. (3) Every read of a session record or annotation file (Copilot / Kiro / VS Code scans, full parses, per-skill and per-file aggregation, annotation loading and lookup) now checks beforehand that the target is a regular file within a size limit (256 MB); oversized or non-regular files are treated as unreadable and skipped. (4) Titles of files outside the skill are no longer read in full: the three duplicated implementations were unified, and only the first 64 KB is read to find the first heading. Graph building likewise treats a referenced file over 16 MB (or not a regular file) as missing instead of reading it. Displays for ordinary records are unchanged.
+
+### 修正 (Fixed)
+
+- 細工された記録ファイルや巨大な記録ファイルへの堅牢化（2026-11-20 のセキュリティ監査対応。全4件とも、他人のセッション記録や共有注釈ファイルといった「取り込んだ記録」で拡張ホストが止まったり、無制限に読み込んだりする問題）。(1) VS Code chatSessions の差分ログで、キー経路の数値を配列インデックスとして使う際に上限（100,000）を設け、1回の追記で増える要素数にも上限を付けた。`{"kind":1,"k":["requests",30000000]}` のような1行で配列が膨らむことはなくなる（修正前は実測で約9.5秒・ヒープ約488 MB）。上限を超える行は無効として読み飛ばす。(2) Copilot イベントの文字列からパスを取り出す処理を、入力長に対して二乗の計算量になる正規表現（48 KB で約4.8秒）から、同じ一致結果を返す線形な走査に置き換えた。(3) セッション記録・注釈ファイルの読み込み全箇所（Copilot / Kiro / VS Code のスキャン、全文パース、スキル別・ファイル別集計、注釈の読み込みと検索）で、読む前に「通常ファイルであること」とサイズ上限（256 MB）を確認するようにした。上限超過や通常ファイルでないものは「読めなかった」ものとして対象外になる。(4) スキル外ファイルのタイトル取得で全文を読まなくなった。3か所に重複していた実装を共通化し、先頭見出しを探すために先頭 64 KB だけを読む。グラフ構築でも、参照先が 16 MB を超える（または通常ファイルでない）場合は読まずに missing として扱う。通常の記録での表示は従来どおり。
+
 ## [1.15.0] - 2026-11-18
 
 ### Added

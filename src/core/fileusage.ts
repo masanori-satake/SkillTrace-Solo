@@ -15,8 +15,8 @@
 //   読み取り URI、常時文脈の取り込み）に基づく近似で、セッション単位の
 //   トレース（グラフ突合せ済み）より粗い。言及のみは、パスが記録の文面に
 //   現れたが読み取りの証拠が無い場合を数える
-import { readFileSync } from "node:fs";
 import { parseEventsText, findString } from "./events";
+import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
 import { parseKiroMessages, displayPath } from "./kiro";
 import { parseVSCodeChatSessionText, skillNameFromPath } from "./vscode";
 import { normPath, type Graph } from "./graph";
@@ -263,10 +263,12 @@ export function extractFileUsageVSCodeText(text: string): SessionFileUsage {
   return { startedAt: parsed.startedAt, skills: finish(skills) };
 }
 
-/** 記録ファイルを読み、ファイル単位の到達を取り出す。読めなければ null */
+/** 記録ファイルを読み、ファイル単位の到達を取り出す。読めなければ null。
+ *  大きすぎる・通常ファイルでない記録も読めなかったものとして扱う（監査 F3） */
 export function extractSessionFileUsage(info: SessionInfo): SessionFileUsage | null {
+  const text = readTextFileWithinLimit(info.eventsPath, MAX_RECORD_BYTES);
+  if (text === null) return null;
   try {
-    const text = readFileSync(info.eventsPath, "utf8");
     if (info.source === "kiro") return extractFileUsageKiroText(text);
     if (info.source === "vscode") return extractFileUsageVSCodeText(text);
     return extractFileUsageCopilotText(text);
