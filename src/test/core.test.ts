@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { buildGraph } from "../core/graph";
 import { parseEventsText } from "../core/events";
-import { buildSessionTrace, buildTrace, firstHeading, gradeCertaintyLabel } from "../core/trace";
+import { buildSessionTrace, buildTrace, extractRecordedPaths, firstHeading, gradeCertaintyLabel } from "../core/trace";
 import { capSessionsBySource, formatLocalDateTime, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
 import { langFromEnv, sanitizeFilenamePart, undiscoveredSkillsNote } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
@@ -455,4 +455,30 @@ test("undiscovered skills note guides to the workspace the session ran in", () =
   assert.ok(!without.includes("実行されました"));
   assert.equal(undiscoveredSkillsNote([], "ja", "C:/ws/project"), "");
   assert.ok(undiscoveredSkillsNote(["s"], "en", "C:/ws/project").includes("Open that workspace"));
+});
+
+test("extractRecordedPaths returns the same paths as the former regex (audit F2)", () => {
+  // 鎖の中で最後に成立した拡張子まで伸びる、旧正規表現の一致の形を固定する
+  assert.deepEqual(extractRecordedPaths("see /a/b.txt/c.md end"), ["/a/b.txt/c.md"]);
+  assert.deepEqual(extractRecordedPaths("/a.md/b.txt"), ["/a.md/b.txt"]);
+  assert.deepEqual(extractRecordedPaths("/a.txt.md"), ["/a.txt.md"]);
+  assert.deepEqual(extractRecordedPaths("/a/b.md and /c/d.json"), ["/a/b.md", "/c/d.json"]);
+  assert.deepEqual(extractRecordedPaths("C:\\work\\bar\\notes.txt"), ["C:\\work\\bar\\notes.txt"]);
+  assert.deepEqual(extractRecordedPaths("C:file.md"), []);
+  assert.deepEqual(extractRecordedPaths("file.md"), []);
+  assert.deepEqual(extractRecordedPaths("/a//b.md"), ["/b.md"]);
+  assert.deepEqual(extractRecordedPaths("/a/b.txt//c.md"), ["/a/b.txt", "/c.md"]);
+  assert.deepEqual(extractRecordedPaths("no paths here"), []);
+  // 拡張子として成立しない末尾は含めず、成立した位置で確定する（旧正規表現と実測で一致）
+  assert.deepEqual(extractRecordedPaths("/a.json.bak"), ["/a.json"]);
+  assert.deepEqual(extractRecordedPaths("/a.md/b"), ["/a.md"]);
+});
+
+test("extractRecordedPaths stays linear on path-like strings without extensions (audit F2)", () => {
+  // 監査 PoC: 旧正規表現は 48 KB で約 4.8 秒（長さ2倍で時間4倍の二乗）。
+  // 192 KB でも実用時間で終わることを見る
+  const s = "/ab".repeat(64_000);
+  const started = Date.now();
+  assert.deepEqual(extractRecordedPaths(s), []);
+  assert.ok(Date.now() - started < 5000, "extraction must stay fast");
 });

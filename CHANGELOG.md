@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.15.2] - 2026-11-20
+
+### Fixed
+
+- Follow-up hardening for the record-file size limits added in 1.15.1 (CodeRabbit review of the audit fixes). The checks are now bound to the opened file handle instead of the path, and the amount actually read is itself capped, so replacing a file after the check — with a larger regular file or with a FIFO — can no longer bypass the limit or stall the extension host: the shared reader and the graph builder open the file with O_NONBLOCK where supported, verify the opened descriptor, and read at most the limit; the Kiro parser does the same through a single file handle; the Copilot events parser now counts raw bytes before decoding and line splitting (the previous count used decoded character length, which undercounts multibyte text, and a single newline-less line could accumulate inside the line reader past the limit). Three gaps in coverage were closed: VS Code chat session enumeration now skips files over the record limit before the lightweight scan reads them in full; appending an annotation that would push SkillTrace's own annotation file over the read limit is now refused with an error instead of making all existing annotations in that file invisible to the reader; and a VS Code delta-log line whose key path is rejected (for example an index over the cap at the end of the path) no longer mutates the state on its way — the whole path is validated before anything is written, so an existing user message survives such a line. Behaviour for ordinary records is unchanged.
+
+### 修正 (Fixed)
+
+- 1.15.1 で入れた記録ファイルのサイズ上限のフォローアップ堅牢化（監査修正への CodeRabbit レビュー対応）。確認をパスではなく開いたファイル記述子に対して行い、読み取る量自体にも上限を付けた。これにより、確認後にファイルを差し替えても（より大きな通常ファイルでも、FIFO でも）上限を迂回したり拡張ホストを止めたりできなくなった。共通の読み取り口とグラフ構築は、対応 OS では O_NONBLOCK を付けて開き、開いた記述子で種別・サイズを確認して上限までだけ読む。Kiro のパーサも単一のハンドルで同じことを行う。Copilot イベントのパーサは、デコードと行分割の前の生バイト数で数えるようにした（従来はデコード後の文字数で数えており、マルチバイト文字を含む記録で超過を見逃し、改行のない巨大な行が行分割の内部バッファに上限を超えて溜まるおそれがあった）。適用漏れも3件閉じた。VS Code チャットセッションの列挙で、上限を超えるファイルを軽量スキャンが全文読む前に除外するようにした。自分の注釈ファイルが読み取り上限を超える追記は、既存の注釈まで読み取り対象から外してしまう代わりに、書かずにエラーとして返すようにした。VS Code 差分ログで、キー経路が拒否される行（例: 経路末尾の上限超えの添字）が、途中で親の値を書き換えたままにならないようにした（経路全体を事前に検証し、既存のユーザーメッセージがその行で消えない）。通常の記録での挙動は従来どおり。
+
+## [1.15.1] - 2026-11-20
+
+### Fixed
+
+- Hardening against crafted or oversized record files (security audit 2026-11-20; all four findings were cases where an imported record — someone else's session record or a shared annotation file — could stall the extension host or make it read unbounded amounts of data). (1) VS Code chatSessions delta logs: a numeric key path is now capped as an array index (100,000) and a single append is capped in elements, so a line such as `{"kind":1,"k":["requests",30000000]}` no longer inflates an array (measured before the fix at roughly 9.5 s and 488 MB of heap for one such line); lines over the cap are ignored. (2) Path extraction from Copilot event strings no longer uses the backtracking-prone regular expression whose cost grew quadratically with input length (about 4.8 s at 48 KB); it is now a linear scan that returns the same matches. (3) Every read of a session record or annotation file (Copilot / Kiro / VS Code scans, full parses, per-skill and per-file aggregation, annotation loading and lookup) now checks beforehand that the target is a regular file within a size limit (256 MB); oversized or non-regular files are treated as unreadable and skipped. (4) Titles of files outside the skill are no longer read in full: the three duplicated implementations were unified, and only the first 64 KB is read to find the first heading. Graph building likewise treats a referenced file over 16 MB (or not a regular file) as missing instead of reading it. Displays for ordinary records are unchanged.
+
+### 修正 (Fixed)
+
+- 細工された記録ファイルや巨大な記録ファイルへの堅牢化（2026-11-20 のセキュリティ監査対応。全4件とも、他人のセッション記録や共有注釈ファイルといった「取り込んだ記録」で拡張ホストが止まったり、無制限に読み込んだりする問題）。(1) VS Code chatSessions の差分ログで、キー経路の数値を配列インデックスとして使う際に上限（100,000）を設け、1回の追記で増える要素数にも上限を付けた。`{"kind":1,"k":["requests",30000000]}` のような1行で配列が膨らむことはなくなる（修正前は実測で約9.5秒・ヒープ約488 MB）。上限を超える行は無効として読み飛ばす。(2) Copilot イベントの文字列からパスを取り出す処理を、入力長に対して二乗の計算量になる正規表現（48 KB で約4.8秒）から、同じ一致結果を返す線形な走査に置き換えた。(3) セッション記録・注釈ファイルの読み込み全箇所（Copilot / Kiro / VS Code のスキャン、全文パース、スキル別・ファイル別集計、注釈の読み込みと検索）で、読む前に「通常ファイルであること」とサイズ上限（256 MB）を確認するようにした。上限超過や通常ファイルでないものは「読めなかった」ものとして対象外になる。(4) スキル外ファイルのタイトル取得で全文を読まなくなった。3か所に重複していた実装を共通化し、先頭見出しを探すために先頭 64 KB だけを読む。グラフ構築でも、参照先が 16 MB を超える（または通常ファイルでない）場合は読まずに missing として扱う。通常の記録での表示は従来どおり。
+
 ## [1.15.0] - 2026-11-18
 
 ### Added

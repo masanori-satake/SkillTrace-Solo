@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { normPath } from "./graph";
 import { collectStrings } from "./events";
+import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
 import type { Lang } from "./common";
 
 export interface SessionInfo {
@@ -113,8 +114,8 @@ export function capSessionsBySource(sessions: SessionInfo[], perSource: number):
 // 発動したスキル名を返す（全文パースは表示中のセッションだけに行う）。
 // 候補が無い・読めない場合は null（未判定）。発動が無ければ空配列。
 export function scanInvokedSkillNames(eventsPath: string, candidates: { name: string; dir: string }[]): string[] | null {
-  let text: string;
-  try { text = readFileSync(eventsPath, "utf8"); } catch { return null; }
+  const text = readTextFileWithinLimit(eventsPath, MAX_RECORD_BYTES);
+  if (text === null) return null;
   const names: string[] = [];
   let sawInvoked = false;
   for (const line of text.split(/\r?\n/)) {

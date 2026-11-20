@@ -1,8 +1,8 @@
 // Copilot CLI の events.jsonl パーサ。
 // 実データはフィールドが深くネストしたり、パスがオブジェクトのキー側に入ったりするため、
 // 文字列と数値は再帰的に探す（Phase 1 CLI と同一方針）。本文は保持しない。
-import { createReadStream } from "node:fs";
-import { createInterface } from "node:readline";
+import { createReadStream, statSync } from "node:fs";
+import { MAX_RECORD_BYTES } from "./readfile";
 
 export interface ParsedEvent {
   idx: number;
@@ -119,8 +119,26 @@ export function parseEventsText(text: string): ParsedEvents {
 }
 
 export async function parseEventsFile(path: string): Promise<ParsedEvents> {
-  const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity });
-  const lines: string[] = [];
-  for await (const line of rl) lines.push(line);
-  return parseEventsText(lines.join("\n"));
+  // 記録ファイルの読み込みには上限を付ける（監査 F3）。上限は、デコードと
+  // 行分割の前の生バイト数で数える。デコード後の文字数（line.length）では
+  // マルチバイト文字を含む記録で超過を見逃し、改行のない巨大な行は行分割の
+  // 内部バッファに上限を超えて溜まってしまうため。大きすぎる・通常ファイル
+  // でない場合は、読めなかったものとして例外にする（呼び出し側は
+  // 「対象外」として扱う）
+  let st: ReturnType<typeof statSync> | null = null;
+  try { st = statSync(path); } catch { /* 読めなければ下の読み取りで失敗する */ }
+  if (!st || !st.isFile() || st.size > MAX_RECORD_BYTES) {
+    throw new Error("Session record is too large or not a regular file");
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of createReadStream(path)) {
+    const buf = chunk as Buffer;
+    total += buf.length;
+    if (total > MAX_RECORD_BYTES) {
+      throw new Error("Session record is too large or not a regular file");
+    }
+    chunks.push(buf);
+  }
+  return parseEventsText(Buffer.concat(chunks, total).toString("utf8"));
 }

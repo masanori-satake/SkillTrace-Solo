@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,6 +8,7 @@ import {
   buildVSCodeSessionTrace, listVSCodeChatSessions, parseVSCodeChatSessionText, scanVSCodeActivationNames,
 } from "../core/vscode";
 import { firstHeading } from "../core/trace";
+import { MAX_RECORD_BYTES } from "../core/readfile";
 import { renderSessionHtml } from "../core/report";
 import { renderSessionHtmlFragment, renderSessionMarkdown } from "../core/document";
 
@@ -223,5 +224,68 @@ test("vscode listing: requests beyond the first 1 MiB are still detected", () =>
     ].join("\n"));
     const sessions = listVSCodeChatSessions(dir);
     assert.deepEqual(sessions.map(x => x.id), ["big"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("vscode replay: a huge index in a delta line is ignored instead of inflating the array (audit F1)", () => {
+  // 監査 PoC: インデックス 30,000,000 の1行で約 9.5 秒・約 488 MB を消費した
+  const text = [
+    JSON.stringify({ kind: 0, v: { sessionId: "s", creationDate: 1, requests: [] } }),
+    JSON.stringify({ kind: 1, k: ["requests", 30000000], v: { message: { text: "x" } } }),
+    JSON.stringify({ kind: 2, k: ["requests", 20000000], v: [{ kind: "toolInvocationSerialized", toolId: "t" }] }),
+    JSON.stringify({ kind: 1, k: ["requests", 0], v: { message: { text: "real" }, timestamp: 2 } }),
+  ].join("\n");
+  const started = Date.now();
+  const parsed = parseVSCodeChatSessionText(text);
+  assert.ok(Date.now() - started < 3000, "replay must stay fast");
+  // 巨大インデックスの行は無効として読み飛ばされ、正規の行だけが残る
+  assert.equal(parsed.requests.length, 1);
+  assert.equal(parsed.requests[0].userMessage, "real");
+});
+
+test("vscode replay: a single append cannot grow an array without bound (audit F1)", () => {
+  const big = Array.from({ length: 200_000 }, () => ({}));
+  const text = [
+    JSON.stringify({ kind: 0, v: { sessionId: "s", creationDate: 1, requests: [] } }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: big }),
+  ].join("\n");
+  const parsed = parseVSCodeChatSessionText(text);
+  assert.equal(parsed.requests.length, 100_000);
+});
+
+test("vscode replay: a rejected deep index leaves the existing state untouched (audit follow-up)", () => {
+  // 経路の末尾が上限超えの添字の行は読み飛ばすのが契約。親の値を書き換えた
+  // 後で拒否すると、既存のユーザーメッセージまで消えてしまう
+  const snapshot = JSON.stringify({
+    kind: 0,
+    v: { sessionId: "s", creationDate: 1, requests: [{ message: { text: "keep" }, response: [], timestamp: 2 }] },
+  });
+  const badSet = JSON.stringify({ kind: 1, k: ["requests", 0, "message", "text", 30000000], v: "evil" });
+  const badAppend = JSON.stringify({ kind: 2, k: ["requests", 0, "message", "text", 30000000], v: ["evil"] });
+  for (const bad of [badSet, badAppend]) {
+    const parsed = parseVSCodeChatSessionText([snapshot, bad].join("\n"));
+    assert.equal(parsed.requests.length, 1);
+    assert.equal(parsed.requests[0].userMessage, "keep");
+  }
+  // 正規の経路の更新は従来どおり効く
+  const goodSet = JSON.stringify({ kind: 1, k: ["requests", 0, "message", "text"], v: "updated" });
+  const parsed = parseVSCodeChatSessionText([snapshot, goodSet].join("\n"));
+  assert.equal(parsed.requests[0].userMessage, "updated");
+});
+
+test("vscode listing: a session file over the record size limit is not listed (audit follow-up)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skilltrace-scan-"));
+  try {
+    const chatDir = join(dir, "hash1", "chatSessions");
+    mkdirSync(chatDir, { recursive: true });
+    const header = JSON.stringify({ kind: 0, v: { version: 3, creationDate: 1000, sessionId: "x", requests: [] } });
+    const append = JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r1", timestamp: 2000, message: { text: "hi" }, response: [], promptTokens: 1, completionTokens: 1, copilotCredits: 0 }] });
+    // リクエストを含むが上限を超えるファイルは、軽量スキャンの対象から外す
+    const huge = join(chatDir, "huge.jsonl");
+    writeFileSync(huge, [header, append].join("\n"));
+    truncateSync(huge, MAX_RECORD_BYTES + 1);
+    writeFileSync(join(chatDir, "small.jsonl"), [header, append].join("\n"));
+    const sessions = listVSCodeChatSessions(dir);
+    assert.deepEqual(sessions.map(x => x.id), ["small"]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
