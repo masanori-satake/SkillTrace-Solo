@@ -143,8 +143,9 @@ export function appendAnnotationRecord(dir: string, record: Record<string, unkno
   mkdirSync(dir, { recursive: true });
   const file = join(dir, ownAnnotationFileName());
   let prefix = "";
+  let size = 0;
   try {
-    const size = statSync(file).size;
+    size = statSync(file).size;
     if (size > 0) {
       const fd = openSync(file, "r");
       try {
@@ -154,7 +155,15 @@ export function appendAnnotationRecord(dir: string, record: Record<string, unkno
       } finally { closeSync(fd); }
     }
   } catch { /* ファイルが無い場合はそのまま作る */ }
-  appendFileSync(file, `${prefix}${JSON.stringify(record)}\n`, "utf8");
+  const line = `${prefix}${JSON.stringify(record)}\n`;
+  // 読み取り側の上限（MAX_RECORD_BYTES）を超える追記をすると、読み取り時に
+  // ファイル全体が対象外になり、既存の注釈まで見えなくなる。超える場合は
+  // 書かずにエラーとして呼び出し側へ返す（既存の注釈を読み取り可能なまま
+  // 保つ）。上限内に収まる追記は従来どおり行う
+  if (size + Buffer.byteLength(line, "utf8") > MAX_RECORD_BYTES) {
+    throw new Error("annotation file size limit exceeded");
+  }
+  appendFileSync(file, line, "utf8");
   return file;
 }
 

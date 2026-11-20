@@ -163,19 +163,35 @@ export function scanKiroInvokedSkillNames(eventsPath: string, candidates: { name
 }
 
 export async function parseKiroMessagesFile(path: string): Promise<KiroParsed> {
-  const { readFile, stat } = await import("node:fs/promises");
-  // 記録ファイルの読み込みには上限を付ける（監査 F3）。大きすぎる・
-  // 通常ファイルでない場合は、読めなかったものとして例外にする
-  // （呼び出し側は「対象外」として扱う）
-  const st = await stat(path);
-  if (!st.isFile() || st.size > MAX_RECORD_BYTES) {
-    throw new Error("Session record is too large or not a regular file");
+  const { open } = await import("node:fs/promises");
+  // 記録ファイルの読み込みには上限を付ける（監査 F3）。ハンドルを一度だけ
+  // 開き、そのハンドルで種別・サイズを確認してから、上限を超えない範囲
+  // だけ読む（確認後にパスが差し替えられても、全文をメモリに確保しない）。
+  // 大きすぎる・通常ファイルでない場合は、読めなかったものとして例外に
+  // する（呼び出し側は「対象外」として扱う）
+  const handle = await open(path, "r");
+  try {
+    const st = await handle.stat();
+    if (!st.isFile() || st.size > MAX_RECORD_BYTES) {
+      throw new Error("Session record is too large or not a regular file");
+    }
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for (;;) {
+      const want = Math.min(1024 * 1024, MAX_RECORD_BYTES + 1 - total);
+      const buf = Buffer.alloc(want);
+      const { bytesRead } = await handle.read(buf, 0, want, null);
+      if (bytesRead <= 0) break;
+      total += bytesRead;
+      if (total > MAX_RECORD_BYTES) {
+        throw new Error("Session record is too large or not a regular file");
+      }
+      chunks.push(buf.subarray(0, bytesRead));
+    }
+    return parseKiroMessages(Buffer.concat(chunks, total).toString("utf8"));
+  } finally {
+    await handle.close();
   }
-  const buf = await readFile(path);
-  if (buf.length > MAX_RECORD_BYTES) {
-    throw new Error("Session record is too large or not a regular file");
-  }
-  return parseKiroMessages(buf.toString("utf8"));
 }
 
 export function parseKiroMessages(text: string): KiroParsed {

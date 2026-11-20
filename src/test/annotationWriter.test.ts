@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -23,6 +23,7 @@ import {
   sharedAnnotationDir,
 } from "../core/annotationWriter";
 import { ANNOTATION_DIR_NAME } from "../core/annotations";
+import { MAX_RECORD_BYTES } from "../core/readfile";
 
 const TARGET = { source: "copilot-cli", session: "sess-1" };
 const T0 = new Date(2026, 10, 18, 10, 0, 0, 0);
@@ -308,4 +309,25 @@ test("不正な入力は書かずにエラーにする（3段階以外の値、�
   assert.throws(() => buildVerdictRecord({ target: { ...TARGET, turn: 0 }, value: "good" }, { now: T0 }));
   assert.throws(() => buildVerdictRecord({ target: { ...TARGET, turn: 1.5 }, value: "good" }, { now: T0 }));
   assert.throws(() => buildNoteRecord({ target: TARGET, text: "" }, { now: T0 }));
+});
+
+test("読み取り上限を超える追記は書かずにエラーにし、既存の注釈を保つ（監査フォローアップ）", () => {
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-annw-"));
+  try {
+    const { personal } = dirsOf(root);
+    // まず有効な注釈を1件書く
+    appendAnnotationRecord(personal, buildVerdictRecord({ target: TARGET, value: "ok" }, { now: T0, id: "keep-1" }));
+    const file = join(personal, ownAnnotationFileName());
+    // ファイルを上限いっぱいまで膨らませる（中身を書かないスパース拡張）
+    truncateSync(file, MAX_RECORD_BYTES);
+    assert.equal(statSync(file).size, MAX_RECORD_BYTES);
+    // 上限を超える追記はエラーになり、ファイルは変更されない
+    assert.throws(
+      () => appendAnnotationRecord(personal, buildVerdictRecord({ target: TARGET, value: "good" }, { now: T1, id: "over-1" })),
+      /size limit/,
+    );
+    assert.equal(statSync(file).size, MAX_RECORD_BYTES);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

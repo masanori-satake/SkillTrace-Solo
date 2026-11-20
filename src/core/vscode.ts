@@ -98,8 +98,43 @@ function diffIndex(key: unknown): number {
   return Number.isInteger(idx) && idx >= 0 && idx <= MAX_DIFF_INDEX ? idx : -1;
 }
 
+/** キー経路を最後まで適用できるかを、状態を変更せずに事前に確認する。
+ *  途中の節が上限超えの添字や危険なキーを含む行は、親の値を書き換えた後に
+ *  拒否されると既存の状態まで壊れてしまう（例: 文字列だった message.text が
+ *  [] に置き換わり、ユーザーメッセージが消える）。拒否される行は「読み飛ばす」
+ *  が契約なので、書き換えの前に経路全体を検証する。
+ *  検証は再生側の辿り方をなぞる: 既存の値がオブジェクト・配列ならその中へ、
+ *  そうでなければ次の節から決まる形（配列／オブジェクト）の仮の入れ物へ進む */
+function pathUsable(state: unknown, path: unknown[]): boolean {
+  let cur: unknown = state;
+  for (let i = 0; i < path.length; i++) {
+    const key = path[i];
+    const isLast = i === path.length - 1;
+    if (Array.isArray(cur)) {
+      const idx = diffIndex(key);
+      if (idx < 0) return false;
+      if (isLast) return true;
+      const child: unknown = cur[idx];
+      const nextKey = path[i + 1];
+      const wantArray = typeof nextKey === "number" || (typeof nextKey === "string" && /^\d+$/.test(nextKey));
+      cur = isObj(child) || Array.isArray(child) ? child : wantArray ? [] : {};
+    } else if (isObj(cur)) {
+      if (!isSafeKey(key)) return false;
+      if (isLast) return true;
+      const child: unknown = cur[String(key)];
+      const nextKey = path[i + 1];
+      const wantArray = typeof nextKey === "number" || (typeof nextKey === "string" && /^\d+$/.test(nextKey));
+      cur = isObj(child) || Array.isArray(child) ? child : wantArray ? [] : {};
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** 差分ログの再生: キー経路への値セット。数値の節は配列の添字として扱う */
 function setPath(state: unknown, path: unknown[], value: unknown): void {
+  if (!pathUsable(state, path)) return;
   let cur: unknown = state;
   for (let i = 0; i < path.length - 1; i++) {
     if (!isObj(cur) && !Array.isArray(cur)) return;
@@ -136,6 +171,7 @@ function setPath(state: unknown, path: unknown[], value: unknown): void {
  *  e.i が指定されていれば、先にその長さへ切り詰める（再生成で古い応答を捨てる動き）。
  *  対象が配列でなければ空配列から始める。v が配列ならその要素をすべて、そうでなければ v 自体を追記する */
 function appendAtPath(state: unknown, path: unknown[], value: unknown, indexHint: unknown): void {
+  if (!pathUsable(state, path)) return;
   // 親まで辿る（setPath と同じ経路規則）
   let cur: unknown = state;
   for (let i = 0; i < path.length - 1; i++) {
@@ -424,7 +460,9 @@ export function listVSCodeChatSessions(storageDir: string): SessionInfo[] {
       const eventsPath = join(chatDir, f);
       try {
         const st = statSync(eventsPath);
-        if (!st.isFile()) continue;
+        // 列挙用の軽量スキャンはファイル全体を読み進めるため、記録ファイルの
+        // 上限を超えるものは列挙から外す（監査フォローアップ）
+        if (!st.isFile() || st.size > MAX_RECORD_BYTES) continue;
         const scan = cachedScan(eventsPath, st.mtimeMs);
         // VS Code はチャットを開いただけでリクエストの無いセッションファイルを
         // 作る。中身の無い履歴が増えるだけなので、列挙から外す

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.15.2] - 2026-11-20
+
+### Fixed
+
+- Follow-up hardening for the record-file size limits added in 1.15.1 (CodeRabbit review of the audit fixes). The checks are now bound to the opened file handle instead of the path, and the amount actually read is itself capped, so replacing a file after the check — with a larger regular file or with a FIFO — can no longer bypass the limit or stall the extension host: the shared reader and the graph builder open the file with O_NONBLOCK where supported, verify the opened descriptor, and read at most the limit; the Kiro parser does the same through a single file handle; the Copilot events parser now counts raw bytes before decoding and line splitting (the previous count used decoded character length, which undercounts multibyte text, and a single newline-less line could accumulate inside the line reader past the limit). Three gaps in coverage were closed: VS Code chat session enumeration now skips files over the record limit before the lightweight scan reads them in full; appending an annotation that would push SkillTrace's own annotation file over the read limit is now refused with an error instead of making all existing annotations in that file invisible to the reader; and a VS Code delta-log line whose key path is rejected (for example an index over the cap at the end of the path) no longer mutates the state on its way — the whole path is validated before anything is written, so an existing user message survives such a line. Behaviour for ordinary records is unchanged.
+
+### 修正 (Fixed)
+
+- 1.15.1 で入れた記録ファイルのサイズ上限のフォローアップ堅牢化（監査修正への CodeRabbit レビュー対応）。確認をパスではなく開いたファイル記述子に対して行い、読み取る量自体にも上限を付けた。これにより、確認後にファイルを差し替えても（より大きな通常ファイルでも、FIFO でも）上限を迂回したり拡張ホストを止めたりできなくなった。共通の読み取り口とグラフ構築は、対応 OS では O_NONBLOCK を付けて開き、開いた記述子で種別・サイズを確認して上限までだけ読む。Kiro のパーサも単一のハンドルで同じことを行う。Copilot イベントのパーサは、デコードと行分割の前の生バイト数で数えるようにした（従来はデコード後の文字数で数えており、マルチバイト文字を含む記録で超過を見逃し、改行のない巨大な行が行分割の内部バッファに上限を超えて溜まるおそれがあった）。適用漏れも3件閉じた。VS Code チャットセッションの列挙で、上限を超えるファイルを軽量スキャンが全文読む前に除外するようにした。自分の注釈ファイルが読み取り上限を超える追記は、既存の注釈まで読み取り対象から外してしまう代わりに、書かずにエラーとして返すようにした。VS Code 差分ログで、キー経路が拒否される行（例: 経路末尾の上限超えの添字）が、途中で親の値を書き換えたままにならないようにした（経路全体を事前に検証し、既存のユーザーメッセージがその行で消えない）。通常の記録での挙動は従来どおり。
+
 ## [1.15.1] - 2026-11-20
 
 ### Fixed

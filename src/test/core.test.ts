@@ -469,6 +469,9 @@ test("extractRecordedPaths returns the same paths as the former regex (audit F2)
   assert.deepEqual(extractRecordedPaths("/a//b.md"), ["/b.md"]);
   assert.deepEqual(extractRecordedPaths("/a/b.txt//c.md"), ["/a/b.txt", "/c.md"]);
   assert.deepEqual(extractRecordedPaths("no paths here"), []);
+  // 拡張子として成立しない末尾は含めず、成立した位置で確定する（旧正規表現と実測で一致）
+  assert.deepEqual(extractRecordedPaths("/a.json.bak"), ["/a.json"]);
+  assert.deepEqual(extractRecordedPaths("/a.md/b"), ["/a.md"]);
 });
 
 test("extractRecordedPaths stays linear on path-like strings without extensions (audit F2)", () => {

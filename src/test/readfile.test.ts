@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -113,4 +114,39 @@ test("buildGraph treats an oversized referenced file as missing (audit F4)", wit
   assert.ok(small);
   assert.equal(small.missing, false);
   assert.equal(small.title, "Small");
+}));
+
+test("special files (FIFO) are rejected without blocking on open (audit follow-up)", { timeout: 15_000 }, async () => {
+  if (process.platform === "win32") return; // FIFO の作法は POSIX のみ
+  const dir = mkdtempSync(join(tmpdir(), "skilltrace-readfile-"));
+  try {
+    const fifo = join(dir, "pipe");
+    execFileSync("mkfifo", [fifo]);
+    // 書き手のいない FIFO を通常の open で開くと待機してしまう。O_NONBLOCK で
+    // 開いて fd の種別を確認するため、どちらも即座に null を返す
+    assert.equal(readTextFileWithinLimit(fifo, 100), null);
+    assert.equal(readFilePrefix(fifo, 100), null);
+    assert.equal(readOutsideTitle(fifo), null);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("parseEventsFile parses a small record file, counting raw bytes (audit follow-up)", withTempDir(async (dir) => {
+  const p = join(dir, "events.jsonl");
+  const lines = [
+    JSON.stringify({ type: "session.start", timestamp: "2026-11-18T01:00:00Z", data: {} }),
+    JSON.stringify({ type: "user.message", timestamp: "2026-11-18T01:00:01Z", data: { content: "日本語の依頼です" } }),
+  ];
+  writeFileSync(p, lines.join("\n") + "\n", "utf8");
+  const parsed = await parseEventsFile(p);
+  assert.equal(parsed.startedAt, "2026-11-18T01:00:00Z");
+  assert.equal(parsed.firstUserMessage, "日本語の依頼です");
+  assert.equal(parsed.health.parsedLines, 2);
+}));
+
+test("parseKiroMessagesFile still parses a small record file (audit follow-up positive control)", withTempDir(async (dir) => {
+  const p = join(dir, "messages.jsonl");
+  copyFileSync(join(__dirname, "..", "..", "test-fixtures", "kiro-messages.jsonl"), p);
+  const parsed = await parseKiroMessagesFile(p);
+  assert.deepEqual(parsed.activations.map(a => a.name), ["kiro-probe"]);
+  assert.equal(parsed.health.skippedLines, 0);
 }));
