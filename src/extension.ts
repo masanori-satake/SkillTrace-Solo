@@ -19,6 +19,7 @@ import { renderSessionMarkdown, renderSkillMarkdown } from "./core/document";
 import { TraceTreeProvider, elementKey, type El, type NodeEl, type SkillEl } from "./treeProvider";
 import { langFromEnv, sanitizeFilenamePart, type Lang } from "./core/common";
 import { annotationDirs, annotationSignature, latestSessionVerdict, loadAnnotations, specSourceFor, ANNOTATION_DIR_NAME, type Annotation, type AnnotationScope, type Verdict } from "./core/annotations";
+import { aggregateVerdicts } from "./core/verdicts";
 import { appendAnnotationRecord, buildNoteRecord, buildRetractRecord, buildVerdictRecord, isOwnAnnotation, locateOwnAnnotationDir, personalAnnotationDir, sharedAnnotationDir, type AnnotationTargetInput } from "./core/annotationWriter";
 
 // 0.4.0 の状態モデル:
@@ -543,9 +544,12 @@ export function activate(context: vscode.ExtensionContext): void {
             await new Promise<void>(resolve => setImmediate(resolve));
           }
           const rows = mergeSkillTotals(usages);
+          // 注釈の集計（フェーズ3）: 既存のキャッシュ経由で読み取りのみ。
+          // 注釈ファイルやセッション記録への書き込みは行わない
+          const verdictAgg = aggregateVerdicts(usages, annotationMap());
           // 集計中に別のサマリ表示があったら、そちらを優先して上書きしない
           if (generation === panelGeneration) {
-            showHtmlPanel(L("スキル別集計", "Skill totals"), renderSkillTotalsHtml(rows, { scanned: usages.length, skipped }, LANG));
+            showHtmlPanel(L("スキル別集計", "Skill totals"), renderSkillTotalsHtml(rows, { scanned: usages.length, skipped }, LANG, verdictAgg));
           }
         },
       );

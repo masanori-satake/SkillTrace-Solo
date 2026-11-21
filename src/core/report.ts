@@ -7,6 +7,7 @@ import type { SessionTrace, SkillPart, Trace, TraceNode, Grade } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
 import { formatLocalDateTime } from "./sessions";
 import type { SkillTotal } from "./aggregate";
+import { rankBadSkills, type AnnotationMemo, type BadSession, type VerdictAggregate } from "./verdicts";
 import type { SkillFileUsage } from "./fileusage";
 import { esc, fmt, fmtCredits, countTools, toolColumns, toolGroupsPresent, toolGroupLabel, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, glossaryFor, type Lang } from "./common";
 import { renderSessionMarkdown, renderSessionHtmlFragment, renderSkillMarkdown, renderSkillHtmlFragment } from "./document";
@@ -603,12 +604,15 @@ ${PLAY_SCRIPT}`;
 }
 
 /** スキル別集計（Issue #31）の HTML。消費はセッション全体の実測で、
- *  スキルへの按分をしていないことを注記で明示する */
-export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: number; skipped: number }, lang: Lang = "ja"): string {
+ *  スキルへの按分をしていないことを注記で明示する。
+ *  verdicts（Issue #49 フェーズ3の注釈集計）が渡された場合は、評価件数と
+ *  上手くいった率の列と、「悪かった」評価のセッション一覧を足す */
+export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: number; skipped: number }, lang: Lang = "ja", verdicts?: VerdictAggregate): string {
   const en = lang === "en";
   const dash = "—";
   const num = (v: number, has: boolean): string => (has ? fmt(v) : dash);
   const cred = (v: number, has: boolean): string => (has ? fmtCredits(v) : dash);
+  const verdictByName = new Map((verdicts?.skills ?? []).map(s => [s.name, s]));
   const body: string[] = [];
   body.push(`<h1>${en ? "Skill totals" : "スキル別集計"}</h1>`);
   body.push(`<div class="note">${en
@@ -618,15 +622,51 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
     body.push(`<p>${en ? "No skill activations were found in these sessions." : "対象セッションにスキル起動がありませんでした。"}</p>`);
     return pageShell(en ? "Skill totals" : "スキル別集計", body.join("\n"), lang);
   }
-  body.push(`<table class="totals"><thead><tr><th>${en ? "Skill" : "スキル"}</th><th>${en ? "Sessions" : "セッション数"}</th><th>${en ? "Activations" : "起動回数"}</th><th>${en ? "Credits (Kiro)" : "クレジット（Kiro）"}</th><th>${en ? "Credits (Copilot Chat)" : "クレジット（Copilot Chat）"}</th><th>${en ? "Input tokens (Copilot)" : "入力トークン（Copilot）"}</th><th>${en ? "Output tokens (Copilot)" : "出力トークン（Copilot）"}</th><th>${en ? "Last used" : "最終利用"}</th></tr></thead><tbody>`);
+  body.push(`<table class="totals"><thead><tr><th>${en ? "Skill" : "スキル"}</th><th>${en ? "Sessions" : "セッション数"}</th><th>${en ? "Activations" : "起動回数"}</th><th>${en ? "Verdicts (good / ok / bad)" : "評価（良かった／普通／悪かった）"}</th><th>${en ? "Good ratio" : "上手くいった率"}</th><th>${en ? "Credits (Kiro)" : "クレジット（Kiro）"}</th><th>${en ? "Credits (Copilot Chat)" : "クレジット（Copilot Chat）"}</th><th>${en ? "Input tokens (Copilot)" : "入力トークン（Copilot）"}</th><th>${en ? "Output tokens (Copilot)" : "出力トークン（Copilot）"}</th><th>${en ? "Last used" : "最終利用"}</th></tr></thead><tbody>`);
   for (const r of rows) {
     const fileLink = `<a href="command:skilltrace.showFileUsage?${encodeURIComponent(JSON.stringify([r.name]))}">${en ? "By file" : "ファイル別"}</a>`;
+    const vt = verdictByName.get(r.name);
+    const verdictCell = vt && vt.rated > 0 ? `${fmt(vt.good)} / ${fmt(vt.ok)} / ${fmt(vt.bad)}` : dash;
+    const ratioCell = vt && vt.goodRatio !== null ? `${(vt.goodRatio * 100).toFixed(1)}%` : dash;
     body.push(`<tr><td>${esc(r.name)} <span class="tok">${fileLink}</span></td><td>${fmt(r.sessions)}</td><td>${fmt(r.activations)}</td>`
+      + `<td>${verdictCell}</td><td>${ratioCell}</td>`
       + `<td>${cred(r.kiroCredits, r.kiroSessions > 0)}</td><td>${cred(r.chatCredits, r.chatSessions > 0)}</td>`
       + `<td>${num(r.copilotInputTokens, r.copilotSessions > 0)}</td><td>${num(r.copilotOutputTokens, r.copilotSessions > 0)}</td>`
       + `<td>${esc(r.lastUsedAt ? formatLocalDateTime(r.lastUsedAt, lang) : dash)}</td></tr>`);
   }
   body.push("</tbody></table>");
+  if (verdicts) {
+    // 注釈集計（フェーズ3）: 事実の提示だけを行い、改善案は書かない
+    if (!verdicts.hasAnnotations) {
+      body.push(`<p class="tok">${en ? "No annotations (verdicts or notes) have been recorded for these sessions yet." : "対象セッションへの注釈（評価・メモ）はまだ記録されていません。"}</p>`);
+    } else {
+      const consumptionText = (b: BadSession): string => {
+        if (b.source === "kiro") return `${fmtCredits(b.credits ?? 0)} ${en ? "credits (Kiro)" : "クレジット（Kiro）"}`;
+        if (b.source === "vscode") return `${fmtCredits(b.credits ?? 0)} ${en ? "credits (Copilot Chat)" : "クレジット（Copilot Chat）"}`;
+        return en
+          ? `${fmt(b.inputTokens ?? 0)} input / ${fmt(b.outputTokens ?? 0)} output tokens (Copilot)`
+          : `入力 ${fmt(b.inputTokens ?? 0)} ／ 出力 ${fmt(b.outputTokens ?? 0)} トークン（Copilot）`;
+      };
+      const memoText = (m: AnnotationMemo): string =>
+        (m.turn !== undefined ? (en ? `Turn ${m.turn}: ` : `ターン ${m.turn}: `) : "") + esc(m.text);
+      const ranked = rankBadSkills(verdicts.skills);
+      body.push(`<h2>${en ? "Sessions rated bad" : "「悪かった」と評価されたセッション"}</h2>`);
+      if (!ranked.length) {
+        body.push(`<p>${en ? "No sessions were rated bad." : "「悪かった」と評価されたセッションはありませんでした。"}</p>`);
+      } else {
+        for (const s of ranked) {
+          body.push(`<h3>${esc(s.name)}${en ? ` — ${s.bad} bad` : ` — 「悪かった」${s.bad} 件`}</h3>`);
+          const items = verdicts.badSessions
+            .filter(b => b.skills.includes(s.name))
+            .map(b => `<li>${esc(b.at ? formatLocalDateTime(b.at, lang) : dash)} — ${consumptionText(b)}${b.memos.length ? `<ul>${b.memos.map(m => `<li>${memoText(m)}</li>`).join("")}</ul>` : ""}</li>`);
+          body.push(`<ul>${items.join("")}</ul>`);
+        }
+      }
+      body.push(`<div class="note">${en
+        ? "Verdicts and consumption are counted toward each skill activated in the session, without apportioning: when several skills were activated in one session, the same verdict and the same session total count toward each of them. Retracted annotations and superseded revisions are not counted."
+        : "評価と消費は、そのセッションで起動したスキルごとに数えています（按分はしていません）。複数のスキルが起動したセッションでは、同じ評価と消費が各スキルに入ります。取り消された注釈と、改訂前の行は数えていません。"}</div>`);
+    }
+  }
   body.push(`<div class="note">${en
     ? "Credits and tokens are measured per session as a whole, not apportioned per skill: when several skills were activated in one session, the same session total counts toward each of them. Values in different units are never added together. For Copilot Chat, activations are counted per session (the record does not distinguish repeated activations within a session)."
     : "クレジットとトークンはセッション全体の実測で、スキルへの按分はしていません。複数のスキルが起動したセッションでは、同じセッション合計が各スキルに入ります。単位の異なる値は合算していません。Copilot Chat の起動回数は、記録の性質上セッション単位の有無で数えています。"}</div>`);
