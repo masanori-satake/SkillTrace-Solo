@@ -3,7 +3,7 @@
 // 記録の形: session.json（メタ）＋ messages.jsonl（{id, timestamp, payload} の封筒）。
 // 確度の物差しは Copilot 版と共通: 高=コンテキストへの読み込みが記録で確認できる、
 // 中=読み取りツールの成功、低=言及のみ。実測はトークンではなくクレジット。
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
@@ -55,7 +55,11 @@ export function listKiroSessions(kiroHome: string): KiroSessionInfo[] {
         if (!statSync(dir).isDirectory() || !existsSync(eventsPath)) continue;
       } catch { continue; }
       let meta: Record<string, unknown> = {};
-      try { meta = JSON.parse(readFileSync(join(dir, "session.json"), "utf8")) as Record<string, unknown>; } catch { /* メタが読めなくても列挙はする */ }
+      // メタ読みも上限付きリーダー経由にする（監査 2026-11-22: 素の全文読みの残存を解消）
+      const metaText = readTextFileWithinLimit(join(dir, "session.json"), MAX_RECORD_BYTES);
+      if (metaText !== null) {
+        try { meta = JSON.parse(metaText) as Record<string, unknown>; } catch { /* メタが読めなくても列挙はする */ }
+      }
       const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
       out.push({
         id: typeof meta.id === "string" ? meta.id : name,

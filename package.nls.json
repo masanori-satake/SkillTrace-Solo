@@ -3,6 +3,7 @@
   "command.refresh": "Refresh Trace",
   "command.showSummary": "Show Summary (Tokens & Timeline)",
   "config.sessionStateDir": "Directory that contains Copilot CLI session-state folders. Empty = ~/.copilot/session-state.",
+  "capabilities.untrustedWorkspaces": "SkillTrace reads workspace files and follows references to files outside the skill, and writes annotations to a folder that may be shared. It does not run in untrusted workspaces.",
   "view.name": "SkillTrace",
   "command.openSummaryInBrowser": "Open Summary in Browser",
   "command.copySessionSummaryMarkdown": "Copy Session Summary as Markdown",

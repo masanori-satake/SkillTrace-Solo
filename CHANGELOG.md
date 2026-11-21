@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.16.1] - 2026-11-22
+
+### Fixed
+
+- Hardening from the 2026-11-22 security audit (no high-severity findings; two medium and five low items, all closed). (1) The remaining unbounded full-file reads now go through the shared limited reader: the Kiro session metadata and the VS Code workspace hint are read with the record size limit, the Copilot workspace.yaml hint reads only the file prefix, and the trace builder no longer re-reads SKILL.md — it reuses the title the graph builder already obtained under the graph file limit. (2) Reference-graph traversal now has total caps (500 nodes, 64 MB read in total); when a cap is reached the walk stops and the reason is recorded in the graph result, and references that resolve outside the allowed roots (the skill directory and the workspace) no longer have their headings fetched — only the path is shown. (3) The summary Webview panel now declares `localResourceRoots: []` explicitly, matching the fact that its HTML references no local resources. (4) Untrusted strings embedded into tree tooltips (session titles, graph node titles, skill names, workspace paths) are now escaped so Markdown link or image syntax in a record or file heading cannot become a clickable link or a remote image. (5) The `skilltrace.sessionStateDir` setting is now machine-scoped, so a workspace folder can no longer point session enumeration at an arbitrary directory, and session listing no longer propagates an exception if the directory cannot be enumerated. (6) The fallback session polling interval is relaxed from 3 seconds to 30 seconds; live updates remain covered by the file watchers. (7) The manifest now declares Workspace Trust support explicitly (`untrustedWorkspaces: supported: false`), matching the extension's actual behaviour of reading workspace files, following references outside the skill, and writing annotations to a possibly shared folder. Displays for ordinary records are unchanged.
+
+### 修正 (Fixed)
+
+- 2026-11-22 のセキュリティ監査対応の堅牢化（高重大度の指摘はなし。中2件・低5件をすべて解消）。(1) 上限なしの全文読みが残っていた箇所を、共通の上限付きリーダー経由に統一した。Kiro のセッションメタと VS Code のワークスペースヒントは記録ファイルのサイズ上限付きで読み、Copilot の workspace.yaml ヒントは先頭だけを読む。トレース構築では SKILL.md を再読せず、グラフ構築が上限付きで取得済みのタイトルを再利用する。(2) 参照グラフの走査に総量の上限（ノード数500・読み取り総量64 MB）を設けた。上限に達したら走査を打ち切り、理由をグラフの結果に注記として残す。あわせて、許可ルート（スキルディレクトリとワークスペース）の外へ解決される参照先は見出しを取得せず、パスの表示のみに留める。(3) サマリ Webview のパネルに `localResourceRoots: []` を明示した（HTML は外部リソースを参照しないという実態に合わせる）。(4) ツリーのツールチップへ埋め込む未信頼文字列（セッションタイトル、グラフノードのタイトル、スキル名、ワークスペースのパス）をエスケープし、記録や見出しに書かれた Markdown のリンク・画像記法がクリック可能なリンクやリモート画像にならないようにした。(5) 設定 `skilltrace.sessionStateDir` に machine スコープを付け、ワークスペース側からセッション列挙先を任意ディレクトリへ向けられないようにした。あわせて、セッション列挙でディレクトリを読めない場合に例外が伝播しないようにした。(6) セッションのポーリング間隔を3秒から30秒へ緩めた（ライブ更新はファイル監視が担う）。(7) Workspace Trust の宣言を manifest に明示した（`untrustedWorkspaces: supported: false`。ワークスペース内ファイルの読み取り、スキル外への参照追随、共有されうるフォルダへの注釈書き込みを行う実態に合わせる）。通常の記録での表示は従来どおり。
+
 ## [1.16.0] - 2026-11-21
 
 ### Added

@@ -1,11 +1,11 @@
 // Copilot CLI のセッション（~/.copilot/session-state/<id>/）の列挙と、
 // ワークスペース内のスキル探索。
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { normPath } from "./graph";
 import { collectStrings } from "./events";
-import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
+import { HEADING_PREFIX_BYTES, MAX_RECORD_BYTES, readFilePrefix, readTextFileWithinLimit } from "./readfile";
 import type { Lang } from "./common";
 
 export interface SessionInfo {
@@ -40,7 +40,10 @@ export function formatLocalDateTime(iso: string | null | undefined, lang: Lang =
 export function listSessions(baseDir: string): SessionInfo[] {
   if (!existsSync(baseDir)) return [];
   const out: SessionInfo[] = [];
-  for (const name of readdirSync(baseDir)) {
+  // 列挙自体が失敗（権限・競合で消えた等）しても、例外を伝播させず空で返す
+  let names: string[];
+  try { names = readdirSync(baseDir); } catch { return []; }
+  for (const name of names) {
     const dir = join(baseDir, name);
     const eventsPath = join(dir, "events.jsonl");
     try {
@@ -49,10 +52,12 @@ export function listSessions(baseDir: string): SessionInfo[] {
     let workspaceHint: string | null = null;
     const yamlPath = join(dir, "workspace.yaml");
     if (existsSync(yamlPath)) {
-      try {
-        const m = readFileSync(yamlPath, "utf8").match(/^\s*cwd:\s*(.+)$/m);
+      // cwd の行だけが目的なので、先頭だけを上限付きで読む（監査 2026-11-22）
+      const head = readFilePrefix(yamlPath, HEADING_PREFIX_BYTES);
+      if (head !== null) {
+        const m = head.match(/^\s*cwd:\s*(.+)$/m);
         if (m) workspaceHint = m[1].trim().replace(/^["']|["']$/g, "");
-      } catch { /* ヒントなしで続行 */ }
+      }
     }
     out.push({ id: name, dir, eventsPath, mtimeMs: statSync(eventsPath).mtimeMs, workspaceHint });
   }

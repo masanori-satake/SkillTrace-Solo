@@ -3,6 +3,7 @@
   "command.refresh": "トレースを更新",
   "command.showSummary": "サマリを表示（トークンとタイムライン）",
   "config.sessionStateDir": "Copilot CLI の session-state フォルダがあるディレクトリ。空 = ~/.copilot/session-state。",
+  "capabilities.untrustedWorkspaces": "SkillTrace はワークスペース内のファイルを読み、スキル外のファイルへの参照も辿り、共有されうるフォルダへ注釈を書き込むため、信頼されていないワークスペースでは動作しません。",
   "view.name": "SkillTrace",
   "command.openSummaryInBrowser": "サマリをブラウザで開く",
   "command.copySessionSummaryMarkdown": "セッションサマリを Markdown でコピー",

@@ -429,7 +429,7 @@ export function buildSessionTrace(
   // 発見できたスキルが無いセッションでも、ターン・実測・ツール実行は記録から
   // 復元できる。空グラフで集計だけを行い、サマリを表示できるようにする
   // （Kiro / Copilot Chat で「中身が見えることが先」とした扱いに揃える）
-  const aggregates = parts.length ? null : buildTrace(parsed, { rootId: "", nodes: new Map(), order: [] }, {
+  const aggregates = parts.length ? null : buildTrace(parsed, { rootId: "", nodes: new Map(), order: [], notes: [] }, {
     sessionId: opts.sessionId, workspaceAbs: opts.workspaceAbs, skillDirAbs: "", rootHeading: null, lang: opts.lang,
   });
 

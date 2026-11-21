@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildGraph } from "../core/graph";
+import { buildGraph, MAX_GRAPH_NODES } from "../core/graph";
 import { parseEventsText } from "../core/events";
 import { buildSessionTrace, buildTrace, extractRecordedPaths, firstHeading, gradeCertaintyLabel } from "../core/trace";
 import { capSessionsBySource, formatLocalDateTime, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
@@ -481,4 +481,44 @@ test("extractRecordedPaths stays linear on path-like strings without extensions 
   const started = Date.now();
   assert.deepEqual(extractRecordedPaths(s), []);
   assert.ok(Date.now() - started < 5000, "extraction must stay fast");
+});
+
+test("graph walk stops at the node cap and leaves a note (audit 2026-11-22)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skilltrace-graph-cap-"));
+  try {
+    const ws = join(dir, "ws");
+    const skill = join(ws, ".github", "skills", "wide");
+    mkdirSync(skill, { recursive: true });
+    const refs: string[] = [];
+    const total = MAX_GRAPH_NODES + 50;
+    for (let i = 0; i < total; i++) {
+      writeFileSync(join(skill, `f${i}.md`), `# File ${i}\n`);
+      refs.push(`[f${i}](f${i}.md)`);
+    }
+    writeFileSync(join(skill, "SKILL.md"), `# Wide\n\n${refs.join("\n")}\n`);
+    const graph = buildGraph(skill, ws);
+    assert.ok(graph.nodes.size <= MAX_GRAPH_NODES, `nodes ${graph.nodes.size} must stay within the cap`);
+    assert.ok(graph.notes.length > 0, "a truncation note must be recorded");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("graph does not fetch headings outside the allowed roots (audit 2026-11-22)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skilltrace-graph-roots-"));
+  try {
+    const ws = join(dir, "ws");
+    const skill = join(ws, ".github", "skills", "s");
+    mkdirSync(skill, { recursive: true });
+    // ワークスペース内・スキル外の文書: 見出しは従来どおり取得する
+    writeFileSync(join(ws, "inside.md"), "# Inside Heading\n");
+    // 許可ルート（スキルとワークスペース）の外の文書: 見出しは取得しない
+    const outsideDir = join(dir, "elsewhere");
+    mkdirSync(outsideDir, { recursive: true });
+    writeFileSync(join(outsideDir, "outside.md"), "# Outside Heading\n");
+    writeFileSync(join(skill, "SKILL.md"), "# S\n\n[a](../../../inside.md)\n[b](../../../../elsewhere/outside.md)\n");
+    const graph = buildGraph(skill, ws);
+    const byName = new Map(graph.order.map(n => [n.name, n]));
+    assert.equal(byName.get("inside.md")?.title, "Inside Heading");
+    assert.equal(byName.get("outside.md")?.title, null);
+    assert.equal(byName.get("outside.md")?.boundary, true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
