@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.16.0] - 2026-11-21
+
+### Added
+
+- Session annotations, phase 3: aggregation (Issue #49). The Skill totals view now joins the sessions' measured usage with the verdicts and notes recorded in phase 2. The totals table gains two columns — verdict counts (good / ok / bad) per skill and the good ratio (share of "good" among rated sessions, shown as "—" when a skill has no ratings) — and, when any session was rated "bad", a section below the table ranks those skills (most bad ratings first, then by the measured consumption of their bad sessions) and lists each bad session with its date, its measured consumption with the unit labelled, and the memos attached to it. Only the latest session-level verdict counts; turn-level verdicts are not counted as session verdicts (turn-level notes do appear among the memos, marked with their turn number). Retracted annotations and superseded revisions are excluded, exactly as the specification's aggregation rules require. Everything stays measured-only and read-only: verdicts and consumption are attributed to each skill activated in the session without apportioning (the same session verdict and total count toward every skill it activated), values in different units (Kiro credits, Copilot Chat credits, Copilot tokens) are never added together, nothing is converted to money or tokens, and neither the session records nor the annotation files are ever written. When no session was rated "bad", the view says so; when no annotations exist yet, it notes that instead. The view presents facts only and offers no improvement suggestions.
+
+### 追加 (Added)
+
+- セッション注釈のフェーズ3（集計。Issue #49）。スキル別集計で、セッションの実測の消費と、フェーズ2で記録した評価・メモを突き合わせて表示するようにした。集計表に2つの列が増える。スキルごとの評価件数（良かった／普通／悪かった）と、上手くいった率（評価のあったセッションに対する「良かった」の割合。評価が無いスキルでは「—」）である。さらに、「悪かった」と評価されたセッションがある場合は、表の下に節を設け、対象スキルを順位付きで（「悪かった」の件数が多い順、次いでそのセッション群の実測消費が多い順）並べ、スキルごとに該当セッションを、日付・単位を明記した実測消費・付いたメモとともに一覧する。数えるのはセッション全体への最新の評価だけで、ターン対象の評価はセッション評価として数えない（ターン対象のメモは、ターン番号を付けてメモの中に表示する）。取り消された注釈と改訂前の行は、仕様の集計規則どおり除外する。実測のみ・読み取り専用という原則は従来どおりで、評価と消費は、そのセッションで起動した各スキルへ按分せずに数え（同じ評価と同じセッション合計が各スキルに入る）、単位の異なる値（Kiro のクレジット、Copilot Chat のクレジット、Copilot のトークン）は合算せず、金額やトークンへの換算もしない。セッション記録にも注釈ファイルにも書き込まない。「悪かった」評価が無い場合はその旨を、注釈自体がまだ無い場合はその旨を表示する。表示は事実の提示だけとし、改善案の提案は含めない。
+
 ## [1.15.2] - 2026-11-20
 
 ### Fixed
