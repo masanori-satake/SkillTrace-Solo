@@ -6,7 +6,7 @@
 // copilot_readFile の対象パスは invocationMessage の uris から引ける。
 // SKILL.md の読み取りは URI のクエリ vscodeLinkType=skill として明示される（スキル起動の記録）。
 // 実測はリクエスト単位: promptTokens / completionTokens / copilotCredits が残る。
-import { closeSync, existsSync, openSync, readSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
@@ -369,8 +369,11 @@ export function defaultVSCodeStorageDir(): string {
 function workspaceHintOf(hashDir: string): string | null {
   const p = join(hashDir, "workspace.json");
   if (!existsSync(p)) return null;
+  // 素の全文読みではなく上限付きリーダー経由にする（監査 2026-11-22）
+  const text = readTextFileWithinLimit(p, MAX_RECORD_BYTES);
+  if (text === null) return null;
   try {
-    const j = JSON.parse(readFileSync(p, "utf8")) as Json;
+    const j = JSON.parse(text) as Json;
     const raw = typeof j.folder === "string" ? j.folder : typeof j.workspace === "string" ? j.workspace : null;
     return raw ? vsDisplayPath(raw) : null;
   } catch { return null; }

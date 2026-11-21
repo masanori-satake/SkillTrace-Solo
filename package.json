@@ -10,6 +10,12 @@
   "bugs": {
     "url": "https://github.com/masanori-satake/SkillTrace-Solo/issues"
   },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "%capabilities.untrustedWorkspaces%"
+    }
+  },
   "categories": [
     "Other"
   ],
@@ -166,6 +172,7 @@
         "skilltrace.sessionStateDir": {
           "default": "",
           "description": "%config.sessionStateDir%",
+          "scope": "machine",
           "type": "string"
         },
         "skilltrace.autoFollowLatest": {
@@ -348,6 +355,6 @@
     "check-version-bump": "node scripts/check-version.js --check-bump",
     "update-version": "node scripts/update-version.js"
   },
-  "version": "1.16.0",
+  "version": "1.16.1",
   "icon": "icon.png"
 }

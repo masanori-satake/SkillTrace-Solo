@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { existsSync, mkdtempSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import * as vscode from "vscode";
 import { buildGraph } from "./core/graph";
 import { parseEventsFile } from "./core/events";
-import { buildSessionTrace, firstHeading, type SessionTrace } from "./core/trace";
+import { buildSessionTrace, type SessionTrace } from "./core/trace";
 import { renderFileUsageHtml, renderFileUsageMissingHtml, renderSessionHtml, renderSkillHtml, renderSkillTotalsHtml } from "./core/report";
 import { aggregateFileUsageGroups, extractSessionFileUsage, type FileUsageGroup, type SessionFileUsage } from "./core/fileusage";
 import type { Graph } from "./core/graph";
@@ -97,9 +97,10 @@ export function activate(context: vscode.ExtensionContext): void {
         const parts = workspaceDir ? discoverSkills(workspaceDir)
           .filter(sk => activated.has(sk.name) || readPaths.some(p => normPath(p).includes(normPath(sk.dir))))
           .map(sk => {
-            let rootHeading: string | null = null;
-            try { rootHeading = firstHeading(readFileSync(join(sk.dir, "SKILL.md"), "utf8")); } catch { /* 見出しなし */ }
-            return { graph: buildGraph(sk.dir, workspaceDir), skillDirAbs: sk.dir, rootHeading };
+            // 見出しは buildGraph が上限付きで読んだ SKILL.md のタイトルを再利用する
+            // （監査 2026-11-22: 素の readFileSync での再読をやめる）
+            const graph = buildGraph(sk.dir, workspaceDir);
+            return { graph, skillDirAbs: sk.dir, rootHeading: graph.nodes.get(graph.rootId)?.title ?? null };
           }) : [];
         // スキル起動が無くても、リクエストや読み取りの記録があればトレースを
         // 構築する（Kiro と同じ扱い: 中身が見えることが先）
@@ -115,9 +116,10 @@ export function activate(context: vscode.ExtensionContext): void {
       const parsed = await parseEventsFile(session.eventsPath);
       const skills = workspaceDir ? detectSkillsForSession(parsed, workspaceDir) : [];
       const parts = skills.map(skill => {
-        let rootHeading: string | null = null;
-        try { rootHeading = firstHeading(readFileSync(join(skill.dir, "SKILL.md"), "utf8")); } catch { /* 見出しなし */ }
-        return { graph: buildGraph(skill.dir, workspaceDir), skillDirAbs: skill.dir, rootHeading };
+        // 見出しは buildGraph が上限付きで読んだ SKILL.md のタイトルを再利用する
+        // （監査 2026-11-22: 素の readFileSync での再読をやめる）
+        const graph = buildGraph(skill.dir, workspaceDir);
+        return { graph, skillDirAbs: skill.dir, rootHeading: graph.nodes.get(graph.rootId)?.title ?? null };
       });
       // 記録そのものが持つ起動名（data.name）。現在のワークスペースで見つから
       // ないスキルは、起動の事実だけでも注記として残す
@@ -453,7 +455,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       summaryPanel = vscode.window.createWebviewPanel(
         "skilltraceSummary", title, vscode.ViewColumn.Beside,
-        { enableScripts: true, enableCommandUris: ["skilltrace.showSkillTotals", "skilltrace.showFileUsage"], retainContextWhenHidden: true },
+        // サマリ HTML は外部リソースを参照しないため、読み込み元は空に固定する（監査 2026-11-22）
+        { enableScripts: true, enableCommandUris: ["skilltrace.showSkillTotals", "skilltrace.showFileUsage"], retainContextWhenHidden: true, localResourceRoots: [] },
       );
       summaryPanel.onDidDispose(() => { summaryPanel = null; summarySessionId = null; });
       summaryPanel.webview.html = html;
@@ -986,7 +989,9 @@ export function activate(context: vscode.ExtensionContext): void {
   void vscode.commands.executeCommand("setContext", "skilltrace.workspaceFilter", filterToWorkspace);
   startWatching();
   refreshSessions();
-  const poll = setInterval(refreshSessions, 3000);
+  // ライブ更新は fs.watch が担う。ポーリングは取りこぼし対策の予備として
+  // 30秒間隔に留める（監査 2026-11-22: 3秒間隔の全列挙は常時負荷だった）
+  const poll = setInterval(refreshSessions, 30000);
   context.subscriptions.push({ dispose: () => clearInterval(poll) });
   context.subscriptions.push({ dispose: () => { baseWatcher?.close(); kiroWatcher?.close(); vscodeWatcher?.close(); sessionWatcher?.close(); if (debounce) clearTimeout(debounce); } });
 }

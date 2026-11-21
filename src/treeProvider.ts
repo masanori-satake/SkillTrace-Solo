@@ -43,6 +43,14 @@ function baseName(p: string | null): string {
   return parts.length ? parts[parts.length - 1] : p;
 }
 
+/** ツールチップ（MarkdownString）へ埋め込む外部文字列のエスケープ。
+ *  セッションタイトル・ファイルの見出し・パスは記録やワークスペース由来の
+ *  未信頼文字列で、そのまま埋め込むとリンクやリモート画像の記法を作れて
+ *  しまう。Markdown の特殊文字を無効化して文字どおりに表示する（監査 2026-11-22） */
+function escapeMarkdownText(s: string): string {
+  return s.replace(/([\\`*_[\]<>#!|])/g, "\\$1");
+}
+
 /** 履歴ラベル用のワークスペース名。マルチルートの .code-workspace ファイルは
  *  拡張子を落としてグリフ（⧉ = 複数フォルダの束）を付け、行を短く保つ。
  *  フルパスはツールチップ側に残る */
@@ -284,11 +292,11 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         item.tooltip = new vscode.MarkdownString([
           `**${this.L("セッション", "Session")} ${s.id}**`,
           "",
-          s.title ? `${this.L("タイトル", "Title")}: ${s.title}` : "",
+          s.title ? `${this.L("タイトル", "Title")}: ${escapeMarkdownText(s.title)}` : "",
           `${this.L("最終更新", "Last updated")}: ${new Date(s.mtimeMs).toLocaleString(this.lang === "en" ? "en-US" : "ja-JP")}`,
           s.source === "kiro" ? `${this.L("記録", "Record")}: Kiro` : s.source === "vscode" ? `${this.L("記録", "Record")}: Copilot Chat` : `${this.L("記録", "Record")}: Copilot`,
-          s.workspaceHint ? `${this.L("ワークスペース", "Workspace")}: ${s.workspaceHint}` : "",
-          `${this.L("起動したスキル", "Activated skills")}: ${invoked === null ? this.L("未判定", "undetermined") : invoked.length ? invoked.join(", ") : this.L("なし", "none")}`,
+          s.workspaceHint ? `${this.L("ワークスペース", "Workspace")}: ${escapeMarkdownText(s.workspaceHint)}` : "",
+          `${this.L("起動したスキル", "Activated skills")}: ${invoked === null ? this.L("未判定", "undetermined") : invoked.length ? invoked.map(escapeMarkdownText).join(", ") : this.L("なし", "none")}`,
           ann ? `${this.L("注釈", "Annotations")}: ${ann.count}${this.L(" 件", "")}${ann.verdict ? this.L(`（最新の評価: ${ann.verdict}。good = 上手くいった / ok = 普通 / bad = 良くなかった）`, ` (latest verdict: ${ann.verdict}; good = went well / ok / bad)`) : ""}` : "",
         ].filter(Boolean).join("\n"));
         item.iconPath = new vscode.ThemeIcon(isDisplayed ? "eye" : "history");
@@ -308,7 +316,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         item.description = this.lang === "en"
           ? `High ${counts.A} · Medium ${counts.B} · Low ${counts.C} · No record ${counts.N}${firstOrder !== null ? ` · first arrival #${firstOrder}` : ""}`
           : `確度高 ${counts.A} ・ 確度中 ${counts.B} ・ 確度低 ${counts.C} ・ 記録なし ${counts.N}${firstOrder !== null ? ` ・ 最初の到達 #${firstOrder}` : ""}`;
-        item.tooltip = new vscode.MarkdownString(`**${element.part.skillName}**\n\n${element.part.skillDir}`);
+        item.tooltip = new vscode.MarkdownString(`**${escapeMarkdownText(element.part.skillName)}**\n\n${escapeMarkdownText(element.part.skillDir)}`);
         item.iconPath = new vscode.ThemeIcon("extensions");
         item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded
           : forceCollapsed ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded;
@@ -335,9 +343,9 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         item.label = gn.relToSkill;
         item.description = parts.join(this.lang === "en" ? " · " : " ・ ");
         item.tooltip = new vscode.MarkdownString([
-          `**${gn.relToSkill}**`,
+          `**${escapeMarkdownText(gn.relToSkill)}**`,
           "",
-          gn.title ? `${this.L("タイトル", "Title")}: ${gn.title}` : "",
+          gn.title ? `${this.L("タイトル", "Title")}: ${escapeMarkdownText(gn.title)}` : "",
           tn ? `${this.L("根拠", "Evidence")}: ${tn.evidence}` : this.L("根拠: 対応付けなし", "Evidence: no match"),
           tn?.firstAt ? `${this.L("初出", "First seen")}: ${tn.firstAt}` : "",
           this.L(`推定トークン: ${gn.estTokens} ／ サイズ: ${gn.sizeBytes} bytes`, `Est. tokens: ${gn.estTokens} / size: ${gn.sizeBytes} bytes`),
