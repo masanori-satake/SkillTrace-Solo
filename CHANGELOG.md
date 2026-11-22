@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.16.2] - 2026-11-22
+
+### Fixed
+
+- Development-configuration alignment: `.markdownlint.json` is now excluded from the version-bump check in `scripts/check-version.js` (the same treatment as `.pre-commit-config.yaml`), and missing final newlines in `package.nls.json`, `package.nls.ja.json` and two test-fixture JSON files were fixed via the pre-commit hooks.
+
+### 修正 (Fixed)
+
+- 開発用設定の整備。`scripts/check-version.js` の版バンプ判定で `.markdownlint.json` を対象外にした（`.pre-commit-config.yaml` と同じ扱い）。あわせて、`package.nls.json`、`package.nls.ja.json` とテスト用フィクスチャの JSON 2件に不足していた末尾の改行を、pre-commit フックで直した。
+
 ## [1.16.1] - 2026-11-22
 
 ### Fixed
