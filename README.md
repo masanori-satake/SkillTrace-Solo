@@ -1,6 +1,6 @@
 # SkillTrace-Solo
 
-[![Version](https://img.shields.io/badge/version-v1.16.2-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-v1.17.0-blue.svg)](package.json)
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/masanori-satake.skilltrace-solo.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)
 [![Open VSX](https://img.shields.io/open-vsx/v/masanori-satake/skilltrace-solo?label=Open%20VSX)](https://open-vsx.org/extension/masanori-satake/skilltrace-solo)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/masanori-satake/SkillTrace-Solo)](https://github.com/masanori-satake/SkillTrace-Solo/releases)
@@ -18,7 +18,7 @@
 
 When GitHub Copilot or Amazon Kiro runs a skill, it follows references from `SKILL.md` into `references/` and beyond — but nothing on screen tells you how far it really got, what it cost, or how full the context window became. SkillTrace overlays the session records the agents already write (Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`; Kiro: `~/.kiro/sessions/<bucket>/sess_<uuid>/`; VS Code chat: `workspaceStorage/<hash>/chatSessions/<id>.jsonl`) onto the skill's reference graph, and reports, per file, the certainty that it arrived, the measured usage (tokens for Copilot, credits for Kiro), and the context window usage. No setup is required: the records are written by default, and past sessions can be analysed retroactively.
 
-Current version: **v1.16.2**
+Current version: **v1.17.0**
 
 ---
 
@@ -81,6 +81,9 @@ Current version: **v1.16.2**
 11. **Session annotations — verdicts and notes that never touch the records**
    - Verdicts (good / ok / bad) and notes about a session, or about a single turn in it, live in separate annotation files (`.skilltrace-annotations/` in your home folder, and in a workspace folder when shared) — the session records themselves are never modified. You can add, change, and retract your own verdicts and notes from the history (the session item's context menu) or the Command Palette; the default destination is your personal folder, and the shared folder is used only when you choose it. The latest verdict shows in the history, and the session summary lists all annotations, including ones written by other tools: the format is an open specification (`docs/session-annotations.md`), and values can carry a type (percent, duration, …) so summaries can format them properly.
 
+12. **Skills outside the workspace, located from the record**
+   - When an activated skill lives outside the session's workspace — for example in a dedicated skills repository — its location is looked up in the paths the record itself contains (read paths, invocation strings, inclusion documents). If the folder exists and contains SKILL.md, the skill is treated as found: its reference tree, arrivals and token totals are shown as usual, with a note in the summary and the tree saying it was located from the record and where it lives. Only paths that actually appear in the record are used; no additional directories are scanned.
+
 ---
 
 <a id="en-installation"></a>
@@ -88,7 +91,7 @@ Current version: **v1.16.2**
 
 - From the Visual Studio Marketplace: search for **SkillTrace-Solo**, or install from the [Marketplace page](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo). Updates arrive through VS Code as usual.
 - From a VSIX file:
-  1. Download `skilltrace-solo-1.16.2.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
+  1. Download `skilltrace-solo-1.17.0.vsix` from [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases)
   2. In VS Code, run "Extensions: Install from VSIX..." from the Command Palette and select the file.
 
 ---
@@ -210,7 +213,7 @@ MIT — see [LICENSE](LICENSE).
 
 GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` から `references/` やその先へ参照を辿ります。しかし画面のどこを見ても、実際にどこまで辿り着いたか、いくら消費したか、コンテキストウィンドウがどれだけ埋まったかは分かりません。SkillTrace は、エージェントが標準で書き出しているセッション記録（Copilot CLI: `~/.copilot/session-state/<id>/events.jsonl`、Kiro: `~/.kiro/sessions/<バケット>/sess_<UUID>/`、VS Code チャット: `workspaceStorage/<ハッシュ>/chatSessions/<ID>.jsonl`）をスキルの参照グラフに重ね、ファイルごとの到達の確度、実測（Copilot はトークン、Kiro はクレジット）、コンテキストウィンドウ使用量を表示します。設定は不要で、記録は標準で書かれるため、過去のセッションも後から分析できます。
 
-現在のバージョン: **v1.16.2**
+現在のバージョン: **v1.17.0**
 
 ---
 
@@ -273,6 +276,9 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 11. **セッション注釈 — 記録に触れない評価とメモ**
    - セッションやその中のターンへの評価（good / ok / bad）とメモは、セッション記録そのものではなく、別の注釈ファイル（個人用はホームフォルダの `.skilltrace-annotations/`、共有用はワークスペースフォルダ）に記録します。自分の評価とメモは、履歴（セッション項目のコンテキストメニュー）またはコマンドパレットから追加・変更・取り消しができ、書き込み先の既定は個人用で、共有用は選んだ場合だけ使います。最新の評価は履歴に表示され、セッションサマリには他のツールが書いた分も含めて注釈が一覧されます。形式は公開仕様（`docs/session-annotations.md`）で、値には型（percent、duration など）を付けられるため、サマリ側で型に適した整形ができます。
 
+12. **ワークスペース外のスキルを、記録から特定**
+   - 起動したスキルがセッションのワークスペース外にある場合（スキル専用リポジトリにあるスキルなど）、記録自体に残るパス（読み取りパス、起動イベントの文字列、取り込み文書のパス）から所在を探します。そのフォルダが実在して SKILL.md を含んでいれば、そのスキルとして扱い、参照ツリー・到達の内訳・推定トークン合計を通常どおり表示します。サマリとツリーには、記録から特定したことと所在を注記します。使うのは記録に実際に現れたパスだけで、追加のディレクトリ走査はしません。
+
 ---
 
 <a id="ja-installation"></a>
@@ -280,7 +286,7 @@ GitHub Copilot や Amazon Kiro がスキルを実行すると、`SKILL.md` か�
 
 - Visual Studio Marketplace から: **SkillTrace-Solo** で検索するか、[Marketplace のページ](https://marketplace.visualstudio.com/items?itemName=masanori-satake.skilltrace-solo)からインストールしてください。更新は通常どおり VS Code 経由で届きます。
 - VSIX ファイルから:
-  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.16.2.vsix` をダウンロードする
+  1. [GitHub Releases](https://github.com/masanori-satake/SkillTrace-Solo/releases) から `skilltrace-solo-1.17.0.vsix` をダウンロードする
   2. VS Code のコマンドパレットで「Extensions: Install from VSIX...」を実行し、ファイルを選ぶ
 
 ---

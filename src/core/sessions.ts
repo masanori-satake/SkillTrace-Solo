@@ -150,6 +150,34 @@ export function scanInvokedSkillNames(eventsPath: string, candidates: { name: st
 }
 
 const SKILL_ROOTS = [".github/skills", ".agents/skills", ".kiro/skills", ".claude/skills"];
+
+/** 記録のパス証拠からスキルフォルダを特定するときに認めるルート名。
+ *  ワークスペースの標準ルートに、個人用スキル置き場（~/.copilot/skills）を加えたもの */
+const LOCATE_ROOT_HEADS = new Set([".github", ".agents", ".kiro", ".claude", ".copilot"]);
+
+/** 未発見スキルの所在を、セッション記録に残るパスから特定する（Issue #60）。
+ *  パス中に「<ルート>/skills/<名前>/」の形が現れた場合に限り、そのフォルダを候補とし、
+ *  実在して SKILL.md を含むときだけ返す。任意のディレクトリ走査はせず、記録に実際に
+ *  現れた絶対パスだけを使う。相対パスの断片は実在確認の対象にしない */
+export function locateSkillFromPaths(name: string, paths: readonly string[]): string | null {
+  const target = name.toLowerCase();
+  for (const raw of paths) {
+    if (!raw) continue;
+    const segs = raw.replace(/\\/g, "/").split("/");
+    for (let i = 0; i + 2 < segs.length; i++) {
+      if (!LOCATE_ROOT_HEADS.has(segs[i].toLowerCase())) continue;
+      if (segs[i + 1].toLowerCase() !== "skills") continue;
+      if (segs[i + 2].toLowerCase() !== target) continue;
+      const dir = segs.slice(0, i + 3).join("/");
+      if (!/^[a-zA-Z]:\//.test(dir) && !dir.startsWith("/")) continue;
+      try {
+        if (statSync(dir).isDirectory() && existsSync(join(dir, "SKILL.md"))) return dir;
+      } catch { /* skip */ }
+    }
+  }
+  return null;
+}
+
 export function discoverSkills(workspaceDir: string): { name: string; dir: string }[] {
   const found: { name: string; dir: string }[] = [];
   for (const root of SKILL_ROOTS) {

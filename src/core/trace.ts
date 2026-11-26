@@ -394,6 +394,9 @@ export interface SessionTrace {
    *  起動の判定を「発見できたスキル」との照合だけで行うと、移動・改名・削除された
    *  スキルの起動が記録から消えてしまうため、名前だけでも残す（2026-11-08 の不具合対応） */
   undiscoveredSkills?: string[];
+  /** 記録に残るパスから所在を特定できたスキル（セッションのワークスペース外）。
+   *  通常の探索で発見したスキルと出自を区別するために残す（Issue #60） */
+  recordLocatedSkills?: { name: string; dir: string }[];
   health: ParsedEvents["health"];
   contextCurrentSeries: { at: string; tokens: number }[];
   lastContextCurrentTokens: number | null;
@@ -409,7 +412,7 @@ export interface SessionTrace {
 export function buildSessionTrace(
   parsed: ParsedEvents,
   parts: { graph: Graph; skillDirAbs: string; rootHeading: string | null }[],
-  opts: { sessionId: string; workspaceAbs: string; lang?: Lang; undiscoveredSkills?: string[] },
+  opts: { sessionId: string; workspaceAbs: string; lang?: Lang; undiscoveredSkills?: string[]; recordLocatedSkills?: { name: string; dir: string }[] },
 ): SessionTrace {
   const traces = parts.map(p => buildTrace(parsed, p.graph, {
     sessionId: opts.sessionId, workspaceAbs: opts.workspaceAbs, skillDirAbs: p.skillDirAbs, rootHeading: p.rootHeading, lang: opts.lang,
@@ -458,6 +461,7 @@ export function buildSessionTrace(
     skills: traces.map((t, i) => ({ skillName: t.session.skillName, skillDir: t.session.skillDir, graph: parts[i].graph, nodes: t.nodes })),
     outsideReads,
     undiscoveredSkills: opts.undiscoveredSkills,
+    recordLocatedSkills: opts.recordLocatedSkills,
   };
 }
 

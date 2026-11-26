@@ -9,9 +9,9 @@ import { renderFileUsageHtml, renderFileUsageMissingHtml, renderSessionHtml, ren
 import { aggregateFileUsageGroups, extractSessionFileUsage, type FileUsageGroup, type SessionFileUsage } from "./core/fileusage";
 import type { Graph } from "./core/graph";
 import { aggregateSessionFile, mergeSkillTotals, type SessionSkillUsage } from "./core/aggregate";
-import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, formatLocalDateTime, listSessions, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
-import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames } from "./core/kiro";
-import { buildVSCodeSessionTrace, defaultVSCodeStorageDir, listVSCodeChatSessions, parseVSCodeChatSessionFile, scanVSCodeActivationNames } from "./core/vscode";
+import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, formatLocalDateTime, listSessions, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
+import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames, type KiroSkillPartInput } from "./core/kiro";
+import { buildVSCodeSessionTrace, defaultVSCodeStorageDir, listVSCodeChatSessions, parseVSCodeChatSessionFile, scanVSCodeActivationNames, type VSCodeSkillPartInput } from "./core/vscode";
 import { normPath } from "./core/graph";
 import { detectSkillsForSession } from "./core/autodetect";
 import { renderSessionCopy } from "./core/copy";
@@ -72,9 +72,21 @@ export function activate(context: vscode.ExtensionContext): void {
       if (session.source === "kiro") {
         const parsed = await parseKiroMessagesFile(session.eventsPath);
         const activated = new Set(parsed.activations.map(a => a.name));
-        const parts = kiroSkillCandidates(session)
+        const parts: KiroSkillPartInput[] = kiroSkillCandidates(session)
           .filter(s => activated.has(s.name))
           .map(s => ({ graph: buildGraph(s.dir, s.root), skillDirAbs: s.dir, disclosed: true }));
+        // 候補に無い起動スキルは、記録の取り込み文書パスから所在を特定する（Issue #60）
+        {
+          const covered = new Set(parts.map(p => p.skillDirAbs.split(/[\\/]/).pop()?.toLowerCase()));
+          const evidence = parsed.inclusions.flatMap(i => i.documents);
+          for (const name of activated) {
+            if (covered.has(name.toLowerCase())) continue;
+            const dir = locateSkillFromPaths(name, evidence);
+            if (!dir) continue;
+            const root = join(dir, "..", "..", "..");
+            parts.push({ graph: buildGraph(dir, root), skillDirAbs: dir, disclosed: true, fromRecord: true });
+          }
+        }
         // スキル起動が無くても、常時文脈・クレジット・読み取りの記録があれば
         // トレースを構築する（仕様駆動などのセッションでも中身が見えるように）。
         // 起動の記録だけがある場合も対象に含める（スキルが見つからなくても
@@ -94,7 +106,7 @@ export function activate(context: vscode.ExtensionContext): void {
           : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
         const activated = new Set(parsed.activations.map(a => a.name));
         const readPaths = parsed.requests.flatMap(r => r.tools.map(t => t.readPath).filter((p): p is string => !!p));
-        const parts = workspaceDir ? discoverSkills(workspaceDir)
+        const parts: VSCodeSkillPartInput[] = workspaceDir ? discoverSkills(workspaceDir)
           .filter(sk => activated.has(sk.name) || readPaths.some(p => normPath(p).includes(normPath(sk.dir))))
           .map(sk => {
             // 見出しは buildGraph が上限付きで読んだ SKILL.md のタイトルを再利用する
@@ -102,6 +114,18 @@ export function activate(context: vscode.ExtensionContext): void {
             const graph = buildGraph(sk.dir, workspaceDir);
             return { graph, skillDirAbs: sk.dir, rootHeading: graph.nodes.get(graph.rootId)?.title ?? null };
           }) : [];
+        // ワークスペースで見つからない起動スキルは、記録の読み取りパスから
+        // 所在を特定する（Issue #60。スキル専用リポジトリなど、別リポジトリのスキル）
+        if (workspaceDir) {
+          const covered = new Set(parts.map(p => p.skillDirAbs.split(/[\\/]/).pop()?.toLowerCase()));
+          for (const name of activated) {
+            if (covered.has(name.toLowerCase())) continue;
+            const dir = locateSkillFromPaths(name, readPaths);
+            if (!dir) continue;
+            const graph = buildGraph(dir, workspaceDir);
+            parts.push({ graph, skillDirAbs: dir, rootHeading: graph.nodes.get(graph.rootId)?.title ?? null, fromRecord: true });
+          }
+        }
         // スキル起動が無くても、リクエストや読み取りの記録があればトレースを
         // 構築する（Kiro と同じ扱い: 中身が見えることが先）
         if (parts.length || parsed.requests.length) {
@@ -115,12 +139,6 @@ export function activate(context: vscode.ExtensionContext): void {
         : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
       const parsed = await parseEventsFile(session.eventsPath);
       const skills = workspaceDir ? detectSkillsForSession(parsed, workspaceDir) : [];
-      const parts = skills.map(skill => {
-        // 見出しは buildGraph が上限付きで読んだ SKILL.md のタイトルを再利用する
-        // （監査 2026-11-22: 素の readFileSync での再読をやめる）
-        const graph = buildGraph(skill.dir, workspaceDir);
-        return { graph, skillDirAbs: skill.dir, rootHeading: graph.nodes.get(graph.rootId)?.title ?? null };
-      });
       // 記録そのものが持つ起動名（data.name）。現在のワークスペースで見つから
       // ないスキルは、起動の事実だけでも注記として残す
       const invokedNames: string[] = [];
@@ -129,6 +147,26 @@ export function activate(context: vscode.ExtensionContext): void {
         const n = ev.data["name"];
         if (typeof n === "string" && n && !invokedNames.includes(n)) invokedNames.push(n);
       }
+      // 探索で見つからない起動スキルは、記録の文字列に残るパスから所在を
+      // 特定する（Issue #60。スキル専用リポジトリなど、別リポジトリのスキル）
+      const recordLocatedSkills: { name: string; dir: string }[] = [];
+      {
+        const known = new Set(skills.map(sk => sk.name.toLowerCase()));
+        const evidence = parsed.events.flatMap(ev => ev.strings);
+        for (const name of invokedNames) {
+          if (known.has(name.toLowerCase())) continue;
+          const dir = locateSkillFromPaths(name, evidence);
+          if (!dir) continue;
+          skills.push({ name, dir });
+          recordLocatedSkills.push({ name, dir: dir.replace(/\\/g, "/") });
+        }
+      }
+      const parts = skills.map(skill => {
+        // 見出しは buildGraph が上限付きで読んだ SKILL.md のタイトルを再利用する
+        // （監査 2026-11-22: 素の readFileSync での再読をやめる）
+        const graph = buildGraph(skill.dir, workspaceDir);
+        return { graph, skillDirAbs: skill.dir, rootHeading: graph.nodes.get(graph.rootId)?.title ?? null };
+      });
       const discoveredNames = new Set(skills.map(sk => sk.name));
       const undiscoveredSkills = invokedNames.filter(n => !discoveredNames.has(n));
       // スキルが現在のワークスペースで見つからなくても、記録に中身があれば
@@ -137,7 +175,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // 前提にすると履歴のサマリが軒並み開けなかった
       const hasContent = parsed.events.some(e => e.type === "assistant.turn_start" || e.type === "tool.execution_complete" || e.type === "skill.invoked" || e.type === "user.message");
       if (parts.length || hasContent) {
-        trace = buildSessionTrace(parsed, parts, { sessionId: session.id, workspaceAbs: workspaceDir, lang: LANG, undiscoveredSkills });
+        trace = buildSessionTrace(parsed, parts, { sessionId: session.id, workspaceAbs: workspaceDir, lang: LANG, undiscoveredSkills, recordLocatedSkills: recordLocatedSkills.length ? recordLocatedSkills : undefined });
       }
     } catch { trace = null; }
     buildCache.set(session.id, { mtimeMs: session.mtimeMs, trace });

@@ -523,6 +523,8 @@ export interface VSCodeSkillPartInput {
   graph: Graph;
   skillDirAbs: string;
   rootHeading: string | null;
+  /** 記録に残るパスから所在を特定したスキルか（Issue #60） */
+  fromRecord?: boolean;
 }
 
 export function buildVSCodeSessionTrace(
@@ -606,6 +608,8 @@ export function buildVSCodeSessionTrace(
 
   const discoveredNames = new Set(parts.map(p => basename(resolve(p.skillDirAbs))));
   const undiscoveredSkills = [...new Set(parsed.activations.map(a => a.name))].filter(n => !discoveredNames.has(n));
+  const recordLocatedSkills = parts.filter(p => p.fromRecord)
+    .map(p => ({ name: basename(resolve(p.skillDirAbs)), dir: toSlashes(resolve(p.skillDirAbs)) }));
 
   const turns = parsed.requests.map((r, i) => ({
     turn: i, inputTokens: r.promptTokens, outputTokens: r.completionTokens,
@@ -642,5 +646,6 @@ export function buildVSCodeSessionTrace(
     creditsTotal,
     creditTurns,
     undiscoveredSkills,
+    recordLocatedSkills: recordLocatedSkills.length ? recordLocatedSkills : undefined,
   };
 }
