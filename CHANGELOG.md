@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.18.1] - 2026-11-26
+
+### Changed
+
+- Summary views (skill totals, per-file reach, session summary, skill summary) now open as a tab in the current editor group instead of splitting the editor and opening in a new group beside it.
+
+### 変更 (Changed)
+
+- サマリ表示（スキル別集計、ファイル別の到達、セッションサマリ、スキルサマリ）が、エディタを分割して横に新しいグループを作るのではなく、今のタブグループの中にタブとして開くようにした
+
 ## [1.18.0] - 2026-11-26
 
 ### Changed
