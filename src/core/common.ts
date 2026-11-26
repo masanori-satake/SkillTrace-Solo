@@ -181,7 +181,6 @@ export const GLOSSARY: [string, string][] = [
   ["スキル外", "スキルの格納場所（.github / .kiro / .agents の skills フォルダ配下）には入っていないのに、スキルから参照されているファイルです。.kiro/steering/ の文書など、複数のスキルから共有される文書が該当します。"],
   ["スキル外の読み取り", "このスキルの参照関係（SKILL.md からの参照の連なり）の外にあるファイルを、エージェントが読んだ記録です。読取失敗と付いているものは、読み取りを試みて失敗した記録です。"],
   ["セッション／ターン", "セッションは1つのチャット（会話）全体、ターンはその中でのユーザーとエージェントの往復1回を指します。"],
-  ["正本（canonical）", ".agents / .github / .kiro の3か所すべてに同じスキルがある場合に、.agents 側を正本（編集の元）とみなす運用を指します。3つ揃わない場合は正本扱いしません（SkillMap-Solo の用語）。"],
 ];
 
 /** 用語の説明（英語版）。GLOSSARY と同じ用語・同じ並びで対訳にする */
@@ -199,7 +198,6 @@ export const GLOSSARY_EN: [string, string][] = [
   ["Outside the skill", "A file that a skill references but that does not live inside a skill location (under the skills folders of .github / .kiro / .agents) — for example documents under .kiro/steering/ shared by several skills."],
   ["Reads outside the skill", "Records of the agent reading files outside this skill's reference chain (from SKILL.md). Entries marked as failed reads are records of attempted reads that failed."],
   ["Session / turn", "A session is one whole chat (conversation); a turn is one user–agent round trip within it."],
-  ["Canonical", "When the same skill exists in all three locations (.agents / .github / .kiro), the .agents copy is treated as the canonical source for editing. If the three are not all present, no canonical treatment applies (a SkillMap-Solo term)."],
 ];
 
 /** 言語に応じた用語集を返す */

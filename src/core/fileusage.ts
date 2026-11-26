@@ -77,7 +77,7 @@ function relsAfterSegment(text: string, nameLower: string): string[] {
   return relsUnder(text, "/" + nameLower);
 }
 
-function dirOfSkillMd(pathNorm: string): string {
+export function dirOfSkillMd(pathNorm: string): string {
   const i = pathNorm.toLowerCase().lastIndexOf("/skill.md");
   return i > 0 ? pathNorm.slice(0, i) : "";
 }
@@ -305,10 +305,10 @@ export interface SkillFileUsage {
   rows: FileUsageRow[];
 }
 
-/** 集計の対象グループ: 同じルート（ワークスペース）内にある同名スキルは
- *  コピーの関係として1グループにまとめ、ルートが違えば別のスキルとして分ける */
+/** 集計の対象グループ: スキルフォルダごとに1グループとする。
+ *  同名スキルが複数の配置場所にあっても、場所ごとに別のスキルとして分ける */
 export interface FileUsageGroup {
-  /** 表示名（ルートのパス） */
+  /** 表示名（スキルフォルダのパス） */
   label: string;
   /** グループに属するスキルフォルダ（正規化済み） */
   dirs: string[];
@@ -322,7 +322,7 @@ export interface FileUsageGroup {
  * ファイルは数えない。
  *
  * 同名スキルの混在を避ける規則:
- * - グループが1つだけなら、そのスキルを起動したセッションをすべて数える
+ * - グループ（スキルフォルダ）が1つだけなら、そのスキルを起動したセッションをすべて数える
  * - グループが複数ある場合は、記録に残るスキルフォルダがグループに属する
  *   セッションだけを数える。フォルダが記録に無いセッションは、どのグループ
  *   にも入れず unattributedSessions として返す（混ぜて数えるより正直なため）

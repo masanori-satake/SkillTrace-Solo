@@ -22,9 +22,11 @@ export interface AnnotationMemo {
   turn?: number;
 }
 
-/** スキル1件分の注釈集計 */
+/** スキル1件分の注釈集計。スキル別集計と同じく配置場所ごとに分ける
+ *  （dir は記録から特定できたスキルフォルダ。特定できない分は空文字） */
 export interface SkillVerdictTotal {
   name: string;
+  dir: string;
   good: number;
   ok: number;
   bad: number;
@@ -47,8 +49,8 @@ export interface BadSession {
   source: "copilot" | "kiro" | "vscode";
   /** セッション開始時刻（ISO。取れなければ null） */
   at: string | null;
-  /** そのセッションで起動したスキルの名前 */
-  skills: string[];
+  /** そのセッションで起動したスキル（名前と、特定できた場合はフォルダ） */
+  skills: { name: string; dir: string }[];
   /** Kiro / Copilot Chat のクレジット実測 */
   credits?: number;
   /** Copilot CLI のトークン実測 */
@@ -97,7 +99,8 @@ export function rankBadSkills(skills: SkillVerdictTotal[]): SkillVerdictTotal[] 
       || b.chatCredits - a.chatCredits
       || (b.copilotInputTokens + b.copilotOutputTokens) - (a.copilotInputTokens + a.copilotOutputTokens)
       || b.rated - a.rated
-      || a.name.localeCompare(b.name));
+      || a.name.localeCompare(b.name)
+      || a.dir.localeCompare(b.dir));
 }
 
 /**
@@ -115,15 +118,16 @@ export function aggregateVerdicts(
   let hasAnnotations = false;
   const seenSessions = new Set<string>();
 
-  const skillRow = (name: string): SkillVerdictTotal & { memoPool: AnnotationMemo[] } => {
-    let row = skillMap.get(name);
+  const skillRow = (name: string, dir: string): SkillVerdictTotal & { memoPool: AnnotationMemo[] } => {
+    const key = name + "\n" + dir;
+    let row = skillMap.get(key);
     if (!row) {
       row = {
-        name, good: 0, ok: 0, bad: 0, rated: 0, goodRatio: null,
+        name, dir, good: 0, ok: 0, bad: 0, rated: 0, goodRatio: null,
         kiroCredits: 0, chatCredits: 0, copilotInputTokens: 0, copilotOutputTokens: 0,
         memos: [], memoPool: [],
       };
-      skillMap.set(name, row);
+      skillMap.set(key, row);
     }
     return row;
   };
@@ -141,7 +145,7 @@ export function aggregateVerdicts(
     if (verdict === "bad") {
       const entry: BadSession = {
         sessionId: u.sessionId, source: u.source, at: u.at,
-        skills: u.skills.map(s => s.name),
+        skills: u.skills.map(s => ({ name: s.name, dir: s.dir ?? "" })),
         credits: u.credits, inputTokens: u.inputTokens, outputTokens: u.outputTokens,
         memos: sessionMemos,
       };
@@ -150,7 +154,7 @@ export function aggregateVerdicts(
     }
 
     for (const s of u.skills) {
-      const row = skillRow(s.name);
+      const row = skillRow(s.name, s.dir ?? "");
       if (verdict) {
         row[verdict]++;
         row.rated++;
@@ -175,7 +179,7 @@ export function aggregateVerdicts(
     })
     // 評価もメモも無いスキルは集計に出さない（例: ターン対象の verdict だけのセッション）
     .filter(s => s.rated > 0 || s.memos.length > 0);
-  skills.sort((a, b) => a.name.localeCompare(b.name));
+  skills.sort((a, b) => a.name.localeCompare(b.name) || a.dir.localeCompare(b.dir));
 
   // 供給源ごとにまとめ、各供給源の中では実測消費の多い順
   // （クレジット源はクレジット、Copilot CLI は入力+出力トークン）

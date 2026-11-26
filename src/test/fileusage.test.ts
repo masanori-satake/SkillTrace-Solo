@@ -189,6 +189,39 @@ test("same-name skills in different locations are not mixed (Issue #41 review)",
   assert.equal(single.results[0].invokedSessions, 3);
 });
 
+test("same-named skills at different locations in one root are aggregated separately", async () => {
+  const { aggregateFileUsageGroups } = await import("../core/fileusage.js");
+  const { buildGraph, normPath } = await import("../core/graph.js");
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-loc-"));
+  const mkAt = (loc: string, extra: string) => {
+    const dir = join(root, loc, "skills", "dup");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), `# Dup\n\nRead [x](${extra}).\n`);
+    writeFileSync(join(dir, extra), "# X\n");
+    return dir;
+  };
+  const agentsDir = mkAt(".agents", "only-agents.md");
+  const kiroDir = mkAt(".kiro", "only-kiro.md");
+  const usage = (dir: string, rel: string) => ({
+    startedAt: null,
+    skills: [{ name: "dup", dir, readRels: new Map([["skill.md", null], [rel, null]]), mentionRels: new Set<string>() }],
+  });
+  const usages = [usage(normPath(agentsDir), "only-agents.md"), usage(normPath(kiroDir), "only-kiro.md")];
+  // 配置場所ごとに1グループ（コピーとしてまとめない）
+  const groups = [
+    { label: agentsDir, dirs: [normPath(agentsDir)], graphs: [buildGraph(agentsDir, root)] },
+    { label: kiroDir, dirs: [normPath(kiroDir)], graphs: [buildGraph(kiroDir, root)] },
+  ];
+  const { results, unattributedSessions } = aggregateFileUsageGroups(groups, usages, "dup");
+  assert.equal(results.length, 2);
+  assert.equal(unattributedSessions, 0);
+  // ファイル一覧もセッションも場所ごとに分かれる（他方のファイルは混ざらない）
+  assert.ok(results[0].rows.some(r => r.rel === "only-agents.md" && r.readSessions === 1));
+  assert.ok(!results[0].rows.some(r => r.rel === "only-kiro.md"));
+  assert.ok(results[1].rows.some(r => r.rel === "only-kiro.md" && r.readSessions === 1));
+  assert.ok(!results[1].rows.some(r => r.rel === "only-agents.md"));
+});
+
 test("co-reading pairs and isolated files are aggregated (Issue #42)", async () => {
   const { aggregateFileUsageGroups } = await import("../core/fileusage.js");
   const { buildGraph, normPath } = await import("../core/graph.js");

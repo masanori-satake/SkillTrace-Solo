@@ -6,11 +6,13 @@
 // 按分はできない。そのため消費は「そのスキルが起動したセッションの
 // 合計」として寄せる。複数のスキルが起動したセッションでは、同じ
 // セッション合計が各スキルに入る（表示側でその旨を明記する）。
-import { parseEventsText } from "./events";
+import { findString, parseEventsText } from "./events";
 import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
-import { parseKiroMessages } from "./kiro";
+import { displayPath, parseKiroMessages } from "./kiro";
 import type { SessionInfo } from "./sessions";
 import { parseVSCodeChatSessionText, skillNameFromPath } from "./vscode";
+import { normPath } from "./graph";
+import { dirOfSkillMd } from "./fileusage";
 
 /** 1セッション分の、集計に必要な最小限の実測 */
 export interface SessionSkillUsage {
@@ -20,8 +22,10 @@ export interface SessionSkillUsage {
   at: string | null;
   mtimeMs: number;
   /** 起動したスキルと、そのセッション内での起動回数と最後の起動時刻。
-   *  Copilot Chat は記録の性質上、セッション内の有無しか分からないため回数は 1 になる */
-  skills: { name: string; activations: number; lastAt: string | null }[];
+   *  Copilot Chat は記録の性質上、セッション内の有無しか分からないため回数は 1 になる。
+   *  dir は記録からスキルフォルダが特定できた場合だけ入る（正規化済みの絶対パス）。
+   *  配置場所ごとに分けて数えるためで、特定できない記録では付けない */
+  skills: { name: string; dir?: string; activations: number; lastAt: string | null }[];
   /** Kiro / Copilot Chat のクレジット実測（供給源ごとに別物として扱う） */
   credits?: number;
   /** Copilot CLI のトークン実測（usage_record の積算。入力はキャッシュ分を含む） */
@@ -29,9 +33,12 @@ export interface SessionSkillUsage {
   outputTokens?: number;
 }
 
-/** スキル1件分の横断集計 */
+/** スキル1件分の横断集計。配置場所（スキルフォルダ）ごとに分けて数える。
+ *  dir は記録から特定できたスキルフォルダ（正規化済み）。特定できなかった
+ *  セッション分は dir が空文字の行に寄せる */
 export interface SkillTotal {
   name: string;
+  dir: string;
   sessions: number;
   activations: number;
   /** 供給源ごとのセッション数（その供給源で現れたことがあるかの判定にも使う） */
@@ -49,27 +56,38 @@ export interface SkillTotal {
 
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-function countByName(entries: { name: string; at: string | null }[]): { name: string; activations: number; lastAt: string | null }[] {
-  const map = new Map<string, { activations: number; lastAt: string | null }>();
+/** 起動の記録をスキル（名前＋特定できた場合はフォルダ）ごとに寄せる */
+function countBySkill(entries: { name: string; dir?: string; at: string | null }[]): { name: string; dir?: string; activations: number; lastAt: string | null }[] {
+  const map = new Map<string, { name: string; dir?: string; activations: number; lastAt: string | null }>();
   for (const e of entries) {
-    const cur = map.get(e.name) ?? { activations: 0, lastAt: null };
+    const key = e.name + "\n" + (e.dir ?? "");
+    let cur = map.get(key);
+    if (!cur) {
+      // dir は特定できた場合だけキーとして持つ（未特定の形を従来どおりに保つ）
+      cur = e.dir ? { name: e.name, dir: e.dir, activations: 0, lastAt: null } : { name: e.name, activations: 0, lastAt: null };
+      map.set(key, cur);
+    }
     cur.activations++;
     if (e.at && (!cur.lastAt || e.at > cur.lastAt)) cur.lastAt = e.at;
-    map.set(e.name, cur);
   }
-  return [...map.entries()].map(([name, v]) => ({ name, activations: v.activations, lastAt: v.lastAt }));
+  return [...map.values()];
 }
 
 /** Copilot CLI の events.jsonl から集計分を取り出す */
 export function aggregateCopilotSessionText(text: string, meta: { sessionId: string; mtimeMs: number }): SessionSkillUsage {
   const parsed = parseEventsText(text);
-  const entries: { name: string; at: string | null }[] = [];
+  const entries: { name: string; dir?: string; at: string | null }[] = [];
   let inputTokens = 0;
   let outputTokens = 0;
   for (const ev of parsed.events) {
     if (ev.type === "skill.invoked") {
       const n = ev.data["name"];
-      if (typeof n === "string" && n) entries.push({ name: n, at: ev.at });
+      if (typeof n === "string" && n) {
+        // 起動イベントに SKILL.md のパスがあれば、配置場所も特定できる
+        const p = findString(ev.data, ["skillPath", "path"]);
+        const dir = p ? dirOfSkillMd(normPath(p)) : "";
+        entries.push({ name: n, dir: dir || undefined, at: ev.at });
+      }
     } else if (ev.type === "session.usage_record") {
       inputTokens += num(ev.data["inputTokens"]);
       outputTokens += num(ev.data["outputTokens"]);
@@ -78,7 +96,7 @@ export function aggregateCopilotSessionText(text: string, meta: { sessionId: str
   return {
     sessionId: meta.sessionId, source: "copilot",
     at: parsed.startedAt, mtimeMs: meta.mtimeMs,
-    skills: countByName(entries),
+    skills: countBySkill(entries),
     inputTokens, outputTokens,
   };
 }
@@ -86,10 +104,29 @@ export function aggregateCopilotSessionText(text: string, meta: { sessionId: str
 /** Kiro の messages.jsonl から集計分を取り出す */
 export function aggregateKiroSessionText(text: string, meta: { sessionId: string; mtimeMs: number }): SessionSkillUsage {
   const parsed = parseKiroMessages(text);
+  // 取り込み文書に SKILL.md のパスがあれば、スキル名→フォルダの対応が取れる。
+  // 同名で複数のフォルダが現れる場合は配置場所を特定できないので付けない
+  const dirsByName = new Map<string, Set<string>>();
+  for (const inc of parsed.inclusions) {
+    for (const doc of inc.documents) {
+      const dir = dirOfSkillMd(normPath(displayPath(doc)));
+      if (!dir) continue;
+      const name = dir.split("/").pop() ?? "";
+      if (!name) continue;
+      const key = name.toLowerCase();
+      const set = dirsByName.get(key) ?? new Set<string>();
+      set.add(dir);
+      dirsByName.set(key, set);
+    }
+  }
+  const entries = parsed.activations.map(a => {
+    const dirs = dirsByName.get(a.name.toLowerCase());
+    return { name: a.name, dir: dirs && dirs.size === 1 ? [...dirs][0] : undefined, at: a.at };
+  });
   return {
     sessionId: meta.sessionId, source: "kiro",
     at: parsed.startedAt, mtimeMs: meta.mtimeMs,
-    skills: countByName(parsed.activations.map(a => ({ name: a.name, at: a.at }))),
+    skills: countBySkill(entries),
     credits: parsed.creditsTotal,
   };
 }
@@ -103,11 +140,21 @@ export function aggregateVSCodeSessionText(text: string, meta: { sessionId: stri
   // parse 側の activations は「最初の起動」を保持し、トレースの到達順の
   // 基準に使われているため、そちらは変えない
   const lastReadAt = new Map<string, string>();
+  const dirsByName = new Map<string, Set<string>>();
   for (const r of parsed.requests) {
     for (const t of r.tools) {
-      if (!t.skillRead || !t.readPath || !t.startedAt) continue;
+      if (!t.skillRead || !t.readPath) continue;
       const name = skillNameFromPath(t.readPath);
       if (!name) continue;
+      // 読み取りパスから配置場所（スキルフォルダ）も集める。同名で複数の
+      // フォルダが現れる場合は特定できないので付けない
+      const dir = dirOfSkillMd(normPath(t.readPath));
+      if (dir) {
+        const set = dirsByName.get(name) ?? new Set<string>();
+        set.add(dir);
+        dirsByName.set(name, set);
+      }
+      if (!t.startedAt) continue;
       const cur = lastReadAt.get(name);
       if (!cur || t.startedAt > cur) lastReadAt.set(name, t.startedAt);
     }
@@ -116,7 +163,10 @@ export function aggregateVSCodeSessionText(text: string, meta: { sessionId: stri
     sessionId: meta.sessionId, source: "vscode",
     at: parsed.startedAt, mtimeMs: meta.mtimeMs,
     // activations は名前ごとに重複を除いた形で返る（記録に再起動の区別が無い）
-    skills: parsed.activations.map(a => ({ name: a.name, activations: 1, lastAt: lastReadAt.get(a.name) ?? a.at })),
+    skills: parsed.activations.map(a => {
+      const dirs = dirsByName.get(a.name);
+      return { name: a.name, dir: dirs && dirs.size === 1 ? [...dirs][0] : undefined, activations: 1, lastAt: lastReadAt.get(a.name) ?? a.at };
+    }),
     credits,
   };
 }
@@ -134,7 +184,8 @@ export function aggregateSessionFile(info: SessionInfo): SessionSkillUsage | nul
   } catch { return null; }
 }
 
-/** セッション単位の実測をスキル単位に寄せる。
+/** セッション単位の実測をスキル単位に寄せる。配置場所（フォルダ）が
+ *  特定できた分は場所ごとに分け、特定できない分は dir が空の行に寄せる。
  *  並び: セッション数の多い順 → 起動回数の多い順 → 名前順 */
 export function mergeSkillTotals(usages: SessionSkillUsage[]): SkillTotal[] {
   const map = new Map<string, SkillTotal & { sessionIds: Set<string> }>();
@@ -144,15 +195,16 @@ export function mergeSkillTotals(usages: SessionSkillUsage[]): SkillTotal[] {
       // セッション開始時刻、それも無ければ記録の更新時刻へ落とす
       const usedMs = (s.lastAt ? Date.parse(s.lastAt) : NaN) || (u.at ? Date.parse(u.at) : NaN) || u.mtimeMs;
       const usedAt = s.lastAt ?? u.at ?? new Date(u.mtimeMs).toISOString();
-      let row = map.get(s.name);
+      const key = s.name + "\n" + (s.dir ?? "");
+      let row = map.get(key);
       if (!row) {
         row = {
-          name: s.name, sessions: 0, activations: 0,
+          name: s.name, dir: s.dir ?? "", sessions: 0, activations: 0,
           kiroSessions: 0, chatSessions: 0, copilotSessions: 0,
           kiroCredits: 0, chatCredits: 0, copilotInputTokens: 0, copilotOutputTokens: 0,
           lastUsedAt: null, lastUsedMs: 0, sessionIds: new Set<string>(),
         };
-        map.set(s.name, row);
+        map.set(key, row);
       }
       if (!row.sessionIds.has(u.sessionId)) {
         row.sessionIds.add(u.sessionId);
@@ -174,6 +226,6 @@ export function mergeSkillTotals(usages: SessionSkillUsage[]): SkillTotal[] {
     }
   }
   const rows = [...map.values()].map(({ sessionIds: _drop, ...rest }) => rest);
-  rows.sort((a, b) => b.sessions - a.sessions || b.activations - a.activations || a.name.localeCompare(b.name));
+  rows.sort((a, b) => b.sessions - a.sessions || b.activations - a.activations || a.name.localeCompare(b.name) || a.dir.localeCompare(b.dir));
   return rows;
 }
