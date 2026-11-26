@@ -598,24 +598,24 @@ export function activate(context: vscode.ExtensionContext): void {
     // ファイル単位の横断集計（Issue #41）: スキル別集計の行から呼ばれ、
     // ファイルの一覧は今開いているワークスペース（とユーザー全局）の
     // スキルから取る。到達は記録側のパス突き合わせで数える
-    vscode.commands.registerCommand("skilltrace.showFileUsage", async (nameArg?: unknown) => {
+    vscode.commands.registerCommand("skilltrace.showFileUsage", async (nameArg?: unknown, dirArg?: unknown) => {
       const name = typeof nameArg === "string" ? nameArg : "";
       if (!name) return;
+      const onlyDir = typeof dirArg === "string" ? dirArg : "";
       const generation = ++panelGeneration;
       const roots = [...(vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? []), homedir()];
       const graphs: Graph[] = [];
-      // 同名スキルの混在を避けるため、ルート（ワークスペース）ごとに
-      // グループ化する。同じルート内の各配置場所はコピーの関係としてまとめる
+      // 同名スキルは配置場所（スキルフォルダ）ごとに分けて集計する。
+      // スキル別集計の行から呼ばれた場合は、その行のフォルダだけを対象にする
       const groups: FileUsageGroup[] = [];
       for (const root of roots) {
         if (!root || !existsSync(root)) continue;
-        const dirs: string[] = [];
-        const g: Graph[] = [];
         for (const s of discoverSkills(root)) {
           if (s.name.toLowerCase() !== name.toLowerCase()) continue;
-          try { g.push(buildGraph(s.dir, root)); dirs.push(normPath(s.dir)); } catch { /* 読めないスキルは飛ばす */ }
+          const dir = normPath(s.dir);
+          if (onlyDir && dir !== onlyDir) continue;
+          try { groups.push({ label: s.dir, dirs: [dir], graphs: [buildGraph(s.dir, root)] }); } catch { /* 読めないスキルは飛ばす */ }
         }
-        if (g.length) groups.push({ label: root, dirs, graphs: g });
       }
       if (!groups.length) {
         showHtmlPanel(L("ファイル別の到達", "Per-file reach"), renderFileUsageMissingHtml(name, LANG));
@@ -633,7 +633,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await new Promise<void>(resolve => setImmediate(resolve));
           }
           if (generation === panelGeneration) {
-            const { results, unattributedSessions } = aggregateFileUsageGroups(groups, usages, name);
+            const { results, unattributedSessions } = aggregateFileUsageGroups(groups, usages, name, onlyDir ? { strict: true } : undefined);
             showHtmlPanel(L("ファイル別の到達", "Per-file reach"), renderFileUsageHtml(results, { scanned: usages.length, skipped, unattributed: unattributedSessions }, LANG));
           }
         },

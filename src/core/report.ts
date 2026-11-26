@@ -612,7 +612,28 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
   const dash = "—";
   const num = (v: number, has: boolean): string => (has ? fmt(v) : dash);
   const cred = (v: number, has: boolean): string => (has ? fmtCredits(v) : dash);
-  const verdictByName = new Map((verdicts?.skills ?? []).map(s => [s.name, s]));
+  const verdictByKey = new Map((verdicts?.skills ?? []).map(s => [s.name + "\n" + s.dir, s]));
+  // 同名スキルが複数の配置場所に分かれた場合だけ、場所で見分けられる表示にする
+  const locationLabel = (dir: string): string => {
+    if (!dir) return en ? "location unknown" : "場所不明";
+    const seg = dir.split("/").find(s => [".agents", ".github", ".kiro", ".claude"].includes(s));
+    return seg ?? dir.split("/").pop() ?? dir;
+  };
+  const nameCounts = new Map<string, number>();
+  for (const r of rows) nameCounts.set(r.name, (nameCounts.get(r.name) ?? 0) + 1);
+  const labelOf = (r: { name: string; dir: string }): string =>
+    (nameCounts.get(r.name) ?? 0) > 1 ? `${r.name} (${locationLabel(r.dir)})` : r.name;
+  // 短縮した配置名が同名行同士で重なる場合（別ルートの同じ .agents 等）は、
+  // 完全なフォルダパスに広げて区別できるようにする
+  const dedupeLabels = (entries: { name: string; dir: string; label: string }[]): Map<string, string> => {
+    const counts = new Map<string, number>();
+    for (const e of entries) counts.set(e.label, (counts.get(e.label) ?? 0) + 1);
+    const out = new Map<string, string>();
+    for (const e of entries) out.set(e.name + "\n" + e.dir, (counts.get(e.label) ?? 0) > 1 && e.dir ? `${e.name} (${e.dir})` : e.label);
+    return out;
+  };
+  const rowLabels = dedupeLabels(rows.map(r => ({ name: r.name, dir: r.dir, label: labelOf(r) })));
+  const labelOfRow = (r: { name: string; dir: string }): string => rowLabels.get(r.name + "\n" + r.dir) ?? labelOf(r);
   const body: string[] = [];
   body.push(`<h1>${en ? "Skill totals" : "スキル別集計"}</h1>`);
   body.push(`<div class="note">${en
@@ -624,11 +645,13 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
   }
   body.push(`<table class="totals"><thead><tr><th>${en ? "Skill" : "スキル"}</th><th>${en ? "Sessions" : "セッション数"}</th><th>${en ? "Activations" : "起動回数"}</th><th>${en ? "Verdicts (good / ok / bad)" : "評価（良かった／普通／悪かった）"}</th><th>${en ? "Good ratio" : "上手くいった率"}</th><th>${en ? "Credits (Kiro)" : "クレジット（Kiro）"}</th><th>${en ? "Credits (Copilot Chat)" : "クレジット（Copilot Chat）"}</th><th>${en ? "Input tokens (Copilot)" : "入力トークン（Copilot）"}</th><th>${en ? "Output tokens (Copilot)" : "出力トークン（Copilot）"}</th><th>${en ? "Last used" : "最終利用"}</th></tr></thead><tbody>`);
   for (const r of rows) {
-    const fileLink = `<a href="command:skilltrace.showFileUsage?${encodeURIComponent(JSON.stringify([r.name]))}">${en ? "By file" : "ファイル別"}</a>`;
-    const vt = verdictByName.get(r.name);
+    // 場所不明の行には「ファイル別」を付けない。フォルダを指定できないため、
+    // 開いてもその行のセッションに対応する集計にならない
+    const fileLink = r.dir ? ` <span class="tok"><a href="command:skilltrace.showFileUsage?${encodeURIComponent(JSON.stringify([r.name, r.dir]))}">${en ? "By file" : "ファイル別"}</a></span>` : "";
+    const vt = verdictByKey.get(r.name + "\n" + r.dir);
     const verdictCell = vt && vt.rated > 0 ? `${fmt(vt.good)} / ${fmt(vt.ok)} / ${fmt(vt.bad)}` : dash;
     const ratioCell = vt && vt.goodRatio !== null ? `${(vt.goodRatio * 100).toFixed(1)}%` : dash;
-    body.push(`<tr><td>${esc(r.name)} <span class="tok">${fileLink}</span></td><td>${fmt(r.sessions)}</td><td>${fmt(r.activations)}</td>`
+    body.push(`<tr><td>${esc(labelOfRow(r))}${fileLink}</td><td>${fmt(r.sessions)}</td><td>${fmt(r.activations)}</td>`
       + `<td>${verdictCell}</td><td>${ratioCell}</td>`
       + `<td>${cred(r.kiroCredits, r.kiroSessions > 0)}</td><td>${cred(r.chatCredits, r.chatSessions > 0)}</td>`
       + `<td>${num(r.copilotInputTokens, r.copilotSessions > 0)}</td><td>${num(r.copilotOutputTokens, r.copilotSessions > 0)}</td>`
@@ -650,14 +673,21 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
       const memoText = (m: AnnotationMemo): string =>
         (m.turn !== undefined ? (en ? `Turn ${m.turn}: ` : `ターン ${m.turn}: `) : "") + esc(m.text);
       const ranked = rankBadSkills(verdicts.skills);
+      const verdictNameCounts = new Map<string, number>();
+      for (const s of verdicts.skills) verdictNameCounts.set(s.name, (verdictNameCounts.get(s.name) ?? 0) + 1);
+      const verdictLabels = dedupeLabels(ranked.map(s => ({
+        name: s.name, dir: s.dir,
+        label: (verdictNameCounts.get(s.name) ?? 0) > 1 ? `${s.name} (${locationLabel(s.dir)})` : s.name,
+      })));
       body.push(`<h2>${en ? "Sessions rated bad" : "「悪かった」と評価されたセッション"}</h2>`);
       if (!ranked.length) {
         body.push(`<p>${en ? "No sessions were rated bad." : "「悪かった」と評価されたセッションはありませんでした。"}</p>`);
       } else {
         for (const s of ranked) {
-          body.push(`<h3>${esc(s.name)}${en ? ` — ${s.bad} bad` : ` — 「悪かった」${s.bad} 件`}</h3>`);
+          const sLabel = verdictLabels.get(s.name + "\n" + s.dir) ?? s.name;
+          body.push(`<h3>${esc(sLabel)}${en ? ` — ${s.bad} bad` : ` — 「悪かった」${s.bad} 件`}</h3>`);
           const items = verdicts.badSessions
-            .filter(b => b.skills.includes(s.name))
+            .filter(b => b.skills.some(x => x.name === s.name && x.dir === s.dir))
             .map(b => `<li>${esc(b.at ? formatLocalDateTime(b.at, lang) : dash)} — ${consumptionText(b)}${b.memos.length ? `<ul>${b.memos.map(m => `<li>${memoText(m)}</li>`).join("")}</ul>` : ""}</li>`);
           body.push(`<ul>${items.join("")}</ul>`);
         }
@@ -670,6 +700,9 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
   body.push(`<div class="note">${en
     ? "Credits and tokens are measured per session as a whole, not apportioned per skill: when several skills were activated in one session, the same session total counts toward each of them. Values in different units are never added together. For Copilot Chat, activations are counted per session (the record does not distinguish repeated activations within a session)."
     : "クレジットとトークンはセッション全体の実測で、スキルへの按分はしていません。複数のスキルが起動したセッションでは、同じセッション合計が各スキルに入ります。単位の異なる値は合算していません。Copilot Chat の起動回数は、記録の性質上セッション単位の有無で数えています。"}</div>`);
+  body.push(`<div class="note">${en
+    ? "Same-named skills at different locations are counted as separate skills. Sessions whose record does not identify the location are counted separately as \"location unknown\" (the distinction is shown only when a name is split across locations)."
+    : "同名のスキルは、配置場所ごとに別のスキルとして数えています。記録から配置場所が特定できないセッションは「場所不明」として分けて数えます（場所の区別は、同名が複数に分かれた場合だけ表示します）。"}</div>`);
   return pageShell(en ? "Skill totals" : "スキル別集計", body.join("\n"), lang);
 }
 

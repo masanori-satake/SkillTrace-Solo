@@ -67,7 +67,7 @@ test("verdicts: 複数スキルが起動したセッションでは、評価も�
   }
   // セッション自体は1件だけが「悪かった」一覧に入る
   assert.equal(agg.badSessions.length, 1);
-  assert.deepEqual(agg.badSessions[0].skills, ["alpha", "beta"]);
+  assert.deepEqual(agg.badSessions[0].skills, [{ name: "alpha", dir: "" }, { name: "beta", dir: "" }]);
 });
 
 test("verdicts: 同じセッションに評価が2つあれば、最新のものだけを数える", () => {
@@ -177,7 +177,7 @@ test("verdicts: 評価が無くメモだけのスキルは goodRatio が null", 
 });
 
 test("verdicts: rankBadSkills は悪かった件数→消費の順で並べ、悪かったの無いスキルを除く", () => {
-  const base = { ok: 0, goodRatio: null, memos: [] as never[] };
+  const base = { ok: 0, goodRatio: null, memos: [] as never[], dir: "" };
   const ranked = rankBadSkills([
     { ...base, name: "few", good: 0, bad: 1, rated: 3, kiroCredits: 99, chatCredits: 0, copilotInputTokens: 0, copilotOutputTokens: 0 },
     { ...base, name: "many-light", good: 0, bad: 2, rated: 2, kiroCredits: 1, chatCredits: 0, copilotInputTokens: 0, copilotOutputTokens: 0 },

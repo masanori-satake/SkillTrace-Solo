@@ -20,8 +20,8 @@ test("aggregate copilot: skill.invoked の名前で数え、usage_record を積�
   assert.equal(u.source, "copilot");
   assert.equal(u.at, "2026-11-09T01:00:00.000Z");
   assert.deepEqual(u.skills, [
-    { name: "alpha", activations: 2, lastAt: "2026-11-09T01:05:00.000Z" },
-    { name: "beta", activations: 1, lastAt: "2026-11-09T01:06:00.000Z" },
+    { name: "alpha", dir: "c:/w/.github/skills/alpha", activations: 2, lastAt: "2026-11-09T01:05:00.000Z" },
+    { name: "beta", dir: "c:/w/.github/skills/beta", activations: 1, lastAt: "2026-11-09T01:06:00.000Z" },
   ]);
   assert.equal(u.inputTokens, 150);
   assert.equal(u.outputTokens, 15);
@@ -57,7 +57,7 @@ test("aggregate vscode: スキル読み取りを有無で数え、リクエス�
   ].join("\n");
   const u = aggregateVSCodeSessionText(text, { sessionId: "v1", mtimeMs: 789 });
   assert.equal(u.source, "vscode");
-  assert.deepEqual(u.skills, [{ name: "MySkill", activations: 1, lastAt: "1970-01-01T00:00:03.000Z" }]);
+  assert.deepEqual(u.skills, [{ name: "MySkill", dir: "c:/work/.github/skills/myskill", activations: 1, lastAt: "1970-01-01T00:00:03.000Z" }]);
   assert.ok(Math.abs((u.credits ?? 0) - 0.75) < 1e-9);
 });
 
@@ -79,7 +79,51 @@ test("aggregate vscode: 同じスキルの再読み取りでは回数は 1 の�
     JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r2", timestamp: t2, message: { text: "again" }, response: [part(t2)], promptTokens: 1, completionTokens: 1, copilotCredits: 0 }] }),
   ].join("\n");
   const u = aggregateVSCodeSessionText(text, { sessionId: "v2", mtimeMs: t2 });
-  assert.deepEqual(u.skills, [{ name: "MySkill", activations: 1, lastAt: "2026-11-09T03:30:00.000Z" }]);
+  assert.deepEqual(u.skills, [{ name: "MySkill", dir: "c:/work/.github/skills/myskill", activations: 1, lastAt: "2026-11-09T03:30:00.000Z" }]);
+});
+
+test("aggregate vscode: 同じスキルを2か所から読んだセッションは、場所ごとに行が分かれる", () => {
+  const part = (loc: string, callId: string, startedAt: number) => {
+    const uri = `file:///c%3A/work/${loc}/skills/MySkill/SKILL.md?vscodeLinkType%3Dskill`;
+    return {
+      kind: "toolInvocationSerialized", toolId: "copilot_readFile", toolCallId: callId, isComplete: true,
+      startedAt, completedAt: startedAt + 1,
+      invocationMessage: {
+        value: `Reading skill [MySkill](${uri})`,
+        uris: { [decodeURIComponent(uri)]: { $mid: 1, path: `/c:/work/${loc}/skills/MySkill/SKILL.md`, scheme: "file", query: "vscodeLinkType=skill" } },
+      },
+    };
+  };
+  const text = [
+    JSON.stringify({ kind: 0, v: { version: 3, creationDate: 1000, sessionId: "v3", requests: [] } }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r1", timestamp: 2000, message: { text: "hi" }, response: [part(".github", "c1", 3000), part(".kiro", "c2", 5000)], promptTokens: 100, completionTokens: 5, copilotCredits: 0.5 }] }),
+  ].join("\n");
+  const u = aggregateVSCodeSessionText(text, { sessionId: "v3", mtimeMs: 789 });
+  assert.equal(u.skills.length, 2, "読み取りパスが分かる配置は、場所ごとに行が分かれる");
+  const gh = u.skills.find(s => s.dir === "c:/work/.github/skills/myskill");
+  const kr = u.skills.find(s => s.dir === "c:/work/.kiro/skills/myskill");
+  assert.ok(gh && kr);
+  assert.equal(gh.lastAt, "1970-01-01T00:00:03.000Z");
+  assert.equal(kr.lastAt, "1970-01-01T00:00:05.000Z");
+});
+
+test("merge: 同名スキルは配置場所ごとに分かれ、特定できない分は場所なしの行になる", () => {
+  const rows = mergeSkillTotals([
+    { sessionId: "s1", source: "copilot", at: null, mtimeMs: 1000, skills: [{ name: "dup", dir: "c:/w/.agents/skills/dup", activations: 1, lastAt: null }], inputTokens: 10, outputTokens: 1 },
+    { sessionId: "s2", source: "copilot", at: null, mtimeMs: 2000, skills: [{ name: "dup", dir: "c:/w/.kiro/skills/dup", activations: 2, lastAt: null }], inputTokens: 20, outputTokens: 2 },
+    { sessionId: "s3", source: "copilot", at: null, mtimeMs: 3000, skills: [{ name: "dup", activations: 4, lastAt: null }], inputTokens: 40, outputTokens: 4 },
+  ]);
+  assert.equal(rows.length, 3, "同名でも場所が違えば別の行になる");
+  const agents = rows.find(r => r.dir === "c:/w/.agents/skills/dup")!;
+  const kiro = rows.find(r => r.dir === "c:/w/.kiro/skills/dup")!;
+  const unknown = rows.find(r => r.dir === "")!;
+  assert.equal(agents.sessions, 1);
+  assert.equal(agents.copilotInputTokens, 10);
+  assert.equal(kiro.sessions, 1);
+  assert.equal(kiro.activations, 2);
+  assert.equal(kiro.copilotInputTokens, 20);
+  assert.equal(unknown.sessions, 1);
+  assert.equal(unknown.activations, 4);
 });
 
 test("merge: 供給源を混ぜずに寄せ、セッション消費は各スキルにセッション合計で入る", () => {
