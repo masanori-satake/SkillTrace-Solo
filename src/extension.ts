@@ -488,11 +488,11 @@ export function activate(context: vscode.ExtensionContext): void {
       if (summaryPanel) {
         summaryPanel.title = title;
         summaryPanel.webview.html = html;
-        summaryPanel.reveal(vscode.ViewColumn.Beside);
+        summaryPanel.reveal(vscode.ViewColumn.Active);
         return;
       }
       summaryPanel = vscode.window.createWebviewPanel(
-        "skilltraceSummary", title, vscode.ViewColumn.Beside,
+        "skilltraceSummary", title, vscode.ViewColumn.Active,
         // サマリ HTML は外部リソースを参照しないため、読み込み元は空に固定する（監査 2026-11-22）
         { enableScripts: true, enableCommandUris: ["skilltrace.showSkillTotals", "skilltrace.showFileUsage"], retainContextWhenHidden: true, localResourceRoots: [] },
       );
