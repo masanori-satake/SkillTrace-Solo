@@ -321,6 +321,8 @@ export interface KiroSkillPartInput {
   skillDirAbs: string;
   /** このスキルが disclose_context で起動されたか */
   disclosed: boolean;
+  /** 記録に残るパスから所在を特定したスキルか（Issue #60） */
+  fromRecord?: boolean;
 }
 
 export function buildKiroSessionTrace(
@@ -464,6 +466,8 @@ export function buildKiroSessionTrace(
   // 起動の事実が表示から消えないよう、名前を残す
   const discoveredNames = new Set(parts.map(p => basename(resolve(p.skillDirAbs))));
   const undiscoveredSkills = [...new Set(parsed.activations.map(a => a.name))].filter(n => !discoveredNames.has(n));
+  const recordLocatedSkills = parts.filter(p => p.fromRecord)
+    .map(p => ({ name: basename(resolve(p.skillDirAbs)), dir: toSlashes(resolve(p.skillDirAbs)) }));
 
   const lastUsage = parsed.contextUsageSeries.length ? parsed.contextUsageSeries[parsed.contextUsageSeries.length - 1] : null;
   return {
@@ -491,5 +495,6 @@ export function buildKiroSessionTrace(
     lastContextUsageRatio: lastUsage ? lastUsage.ratio : null,
     contextLoads,
     undiscoveredSkills,
+    recordLocatedSkills: recordLocatedSkills.length ? recordLocatedSkills : undefined,
   };
 }

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.17.0] - 2026-11-26
+
+### Added
+
+- Skills activated outside the session's workspace — for example in a dedicated skills repository — can now be located from the paths left in the record (Issue #60). When an activated skill is not found by the usual discovery, the paths appearing in the record (read paths, invocation strings, inclusion documents) are searched for a `<skill root>/skills/<name>` location; if that folder exists and contains SKILL.md, the skill is treated as found, so its reference tree, arrivals and token totals are shown as usual. The session summary and the history tree note that the skill was located from the record and show where it lives. Only paths that actually appear in the record are used; no additional directories are scanned, and skills that still cannot be located keep the existing "not found" note.
+
+### 追加 (Added)
+
+- セッションのワークスペース外で起動したスキル（スキル専用リポジトリにあるスキルなど）を、記録に残るパスから特定できるようにした（Issue #60）。通常の探索で見つからない起動スキルについて、記録内のパス（読み取りパス、起動イベントの文字列、取り込み文書のパス）から「<スキルルート>/skills/<名前>」の所在を探し、そのフォルダが実在して SKILL.md を含む場合に、そのスキルとして扱う。参照ツリー・到達の内訳・推定トークン合計が通常どおり表示される。セッションサマリと履歴ツリーには、記録から特定したことと所在を注記する。使うのは記録に実際に現れたパスだけで、追加のディレクトリ走査はしない。特定できなかったスキルは従来どおり「見つかりませんでした」の注記のままになる。
+
 ## [1.16.2] - 2026-11-22
 
 ### Fixed

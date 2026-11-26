@@ -6,8 +6,8 @@ import test from "node:test";
 import { buildGraph, MAX_GRAPH_NODES } from "../core/graph";
 import { parseEventsText } from "../core/events";
 import { buildSessionTrace, buildTrace, extractRecordedPaths, firstHeading, gradeCertaintyLabel } from "../core/trace";
-import { capSessionsBySource, formatLocalDateTime, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
-import { langFromEnv, sanitizeFilenamePart, undiscoveredSkillsNote } from "../core/common";
+import { capSessionsBySource, formatLocalDateTime, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
+import { langFromEnv, recordLocatedSkillsNote, sanitizeFilenamePart, undiscoveredSkillsNote } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
 
 const root = join(__dirname, "..", "..", "test-fixtures");
@@ -521,4 +521,39 @@ test("graph does not fetch headings outside the allowed roots (audit 2026-11-22)
     assert.equal(byName.get("outside.md")?.title, null);
     assert.equal(byName.get("outside.md")?.boundary, true);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("locateSkillFromPaths: 記録のパスからワークスペース外スキルを特定する（Issue #60）", () => {
+  const base = mkdtempSync(join(tmpdir(), "skilltrace-locate-"));
+  try {
+    const skillDir = join(base, "diataxis_skills", ".github", "skills", "diataxis-reviewer");
+    mkdirSync(join(skillDir, "references"), { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "# reviewer\n");
+    const found = (p: string) => p.replace(/\\/g, "/");
+    // references の読み取りパスから特定できる（スラッシュ・バックスラッシュ両対応）
+    assert.equal(found(locateSkillFromPaths("diataxis-reviewer", [join(skillDir, "references", "review-criteria.md")])!), found(skillDir));
+    assert.equal(found(locateSkillFromPaths("diataxis-reviewer", [`${base.replace(/\//g, "\\")}\\diataxis_skills\\.github\\skills\\diataxis-reviewer\\SKILL.md`])!), found(skillDir));
+    // 名前が違えば特定しない／標準ルート外の同名フォルダは候補にしない
+    assert.equal(locateSkillFromPaths("diataxis-creator", [join(skillDir, "SKILL.md")]), null);
+    const stray = join(base, "elsewhere", "diataxis-reviewer");
+    mkdirSync(stray, { recursive: true });
+    writeFileSync(join(stray, "SKILL.md"), "# stray\n");
+    assert.equal(locateSkillFromPaths("diataxis-reviewer", [join(stray, "SKILL.md")]), null);
+    // SKILL.md が無ければ特定しない／相対パスの断片は対象にしない
+    const noSkill = join(base, "repo2", ".agents", "skills", "ghost");
+    mkdirSync(noSkill, { recursive: true });
+    assert.equal(locateSkillFromPaths("ghost", [join(noSkill, "references", "x.md")]), null);
+    assert.equal(locateSkillFromPaths("diataxis-reviewer", ["/../diataxis-reviewer/references/compass.md", "skills/diataxis-reviewer/SKILL.md"]), null);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("recordLocatedSkillsNote: 特定できたスキルの注記文", () => {
+  assert.equal(recordLocatedSkillsNote(undefined), "");
+  assert.equal(recordLocatedSkillsNote([]), "");
+  const note = recordLocatedSkillsNote([{ name: "diataxis-reviewer", dir: "C:/git_workspace/diataxis_skills/.github/skills/diataxis-reviewer" }]);
+  assert.ok(note.includes("diataxis-reviewer"));
+  assert.ok(note.includes("ワークスペース外"));
+  assert.ok(recordLocatedSkillsNote([{ name: "x", dir: "/tmp/x" }], "en").includes("located from paths in the record"));
 });

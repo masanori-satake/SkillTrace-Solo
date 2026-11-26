@@ -6,7 +6,7 @@
 import type { Graph } from "./graph";
 import type { SessionTrace, SkillPart, TraceNode } from "./trace";
 import { gradeCertaintyLabel } from "./trace";
-import { esc, fmt, fmtCredits, blockBar, countTools, toolColumns, toolGroupsPresent, toolGroupLabel, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, glossaryFor, type Lang } from "./common";
+import { esc, fmt, fmtCredits, blockBar, countTools, toolColumns, toolGroupsPresent, toolGroupLabel, inputSplit, cacheWriteObservation, firstContextUsageRatio, undiscoveredSkillsNote, recordLocatedSkillsNote, glossaryFor, type Lang } from "./common";
 import { formatLocalDateTime } from "./sessions";
 import { compareTs, formatAnnotationValue, type Annotation } from "./annotations";
 
@@ -397,7 +397,7 @@ ${en
     : `| スキル | 最初の到達順 | 到達の内訳（確度別） | 記録なし | 全ファイル | 到達分の推定トークン合計 | スキル全体の推定トークン合計 |
 | --- | ---: | --- | ---: | ---: | ---: | ---: |`}
 ${skillRows}
-${st.skills.length ? (undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace) ? `\n${undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace)}` : "") : undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace) ? `\n${undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace)}${en ? " The reference tree for this skill cannot be shown." : " そのため、このスキルについては参照ツリーを表示できません。"}` : (en ? "\nNo skill activation was detected in this session." : "\nこのセッションではスキル起動は検出されませんでした。")}
+${st.skills.length ? (undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace) ? `\n${undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace)}` : "") : undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace) ? `\n${undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace)}${en ? " The reference tree for this skill cannot be shown." : " そのため、このスキルについては参照ツリーを表示できません。"}` : (en ? "\nNo skill activation was detected in this session." : "\nこのセッションではスキル起動は検出されませんでした。")}${recordLocatedSkillsNote(st.recordLocatedSkills, lang) ? `\n${recordLocatedSkillsNote(st.recordLocatedSkills, lang)}` : ""}
 
 ## ${en ? "Arrival flow" : "到達の流れ"}
 
@@ -614,7 +614,7 @@ ${metaHtml(st, lang)}
 ${promptHtml(st)}
 <h2 style="${H.h2}">${en ? "Activated skills" : "起動したスキル"}</h2>
 <table style="${H.table}"><tr><th style="${H.cell}">${en ? "Skill" : "スキル"}</th><th style="${H.cell}">${en ? "First arrival" : "最初の到達順"}</th><th style="${H.cell}">${en ? "Arrivals by certainty" : "到達の内訳（確度別）"}</th><th style="${H.cell}">${en ? "No record" : "記録なし"}</th><th style="${H.cell}">${en ? "All files" : "全ファイル"}</th><th style="${H.cell}">${en ? "Est. tokens (arrived)" : "到達分の推定トークン合計"}</th><th style="${H.cell}">${en ? "Est. tokens (whole skill)" : "スキル全体の推定トークン合計"}</th></tr>${skillRows}</table>
-${st.skills.length ? (undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace) ? `<p>${esc(undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace))}</p>` : "") : undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace) ? `<p>${esc(undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace))}${en ? " The reference tree for this skill cannot be shown." : " そのため、このスキルについては参照ツリーを表示できません。"}</p>` : `<p>${en ? "No skill activation was detected in this session." : "このセッションではスキル起動は検出されませんでした。"}</p>`}
+${st.skills.length ? (undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace) ? `<p>${esc(undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace))}</p>` : "") : undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace) ? `<p>${esc(undiscoveredSkillsNote(st.undiscoveredSkills, lang, st.session.workspace))}${en ? " The reference tree for this skill cannot be shown." : " そのため、このスキルについては参照ツリーを表示できません。"}</p>` : `<p>${en ? "No skill activation was detected in this session." : "このセッションではスキル起動は検出されませんでした。"}</p>`}${recordLocatedSkillsNote(st.recordLocatedSkills, lang) ? `<p>${esc(recordLocatedSkillsNote(st.recordLocatedSkills, lang))}</p>` : ""}
 <h2 style="${H.h2}">${en ? "Arrival flow" : "到達の流れ"}</h2>
 ${trees}
 ${contextLoads}

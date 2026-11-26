@@ -445,6 +445,12 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
             `起動したスキル「${name}」は現在のワークスペースで見つかりませんでした${hint ? `（このセッションは ${hint} で実行されました。開くと参照ツリーを表示できます）` : ""}`,
             `The activated skill "${name}" was not found in the current workspace${hint ? ` (this session ran in ${hint}; open it to see the reference tree)` : ""}`) } as NoteEl);
         }
+        // 記録のパスから所在を特定したスキルは、出自が分かるよう注記を出す（Issue #60）
+        for (const located of trace.recordLocatedSkills ?? []) {
+          out.push({ kind: "note", session: element.session, text: this.L(
+            `スキル「${located.name}」は記録に残るパスから所在を特定しました（ワークスペース外: ${located.dir}）`,
+            `Skill "${located.name}" was located from paths in the record (outside the workspace: ${located.dir})`) } as NoteEl);
+        }
         // トレースはあるのに表示できる項目が無い場合も、空の展開で終わらせない
         if (!out.length) {
           out.push({ kind: "note", session: element.session, text: this.L("このセッションには表示できる項目がありません（スキル起動・常時文脈・読み取りの記録なし）", "Nothing to show in this session (no records of skill activation, always-loaded context, or reads)") } as NoteEl);

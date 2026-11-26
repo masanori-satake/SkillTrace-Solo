@@ -149,6 +149,16 @@ export function undiscoveredSkillsNote(names: string[] | undefined, lang: Lang =
     : `このセッションは ${workspace} で実行されました。そのワークスペースを開くと、参照ツリーを表示できます。`);
 }
 
+/** 記録に残るパスから所在を特定できたスキルへの注記文（無ければ空文字列）。
+ *  ワークスペース外のスキルを通常の発見と区別できるよう、出自と場所を示す（Issue #60） */
+export function recordLocatedSkillsNote(located: { name: string; dir: string }[] | undefined, lang: Lang = "ja"): string {
+  if (!located?.length) return "";
+  const list = located.map(s => `${s.name} (${s.dir})`).join(", ");
+  return lang === "en"
+    ? `The following skills were located from paths in the record (outside the session's workspace): ${list}`
+    : `次のスキルは、記録に残るパスから所在を特定しました（セッションのワークスペース外）: ${list}`;
+}
+
 /** Kiro: 最初に記録された文脈使用率（contextUsage の最初のスナップショット。
  *  最初のターンの途中で記録されるため「開始前」の値ではない。常時文脈の重さの目安として使う） */
 export function firstContextUsageRatio(series?: { ratio: number }[] | null): number | null {
