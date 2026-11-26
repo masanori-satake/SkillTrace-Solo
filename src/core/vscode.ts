@@ -513,8 +513,13 @@ function matchNodes(text: string, nodesById: Map<string, GraphNode>): GraphNode[
       const suffix = segs.slice(-3).join("/");
       if (suffix.length > 8 && t.includes(suffix)) { hits.push(n); continue; }
       const tail2 = segs.slice(-2).join("/");
-      if (t.endsWith("/" + tail2) || t.includes("/" + tail2)) hits.push(n);
+      if (t.endsWith("/" + tail2) || t.includes("/" + tail2)) { hits.push(n); continue; }
     }
+    // スキルフォルダ基準の相対パスで記録された読み取り（例: ../references/x.md）は、
+    // 正規化で先頭の ../ が落ちて references/x.md になる。この形はスキル内の相対位置
+    // （relToSkill）と完全一致すれば、そのノードの読み取りとみなす。ファイル名だけの
+    // 断片では誤対応になるため、区切りを含む場合だけに限る（Issue #62）
+    if (t.includes("/") && t === normPath(n.relToSkill)) hits.push(n);
   }
   return hits;
 }

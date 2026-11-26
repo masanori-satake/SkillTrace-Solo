@@ -190,6 +190,34 @@ test("kiro trace: steering_inclusion documents give grade A", () => {
   assert.equal(byName.get("level2.md")?.grade, "A");
 });
 
+test("kiro trace: skill-relative read paths are attributed to nodes (Issue #62)", () => {
+  // 読み取りパスがスキルフォルダ基準の相対パス（../references/…）で記録された
+  // セッション。グラフにあるファイルはノードへ対応付き、「スキル外」に入らない。
+  // グラフにないファイルと、ファイル名だけの断片は従来どおり「スキル外」のまま。
+  const rows = [
+    { id: "r1", timestamp: "2026-11-26T01:00:00.000Z", payload: { type: "session_start", content: "" } },
+    { id: "r2", timestamp: "2026-11-26T01:00:01.000Z", payload: { type: "tool_call", actionType: "read_files", args: { path: "../references/level1.md", offset: null, limit: null }, executionId: "e1", toolCallId: "tc1" } },
+    { id: "r3", timestamp: "2026-11-26T01:00:02.000Z", payload: { type: "tool_result", executionId: "e1", toolCallId: "tc1", success: true, content: "# level1" } },
+    { id: "r4", timestamp: "2026-11-26T01:00:03.000Z", payload: { type: "tool_call", actionType: "read_files", args: { path: "../references/not-in-graph.md", offset: null, limit: null }, executionId: "e1", toolCallId: "tc2" } },
+    { id: "r5", timestamp: "2026-11-26T01:00:04.000Z", payload: { type: "tool_result", executionId: "e1", toolCallId: "tc2", success: true, content: "# other" } },
+    { id: "r6", timestamp: "2026-11-26T01:00:05.000Z", payload: { type: "tool_call", actionType: "read_files", args: { path: "../level2.md", offset: null, limit: null }, executionId: "e1", toolCallId: "tc3" } },
+    { id: "r7", timestamp: "2026-11-26T01:00:06.000Z", payload: { type: "tool_result", executionId: "e1", toolCallId: "tc3", success: true, content: "# level2" } },
+  ].map(o => JSON.stringify(o)).join("\n");
+  const parsed = parseKiroMessages(rows);
+  const graph = buildGraph(kiroSkillDir, kiroWorkspace);
+  const trace = buildKiroSessionTrace(parsed, [{ graph, skillDirAbs: kiroSkillDir, disclosed: false }], {
+    sessionId: "sess_rel",
+    workspaceAbs: kiroWorkspace,
+  });
+  const byName = new Map(trace.skills[0].nodes.map(n => [n.name, n]));
+  // ../references/level1.md は level1 ノードの読み取り（確度 B）になる
+  assert.equal(byName.get("level1.md")?.grade, "B");
+  // ファイル名だけに潰れる ../level2.md は level2 ノードに対応付かない
+  assert.equal(byName.get("level2.md")?.grade, null);
+  // 「スキル外」はグラフにない相対パスとファイル名だけの断片の2件
+  assert.equal(trace.outsideReads.length, 2);
+});
+
 test("kiro english rendering: summary, matrix legend, markdown and copy are in English", () => {
   const parsed = parseKiroMessages(messagesText());
   const graph = buildGraph(kiroSkillDir, kiroWorkspace);

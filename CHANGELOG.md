@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.17.1] - 2026-11-26
+
+### Fixed
+
+- Kiro session summaries: reads recorded with skill-relative paths (such as `../references/<file>`) are now attributed to the matching reference-graph node instead of being listed as files read outside the skill. A recorded path is matched when it equals the node's path relative to the skill folder; reads that match no node, and bare file-name fragments, are still listed as outside the skill (Issue #62). The same matching now applies to VS Code Copilot sessions.
+
+### 修正 (Fixed)
+
+- Kiro のセッションサマリで、スキルフォルダ基準の相対パス（`../references/<ファイル>` など）で記録された読み取りが、「スキル外で読まれたファイル」ではなく、参照グラフのノードへの読み取りとして対応付くようにした。記録されたパスと、スキルフォルダからの相対位置が一致する場合に当てる。どのノードにも一致しない読み取りと、ファイル名だけの断片は、従来どおり「スキル外」のままになる（Issue #62）。同じ照合を VS Code Copilot のセッションにも適用した。
+
 ## [1.17.0] - 2026-11-26
 
 ### Added
