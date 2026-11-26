@@ -633,7 +633,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await new Promise<void>(resolve => setImmediate(resolve));
           }
           if (generation === panelGeneration) {
-            const { results, unattributedSessions } = aggregateFileUsageGroups(groups, usages, name);
+            const { results, unattributedSessions } = aggregateFileUsageGroups(groups, usages, name, onlyDir ? { strict: true } : undefined);
             showHtmlPanel(L("ファイル別の到達", "Per-file reach"), renderFileUsageHtml(results, { scanned: usages.length, skipped, unattributed: unattributedSessions }, LANG));
           }
         },

@@ -82,6 +82,31 @@ test("aggregate vscode: 同じスキルの再読み取りでは回数は 1 の�
   assert.deepEqual(u.skills, [{ name: "MySkill", dir: "c:/work/.github/skills/myskill", activations: 1, lastAt: "2026-11-09T03:30:00.000Z" }]);
 });
 
+test("aggregate vscode: 同じスキルを2か所から読んだセッションは、場所ごとに行が分かれる", () => {
+  const part = (loc: string, callId: string, startedAt: number) => {
+    const uri = `file:///c%3A/work/${loc}/skills/MySkill/SKILL.md?vscodeLinkType%3Dskill`;
+    return {
+      kind: "toolInvocationSerialized", toolId: "copilot_readFile", toolCallId: callId, isComplete: true,
+      startedAt, completedAt: startedAt + 1,
+      invocationMessage: {
+        value: `Reading skill [MySkill](${uri})`,
+        uris: { [decodeURIComponent(uri)]: { $mid: 1, path: `/c:/work/${loc}/skills/MySkill/SKILL.md`, scheme: "file", query: "vscodeLinkType=skill" } },
+      },
+    };
+  };
+  const text = [
+    JSON.stringify({ kind: 0, v: { version: 3, creationDate: 1000, sessionId: "v3", requests: [] } }),
+    JSON.stringify({ kind: 2, k: ["requests"], v: [{ requestId: "r1", timestamp: 2000, message: { text: "hi" }, response: [part(".github", "c1", 3000), part(".kiro", "c2", 5000)], promptTokens: 100, completionTokens: 5, copilotCredits: 0.5 }] }),
+  ].join("\n");
+  const u = aggregateVSCodeSessionText(text, { sessionId: "v3", mtimeMs: 789 });
+  assert.equal(u.skills.length, 2, "読み取りパスが分かる配置は、場所ごとに行が分かれる");
+  const gh = u.skills.find(s => s.dir === "c:/work/.github/skills/myskill");
+  const kr = u.skills.find(s => s.dir === "c:/work/.kiro/skills/myskill");
+  assert.ok(gh && kr);
+  assert.equal(gh.lastAt, "1970-01-01T00:00:03.000Z");
+  assert.equal(kr.lastAt, "1970-01-01T00:00:05.000Z");
+});
+
 test("merge: 同名スキルは配置場所ごとに分かれ、特定できない分は場所なしの行になる", () => {
   const rows = mergeSkillTotals([
     { sessionId: "s1", source: "copilot", at: null, mtimeMs: 1000, skills: [{ name: "dup", dir: "c:/w/.agents/skills/dup", activations: 1, lastAt: null }], inputTokens: 10, outputTokens: 1 },

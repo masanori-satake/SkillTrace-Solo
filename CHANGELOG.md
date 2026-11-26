@@ -5,10 +5,12 @@
 ### Changed
 
 - Skill totals and per-file reach no longer treat same-named skills at different locations as copies of one skill. Each location is now counted as an independent skill: totals are split by the skill folder identified in the session record (sessions whose record does not identify the location are counted separately as "location unknown"), per-file reach is aggregated per skill folder with its own file list, and verdict counts follow the same split. The glossary entry for "canonical" was removed.
+- Refinements from review: a Copilot Chat session that read the same skill from two folders now counts toward both locations; when the shortened location label would collide between same-named rows, the full folder path is shown instead; the "location unknown" row no longer carries a per-file link; and opening per-file reach from a totals row now counts only sessions recorded against the chosen folder.
 
 ### 変更 (Changed)
 
 - スキル別集計とファイル別の到達で、同名スキルを「コピー」として1つに数えるのをやめ、配置場所ごとに独立したスキルとして数えるようにした。集計は、セッション記録から特定できたスキルフォルダごとに分け（特定できないセッションは「場所不明」として分ける）、ファイル別の到達もフォルダごとに、そのフォルダ自身のファイル一覧で集計する。評価（注釈）の集計も同じ分け方に揃えた。用語集の「正本（canonical）」の項目は削除した
+- レビューでの手直し: Copilot Chat のセッションが同じスキルを2か所から読んだ場合は両方の場所に数える。短縮した配置名が同名行同士で重なる場合は完全なフォルダパスを表示する。「場所不明」の行には「ファイル別」リンクを付けない。集計表の行からファイル別の到達を開いた場合は、選んだフォルダのセッションだけを数える
 
 ## [1.17.1] - 2026-11-26
 

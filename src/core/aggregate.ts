@@ -140,14 +140,15 @@ export function aggregateVSCodeSessionText(text: string, meta: { sessionId: stri
   // parse 側の activations は「最初の起動」を保持し、トレースの到達順の
   // 基準に使われているため、そちらは変えない
   const lastReadAt = new Map<string, string>();
+  const lastReadAtByDir = new Map<string, string>();
   const dirsByName = new Map<string, Set<string>>();
   for (const r of parsed.requests) {
     for (const t of r.tools) {
       if (!t.skillRead || !t.readPath) continue;
       const name = skillNameFromPath(t.readPath);
       if (!name) continue;
-      // 読み取りパスから配置場所（スキルフォルダ）も集める。同名で複数の
-      // フォルダが現れる場合は特定できないので付けない
+      // 読み取りパスから配置場所（スキルフォルダ）も集める。各読み取りが
+      // 自分のパスを持つため、同名で複数のフォルダが現れても割り当てられる
       const dir = dirOfSkillMd(normPath(t.readPath));
       if (dir) {
         const set = dirsByName.get(name) ?? new Set<string>();
@@ -157,15 +158,26 @@ export function aggregateVSCodeSessionText(text: string, meta: { sessionId: stri
       if (!t.startedAt) continue;
       const cur = lastReadAt.get(name);
       if (!cur || t.startedAt > cur) lastReadAt.set(name, t.startedAt);
+      if (dir) {
+        const key = name + "\n" + dir;
+        const curDir = lastReadAtByDir.get(key);
+        if (!curDir || t.startedAt > curDir) lastReadAtByDir.set(key, t.startedAt);
+      }
     }
   }
   return {
     sessionId: meta.sessionId, source: "vscode",
     at: parsed.startedAt, mtimeMs: meta.mtimeMs,
-    // activations は名前ごとに重複を除いた形で返る（記録に再起動の区別が無い）
-    skills: parsed.activations.map(a => {
+    // activations は名前ごとに重複を除いた形で返る（記録に再起動の区別が無い）。
+    // 配置場所が分かる場合はフォルダごとに行を分ける（同じセッションで
+    // 2か所から読まれた場合も、それぞれの場所に数える）
+    skills: parsed.activations.flatMap(a => {
       const dirs = dirsByName.get(a.name);
-      return { name: a.name, dir: dirs && dirs.size === 1 ? [...dirs][0] : undefined, activations: 1, lastAt: lastReadAt.get(a.name) ?? a.at };
+      if (!dirs || dirs.size === 0) return [{ name: a.name, activations: 1, lastAt: lastReadAt.get(a.name) ?? a.at }];
+      return [...dirs].map(dir => ({
+        name: a.name, dir, activations: 1,
+        lastAt: lastReadAtByDir.get(a.name + "\n" + dir) ?? lastReadAt.get(a.name) ?? a.at,
+      }));
     }),
     credits,
   };

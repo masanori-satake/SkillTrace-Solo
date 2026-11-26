@@ -623,6 +623,17 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
   for (const r of rows) nameCounts.set(r.name, (nameCounts.get(r.name) ?? 0) + 1);
   const labelOf = (r: { name: string; dir: string }): string =>
     (nameCounts.get(r.name) ?? 0) > 1 ? `${r.name} (${locationLabel(r.dir)})` : r.name;
+  // 短縮した配置名が同名行同士で重なる場合（別ルートの同じ .agents 等）は、
+  // 完全なフォルダパスに広げて区別できるようにする
+  const dedupeLabels = (entries: { name: string; dir: string; label: string }[]): Map<string, string> => {
+    const counts = new Map<string, number>();
+    for (const e of entries) counts.set(e.label, (counts.get(e.label) ?? 0) + 1);
+    const out = new Map<string, string>();
+    for (const e of entries) out.set(e.name + "\n" + e.dir, (counts.get(e.label) ?? 0) > 1 && e.dir ? `${e.name} (${e.dir})` : e.label);
+    return out;
+  };
+  const rowLabels = dedupeLabels(rows.map(r => ({ name: r.name, dir: r.dir, label: labelOf(r) })));
+  const labelOfRow = (r: { name: string; dir: string }): string => rowLabels.get(r.name + "\n" + r.dir) ?? labelOf(r);
   const body: string[] = [];
   body.push(`<h1>${en ? "Skill totals" : "スキル別集計"}</h1>`);
   body.push(`<div class="note">${en
@@ -634,11 +645,13 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
   }
   body.push(`<table class="totals"><thead><tr><th>${en ? "Skill" : "スキル"}</th><th>${en ? "Sessions" : "セッション数"}</th><th>${en ? "Activations" : "起動回数"}</th><th>${en ? "Verdicts (good / ok / bad)" : "評価（良かった／普通／悪かった）"}</th><th>${en ? "Good ratio" : "上手くいった率"}</th><th>${en ? "Credits (Kiro)" : "クレジット（Kiro）"}</th><th>${en ? "Credits (Copilot Chat)" : "クレジット（Copilot Chat）"}</th><th>${en ? "Input tokens (Copilot)" : "入力トークン（Copilot）"}</th><th>${en ? "Output tokens (Copilot)" : "出力トークン（Copilot）"}</th><th>${en ? "Last used" : "最終利用"}</th></tr></thead><tbody>`);
   for (const r of rows) {
-    const fileLink = `<a href="command:skilltrace.showFileUsage?${encodeURIComponent(JSON.stringify([r.name, r.dir]))}">${en ? "By file" : "ファイル別"}</a>`;
+    // 場所不明の行には「ファイル別」を付けない。フォルダを指定できないため、
+    // 開いてもその行のセッションに対応する集計にならない
+    const fileLink = r.dir ? ` <span class="tok"><a href="command:skilltrace.showFileUsage?${encodeURIComponent(JSON.stringify([r.name, r.dir]))}">${en ? "By file" : "ファイル別"}</a></span>` : "";
     const vt = verdictByKey.get(r.name + "\n" + r.dir);
     const verdictCell = vt && vt.rated > 0 ? `${fmt(vt.good)} / ${fmt(vt.ok)} / ${fmt(vt.bad)}` : dash;
     const ratioCell = vt && vt.goodRatio !== null ? `${(vt.goodRatio * 100).toFixed(1)}%` : dash;
-    body.push(`<tr><td>${esc(labelOf(r))} <span class="tok">${fileLink}</span></td><td>${fmt(r.sessions)}</td><td>${fmt(r.activations)}</td>`
+    body.push(`<tr><td>${esc(labelOfRow(r))}${fileLink}</td><td>${fmt(r.sessions)}</td><td>${fmt(r.activations)}</td>`
       + `<td>${verdictCell}</td><td>${ratioCell}</td>`
       + `<td>${cred(r.kiroCredits, r.kiroSessions > 0)}</td><td>${cred(r.chatCredits, r.chatSessions > 0)}</td>`
       + `<td>${num(r.copilotInputTokens, r.copilotSessions > 0)}</td><td>${num(r.copilotOutputTokens, r.copilotSessions > 0)}</td>`
@@ -662,12 +675,16 @@ export function renderSkillTotalsHtml(rows: SkillTotal[], meta: { scanned: numbe
       const ranked = rankBadSkills(verdicts.skills);
       const verdictNameCounts = new Map<string, number>();
       for (const s of verdicts.skills) verdictNameCounts.set(s.name, (verdictNameCounts.get(s.name) ?? 0) + 1);
+      const verdictLabels = dedupeLabels(ranked.map(s => ({
+        name: s.name, dir: s.dir,
+        label: (verdictNameCounts.get(s.name) ?? 0) > 1 ? `${s.name} (${locationLabel(s.dir)})` : s.name,
+      })));
       body.push(`<h2>${en ? "Sessions rated bad" : "「悪かった」と評価されたセッション"}</h2>`);
       if (!ranked.length) {
         body.push(`<p>${en ? "No sessions were rated bad." : "「悪かった」と評価されたセッションはありませんでした。"}</p>`);
       } else {
         for (const s of ranked) {
-          const sLabel = (verdictNameCounts.get(s.name) ?? 0) > 1 ? `${s.name} (${locationLabel(s.dir)})` : s.name;
+          const sLabel = verdictLabels.get(s.name + "\n" + s.dir) ?? s.name;
           body.push(`<h3>${esc(sLabel)}${en ? ` — ${s.bad} bad` : ` — 「悪かった」${s.bad} 件`}</h3>`);
           const items = verdicts.badSessions
             .filter(b => b.skills.some(x => x.name === s.name && x.dir === s.dir))

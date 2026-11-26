@@ -329,9 +329,12 @@ export interface FileUsageGroup {
  * 到達の相対パスは記録側のフォルダ基準なので、置き場所が変わったセッション
  * でも、グループが1つの場合は突き合わせられる。
  */
-export function aggregateFileUsageGroups(groups: FileUsageGroup[], usages: SessionFileUsage[], skillName: string): { results: SkillFileUsage[]; unattributedSessions: number } {
+export function aggregateFileUsageGroups(groups: FileUsageGroup[], usages: SessionFileUsage[], skillName: string, options?: { strict?: boolean }): { results: SkillFileUsage[]; unattributedSessions: number } {
   const nameLower = skillName.toLowerCase();
-  const strict = groups.length > 1;
+  // strict（記録のフォルダで厳密に帰属させる）は、グループが複数のとき有効。
+  // 呼び出し側がフォルダを明示した場合（スキル別集計の行から開いた場合）は、
+  // グループが1つでも有効にする（選んだフォルダ以外のセッションを混ぜない）
+  const strict = groups.length > 1 || options?.strict === true;
   const perGroup = groups.map(g => {
     const files = new Map<string, string>();
     for (const graph of g.graphs) {
