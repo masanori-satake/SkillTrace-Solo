@@ -6,7 +6,7 @@ import test from "node:test";
 import { buildGraph, MAX_GRAPH_NODES } from "../core/graph";
 import { parseEventsText } from "../core/events";
 import { buildSessionTrace, buildTrace, extractRecordedPaths, firstHeading, gradeCertaintyLabel } from "../core/trace";
-import { capSessionsBySource, discoverSkills, formatLocalDateTime, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
+import { capSessionsBySource, discoverSkills, findSkillsByNameInRoots, formatLocalDateTime, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
 import { langFromEnv, recordLocatedSkillsNote, sanitizeFilenamePart, undiscoveredSkillsNote } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
 
@@ -705,6 +705,40 @@ test("locateSkillFromPaths: 文章や JSON 文字列に埋め込まれたパス�
     // 埋め込まれていても、実在しないフォルダや名前違いは特定しない
     assert.equal(locateSkillFromPaths("diataxis-reviewer", [`read: ${join(base, "nope", ".github", "skills", "diataxis-reviewer", "SKILL.md")}`]), null);
     assert.equal(locateSkillFromPaths("diataxis-creator", [JSON.stringify({ path: clean })]), null);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("findSkillsByNameInRoots: 別ルートの現在の置き場所から、名前で拾う", () => {
+  // マルチルートのワークスペースで実行されたセッションでは、スキルが
+  // 実行時フォルダ以外のルートにあり、しかも記録時点から置き場所が
+  // 変わっている（.github → .agents）ことがある。記録のパスでは特定
+  // できないため、今開いている別ルートの現在の置き場所から名前で拾う
+  const base = mkdtempSync(join(tmpdir(), "skilltrace-roots-"));
+  try {
+    const sessionRoot = join(base, "lui_skills_creator");
+    mkdirSync(sessionRoot, { recursive: true });
+    const otherRoot = join(base, "diataxis_skills");
+    const reviewerDir = join(otherRoot, ".agents", "skills", "diataxis-reviewer");
+    const fixerDir = join(otherRoot, ".agents", "skills", "diataxis-fixer");
+    const otherDir = join(otherRoot, ".agents", "skills", "diataxis-creator");
+    for (const d of [reviewerDir, fixerDir, otherDir]) {
+      mkdirSync(d, { recursive: true });
+      writeFileSync(join(d, "SKILL.md"), "# skill\n");
+    }
+    // 子フォルダ（clone）の中にある場合も拾う
+    const childSkillDir = join(base, "parent", "clone-a", ".kiro", "skills", "child-skill");
+    mkdirSync(childSkillDir, { recursive: true });
+    writeFileSync(join(childSkillDir, "SKILL.md"), "# child\n");
+
+    const found = findSkillsByNameInRoots(["diataxis-reviewer", "diataxis-fixer", "child-skill"], [sessionRoot, otherRoot, join(base, "parent")]);
+    assert.deepEqual(found.map(f => f.name).sort(), ["child-skill", "diataxis-fixer", "diataxis-reviewer"]);
+    assert.equal(found.find(f => f.name === "diataxis-reviewer")!.dir, reviewerDir);
+    // 起動していないスキルは拾わない／見つからない名前は返さない
+    assert.equal(findSkillsByNameInRoots(["diataxis-creator"], [otherRoot]).length, 1);
+    assert.deepEqual(findSkillsByNameInRoots(["ghost"], [otherRoot]), []);
+    assert.deepEqual(findSkillsByNameInRoots([], [otherRoot]), []);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

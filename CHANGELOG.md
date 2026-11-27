@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.20.0] - 2026-11-27
+
+### Added
+
+- For Copilot CLI sessions, skills that can be found neither in the session's workspace nor from paths in the record are now also looked up by name in the other folders of the workspace currently open in the editor. A session run in a multi-root workspace may have used a skill that lives under another root, and the skill may have moved since the session ran (for example from `.github/skills` to `.agents/skills`), leaving the recorded paths stale. Such skills now appear in the session summary at their current location instead of being reported as not found.
+
+### 追加 (Added)
+
+- Copilot CLI セッションで、セッションのワークスペース内でも記録のパスからでも見つからないスキルを、今開いているワークスペースの別フォルダから名前で探すようにしました。マルチルートのワークスペースで実行されたセッションでは、スキルが実行時フォルダ以外のルートにあることがあります。また、記録時点から置き場所が変わっている（例: `.github/skills` から `.agents/skills` へ移動）場合、記録のパスは古くなり特定できません。そのようなスキルも、現在の置き場所でセッションサマリに表示されるようになりました。
+
 ## [1.19.1] - 2026-11-27
 
 ### Fixed
