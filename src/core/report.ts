@@ -565,6 +565,8 @@ export function renderSessionHtml(st: SessionTrace, docOpts?: { includeNotes?: b
   const treesHtml = st.skills.map(part =>
     `<h3>${esc(part.skillName)}</h3>${renderTreeHtml(part.nodes, part.graph, lang)}`).join("");
 
+  const unref = st.unreferencedReads.length
+    ? `<h2>${en ? "Files read inside the skill (unreferenced)" : "スキル内（未参照）で読まれたファイル"}</h2><ul>${st.unreferencedReads.map(r => `<li>${esc(r.path)}${en ? ` (${esc(r.tool)} / ${esc(r.at ?? "")})` : `（${esc(r.tool)} ／ ${esc(r.at ?? "")}）`}${r.failed ? (en ? " (read failed)" : "（読取失敗）") : ""}${r.title ? ` — ${esc(r.title)}` : ""}</li>`).join("")}</ul>` : "";
   const outside = st.outsideReads.length
     ? `<h2>${en ? "Files read outside the skill" : "スキル外で読まれたファイル"}</h2><ul>${st.outsideReads.map(r => `<li>${esc(r.path)}${en ? ` (${esc(r.tool)} / ${esc(r.at ?? "")})` : `（${esc(r.tool)} ／ ${esc(r.at ?? "")}）`}${r.failed ? (en ? " (read failed)" : "（読取失敗）") : ""}${r.title ? ` — ${esc(r.title)}` : ""}</li>`).join("")}</ul>` : "";
 
@@ -586,6 +588,7 @@ ${usageBlock(st, lang)}
 <h2>${en ? "Arrival flow" : "到達の流れ"}</h2>
 ${treesHtml}
 <button id="play" type="button">▶ ${en ? "Play in arrival order" : "到達順に再生"}</button>
+${unref}
 ${outside}
 <h2>${en ? "How to read this" : "読み方の注意"}</h2>
 <div class="note"><ul style="margin:0;padding-left:18px">

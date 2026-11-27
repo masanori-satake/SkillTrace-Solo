@@ -380,6 +380,8 @@ export function renderSessionMarkdown(st: SessionTrace, opts?: DocumentOptions):
   const trees = st.skills.map(part => `### ${part.skillName}\n\n${treeMd(part, lang)}`).join("\n\n");
   const contextLoads = st.contextLoads?.length
     ? `\n\n## ${en ? "Always-loaded context (loaded into context)" : "常時文脈（コンテキストへの読み込み）"}\n\n${st.contextLoads.map(l => `- ${l.path}${l.at ? ` (${formatLocalDateTime(l.at, lang)})` : ""}`).join("\n")}${startUsageText(st, lang) ? `\n\n${startUsageText(st, lang)}` : ""}\n\n${en ? "Documents that are always loaded as the session's context, apart from skill activation (such as steering)." : "スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。"}` : "";
+  const unref = st.unreferencedReads.length
+    ? `\n\n## ${en ? "Files read inside the skill (unreferenced)" : "スキル内（未参照）で読まれたファイル"}\n\n${st.unreferencedReads.map(r => en ? `- ${r.path} (${r.tool} / ${r.at ? formatLocalDateTime(r.at, lang) : ""})${r.failed ? " (read failed)" : ""}${r.title ? ` — ${r.title}` : ""}` : `- ${r.path}（${r.tool} ／ ${r.at ? formatLocalDateTime(r.at, lang) : ""}）${r.failed ? "（読取失敗）" : ""}${r.title ? ` — ${r.title}` : ""}`).join("\n")}` : "";
   const outside = st.outsideReads.length
     ? `\n\n## ${en ? "Files read outside the skill" : "スキル外で読まれたファイル"}\n\n${st.outsideReads.map(r => en ? `- ${r.path} (${r.tool} / ${r.at ? formatLocalDateTime(r.at, lang) : ""})${r.failed ? " (read failed)" : ""}${r.title ? ` — ${r.title}` : ""}` : `- ${r.path}（${r.tool} ／ ${r.at ? formatLocalDateTime(r.at, lang) : ""}）${r.failed ? "（読取失敗）" : ""}${r.title ? ` — ${r.title}` : ""}`).join("\n")}` : "";
   return `# ${en ? "Session summary" : "セッションサマリ"}
@@ -409,7 +411,7 @@ ${measuredMd(st, lang)}
 
 ## ${en ? "Context window usage" : "コンテキストウィンドウ使用量"}
 
-${contextMd(st, lang)}${outside}${annotationsMd(st, lang)}${notesMd(true, opts)}
+${contextMd(st, lang)}${unref}${outside}${annotationsMd(st, lang)}${notesMd(true, opts)}
 `;
 }
 
@@ -605,6 +607,8 @@ export function renderSessionHtmlFragment(st: SessionTrace, opts?: DocumentOptio
   const trees = st.skills.map(part => `<h3 style="${H.h3}">${esc(part.skillName)}</h3>${treeHtml(part, lang)}`).join("");
   const contextLoads = st.contextLoads?.length
     ? `<h2 style="${H.h2}">${en ? "Always-loaded context (loaded into context)" : "常時文脈（コンテキストへの読み込み）"}</h2><ul>${st.contextLoads.map(l => `<li>${esc(l.path)}${l.at ? ` (${esc(formatLocalDateTime(l.at, lang))})` : ""}</li>`).join("")}</ul>${startUsageText(st, lang) ? `<p>${esc(startUsageText(st, lang))}</p>` : ""}<p>${en ? "Documents that are always loaded as the session's context, apart from skill activation (such as steering)." : "スキル起動とは別に、セッションの文脈として常に読み込まれる文書（steering など）です。"}</p>` : "";
+  const unref = st.unreferencedReads.length
+    ? `<h2 style="${H.h2}">${en ? "Files read inside the skill (unreferenced)" : "スキル内（未参照）で読まれたファイル"}</h2><ul>${st.unreferencedReads.map(r => `<li>${esc(r.path)}${en ? ` (${esc(r.tool)} / ${esc(r.at ? formatLocalDateTime(r.at, lang) : "")})` : `（${esc(r.tool)} ／ ${esc(r.at ? formatLocalDateTime(r.at, lang) : "")}）`}${r.failed ? (en ? " (read failed)" : "（読取失敗）") : ""}${r.title ? ` — ${esc(r.title)}` : ""}</li>`).join("")}</ul>` : "";
   const outside = st.outsideReads.length
     ? `<h2 style="${H.h2}">${en ? "Files read outside the skill" : "スキル外で読まれたファイル"}</h2><ul>${st.outsideReads.map(r => `<li>${esc(r.path)}${en ? ` (${esc(r.tool)} / ${esc(r.at ? formatLocalDateTime(r.at, lang) : "")})` : `（${esc(r.tool)} ／ ${esc(r.at ? formatLocalDateTime(r.at, lang) : "")}）`}${r.failed ? (en ? " (read failed)" : "（読取失敗）") : ""}${r.title ? ` — ${esc(r.title)}` : ""}</li>`).join("")}</ul>` : "";
   return `<div style="${H.root}">
@@ -621,7 +625,7 @@ ${contextLoads}
 <h2 style="${H.h2}">${st.source === "kiro" ? (en ? "Credit usage" : "クレジット実測") : (en ? "Token usage" : "トークン実測")}</h2>
 ${measuredHtml(st, lang)}
 <h2 style="${H.h2}">${en ? "Context window usage" : "コンテキストウィンドウ使用量"}</h2>
-${contextHtml(st, lang)}${outside}
+${contextHtml(st, lang)}${unref}${outside}
 ${annotationsHtml(st, lang)}
 ${notesHtmlSections(true, opts)}
 </div>`;

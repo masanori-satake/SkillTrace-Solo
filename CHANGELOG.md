@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.18.2] - 2026-11-27
+
+### Changed
+
+- Reads of files that are stored inside the skill folder but are not part of its reference chain (from SKILL.md) are now shown separately as "Files read inside the skill (unreferenced)" — in the session summary, the copied documents, and the tree ("Reads inside the skill (unreferenced)") — instead of being grouped under "Files read outside the skill". A read counts as inside the skill when its recorded path points into the skill folder; relative path forms are verified against the file's existence. A glossary entry for unreferenced reads was added.
+
+### 変更 (Changed)
+
+- スキルフォルダの中に用意されているのに、参照の連なり（SKILL.md からの参照）には含まれていないファイルの読み取りを、「スキル外で読まれたファイル」から分け、「スキル内（未参照）で読まれたファイル」として表示するようにした。対象はセッションサマリ、コピー用文書、ツリー（「スキル内・未参照の読み取り」）。記録パスがスキルフォルダ内を指す場合にスキル内と判定し、相対パスの場合は実ファイルの存在で裏を取る。用語集に「未参照の読み取り」を追加した
+
 ## [1.18.1] - 2026-11-26
 
 ### Changed

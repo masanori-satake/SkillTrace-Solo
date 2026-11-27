@@ -4,7 +4,7 @@
 // 記録がないノードは「記録なし」とだけ表示し、「未到達」とは言わない。
 import { basename, resolve } from "node:path";
 import { HEADING_PREFIX_BYTES, readFilePrefix } from "./readfile";
-import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
+import { normPath, skillDirRelativePath, toSlashes, type Graph, type GraphNode } from "./graph";
 import { findNumber, findString, type ParsedEvents } from "./events";
 import type { Lang } from "./common";
 
@@ -407,6 +407,26 @@ export interface SessionTrace {
   toolExecutions: Trace["toolExecutions"];
   skills: SkillPart[];
   outsideReads: OutsideRead[];
+  /** スキルフォルダの中に用意されているのに、参照の連なり（SKILL.md からの
+   *  参照）には含まれていないファイルの読み取り。スキル外の読み取りから、
+   *  記録パスがスキルフォルダ内を指すものを分けたもの（到達とは別枠で示す） */
+  unreferencedReads: OutsideRead[];
+}
+
+/**
+ * 「スキル外の読み取り」から、記録パスがスキルフォルダ内を指すものを
+ * 「スキル内・未参照の読み取り」として分ける。フォルダ内にあるのに
+ * 「スキル外」と出すと実態とずれるため（利用者からの指摘、2026-11-27）。
+ */
+export function splitUnreferencedReads(reads: OutsideRead[], skillDirAbsList: string[]): { outsideReads: OutsideRead[]; unreferencedReads: OutsideRead[] } {
+  const outsideReads: OutsideRead[] = [];
+  const unreferencedReads: OutsideRead[] = [];
+  for (const r of reads) {
+    const p = normPath(r.path);
+    if (skillDirAbsList.some(d => skillDirRelativePath(p, d) !== null)) unreferencedReads.push(r);
+    else outsideReads.push(r);
+  }
+  return { outsideReads, unreferencedReads };
 }
 
 export function buildSessionTrace(
@@ -439,7 +459,8 @@ export function buildSessionTrace(
   // スキル外の読み取りは、全スキルのグラフの和集合に対して判定する
   const allNodes = traces.flatMap(t => t.nodes);
   const base = traces[0] ?? aggregates ?? undefined;
-  const outsideReads = (base?.outsideReads ?? []).filter(r => !pathBelongsToNodes(normPath(r.path), allNodes));
+  const outsideAll = (base?.outsideReads ?? []).filter(r => !pathBelongsToNodes(normPath(r.path), allNodes));
+  const { outsideReads, unreferencedReads } = splitUnreferencedReads(outsideAll, parts.map(p => p.skillDirAbs));
 
   return {
     source: "copilot",
@@ -460,6 +481,7 @@ export function buildSessionTrace(
     toolExecutions: base?.toolExecutions ?? [],
     skills: traces.map((t, i) => ({ skillName: t.session.skillName, skillDir: t.session.skillDir, graph: parts[i].graph, nodes: t.nodes })),
     outsideReads,
+    unreferencedReads,
     undiscoveredSkills: opts.undiscoveredSkills,
     recordLocatedSkills: opts.recordLocatedSkills,
   };

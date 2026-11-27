@@ -5,7 +5,7 @@
 // 読み取り総バイト数に上限を設け、超過したら打ち切って notes に残す。
 // また、許可ルート（スキルディレクトリとワークスペース）の外へ解決される
 // 参照先については見出しを取得せず、パスの表示のみに留める。
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { MAX_GRAPH_FILE_BYTES, readTextFileWithinLimit } from "./readfile";
 
@@ -22,6 +22,58 @@ export function normPath(p: string): string {
   return parts.join("/").toLowerCase();
 }
 export function toSlashes(p: string): string { return String(p).split(sep).join("/"); }
+
+/**
+ * 正規化済みの記録パスがスキルフォルダ内を指しているかを判定し、指していれば
+ * フォルダ内相対パスを、そうでなければ null を返す。
+ * 絶対パスはフォルダ配下かどうかだけで判定する（読み取りに失敗したファイルは
+ * 実在しなくても、パス自体が場所を示している）。相対パス（スキル名を含む形や
+ * スキルルート相対の形）は、同名の別ファイルをスキル内と誤認しないよう、
+ * 実ファイルの存在で裏を取る。
+ */
+/**
+ * フォルダ配下に、相対セグメント列が指すファイルが実在するかを返す。
+ * 記録パスは正規化で小文字化されているため、そのまま existsSync に渡すと
+ * 大文字小文字を区別するファイルシステムでは実在するファイルを見落とす。
+ * フォルダ内の実名と小文字同士で突き合わせながら辿る。大文字小文字だけが
+ * 異なる名前が共存する場合は、候補をすべて辿っていずれかで実在すれば
+ * 成功とする（最初に一致した候補だけでは、別候補の配下にあるファイル
+ * を見落とす）。
+ */
+function existsUnderDir(dirAbs: string, relSegs: string[]): boolean {
+  if (relSegs.length === 0) return existsSync(dirAbs);
+  let names: string[];
+  try { names = readdirSync(dirAbs); } catch { return false; }
+  const [head, ...rest] = relSegs;
+  return names
+    .filter(name => name.toLowerCase() === head)
+    .some(name => existsUnderDir(join(dirAbs, name), rest));
+}
+
+export function skillDirRelativePath(recordedNorm: string, skillDirAbs: string): string | null {
+  const dir = normPath(skillDirAbs);
+  const p = recordedNorm;
+  if (p === dir) return null;
+  if (p.startsWith(dir + "/")) return p.slice(dir.length + 1);
+  // 配下でない絶対パスはここで打ち切る。スキル名と同名の別フォルダ配下の
+  // ファイルをスキル内と誤認しないよう、存在確認によるフォールバックは
+  // 相対パスだけに適用する
+  if (p.startsWith("/") || /^[a-z]:/.test(p)) return null;
+  const segs = p.split("/");
+  const base = dir.split("/").pop() ?? "";
+  // 例: ../<スキル名>/references/docs/guide.md（正規化で先頭の ../ は落ちている）
+  const idx = base ? segs.lastIndexOf(base) : -1;
+  if (idx >= 0 && idx < segs.length - 1) {
+    const rel = segs.slice(idx + 1).join("/");
+    if (existsUnderDir(skillDirAbs, rel.split("/"))) return rel;
+  }
+  // スキルルート相対（例: references/docs/guide.md）。区切りを含まない
+  // ファイル名だけの断片は誤認しやすいため対象にしない
+  if (p.includes("/")) {
+    if (existsUnderDir(skillDirAbs, p.split("/"))) return p;
+  }
+  return null;
+}
 
 // トークン推定（概算。実測とは混ぜない表示用）
 export function estimateTokens(text: string): number {

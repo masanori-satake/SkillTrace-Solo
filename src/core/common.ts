@@ -179,7 +179,8 @@ export const GLOSSARY: [string, string][] = [
   ["推定トークン", "ファイルの文字数から概算したトークン数です。実際に消費される量とは別物で、大きさの目安として使います。"],
   ["実測", "セッション記録に残る usage（API の利用量記録）を集計した値です。入力（input）はモデルへ送られた量、出力（output）は生成された量、推論（reasoning）はモデル内部の推論に使われた量です。キャッシュまわりは「キャッシュ」の項を見てください。"],
   ["スキル外", "スキルの格納場所（.github / .kiro / .agents の skills フォルダ配下）には入っていないのに、スキルから参照されているファイルです。.kiro/steering/ の文書など、複数のスキルから共有される文書が該当します。"],
-  ["スキル外の読み取り", "このスキルの参照関係（SKILL.md からの参照の連なり）の外にあるファイルを、エージェントが読んだ記録です。読取失敗と付いているものは、読み取りを試みて失敗した記録です。"],
+  ["スキル外の読み取り", "このスキルの参照関係（SKILL.md からの参照の連なり）の外にあり、スキルフォルダの中にも無いファイルを、エージェントが読んだ記録です。スキルフォルダの中にある未参照のファイルは「未参照の読み取り」に分けて表示します。読取失敗と付いているものは、読み取りを試みて失敗した記録です。"],
+  ["未参照の読み取り", "スキルフォルダの中に用意されているのに、SKILL.md からの参照の連なりには含まれていないファイルを読んだ記録です。フォルダを覗いて見つけるなど、参照を辿らずに読まれた可能性があるため、参照ツリーへの到達とは分けて表示します。読取失敗と付いているものは、読み取りを試みて失敗した記録です。"],
   ["セッション／ターン", "セッションは1つのチャット（会話）全体、ターンはその中でのユーザーとエージェントの往復1回を指します。"],
 ];
 
@@ -196,7 +197,8 @@ export const GLOSSARY_EN: [string, string][] = [
   ["Estimated tokens", "A token count estimated from a file's character count. It differs from actual consumption and is meant as a size guide."],
   ["Measured usage", "Values aggregated from the usage records left in the session record. Input is what was sent to the model, output is what was generated, and reasoning is what the model's internal reasoning used. For caching, see the Cache entry."],
   ["Outside the skill", "A file that a skill references but that does not live inside a skill location (under the skills folders of .github / .kiro / .agents) — for example documents under .kiro/steering/ shared by several skills."],
-  ["Reads outside the skill", "Records of the agent reading files outside this skill's reference chain (from SKILL.md). Entries marked as failed reads are records of attempted reads that failed."],
+  ["Reads outside the skill", "Records of the agent reading files that lie outside this skill's reference chain (from SKILL.md) and are not stored inside the skill folder either. Unreferenced files inside the folder are listed separately as unreferenced reads. Entries marked as failed reads are records of attempted reads that failed."],
+  ["Reads inside the skill (unreferenced)", "Records of the agent reading files that are stored inside the skill folder but are not part of its reference chain (from SKILL.md). They may have been found by browsing the folder rather than by following a reference, so they are listed separately from arrivals in the reference tree. Entries marked as failed reads are records of attempted reads that failed."],
   ["Session / turn", "A session is one whole chat (conversation); a turn is one user–agent round trip within it."],
 ];
 

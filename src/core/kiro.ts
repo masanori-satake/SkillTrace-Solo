@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
 import { collectStrings, type ParseHealth } from "./events";
-import { readOutsideTitle, type Grade, type OutsideRead, type SessionTrace, type TraceNode } from "./trace";
+import { readOutsideTitle, splitUnreferencedReads, type Grade, type OutsideRead, type SessionTrace, type TraceNode } from "./trace";
 import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
 import type { Lang } from "./common";
 
@@ -475,6 +475,8 @@ export function buildKiroSessionTrace(
     .map(p => ({ name: basename(resolve(p.skillDirAbs)), dir: toSlashes(resolve(p.skillDirAbs)) }));
 
   const lastUsage = parsed.contextUsageSeries.length ? parsed.contextUsageSeries[parsed.contextUsageSeries.length - 1] : null;
+  const outsideAll = [...outside.values()].map(r => ({ ...r, title: readOutsideTitle(r.path) })) as OutsideRead[];
+  const { outsideReads, unreferencedReads } = splitUnreferencedReads(outsideAll, parts.map(p => p.skillDirAbs));
   return {
     source: "kiro",
     session: {
@@ -493,7 +495,8 @@ export function buildKiroSessionTrace(
     totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 },
     toolExecutions: parsed.toolExecutions,
     skills: skills.map(s => ({ skillName: s.skillName, skillDir: s.skillDir, graph: s.graph, nodes: s.nodes })),
-    outsideReads: [...outside.values()].map(r => ({ ...r, title: readOutsideTitle(r.path) })) as OutsideRead[],
+    outsideReads,
+    unreferencedReads,
     creditsTotal: parsed.creditsTotal,
     creditTurns: parsed.creditTurns.map((t, i) => ({ turn: i, credits: t.credits, usedTools: t.usedTools })),
     contextUsageSeries: parsed.contextUsageSeries,
