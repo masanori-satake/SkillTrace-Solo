@@ -140,7 +140,7 @@ export function scanInvokedSkillNames(eventsPath: string, candidates: { name: st
     const norm = strings.map(x => normPath(x));
     for (const c of candidates) {
       if (names.includes(c.name)) continue;
-      if (norm.some(x => x.includes(normPath(c.dir))) || norm.some(x => x === c.name.toLowerCase())) names.push(c.name);
+      if (norm.some(x => skillDirMatchForms(c.dir).some(f => x.includes(f))) || norm.some(x => x === c.name.toLowerCase())) names.push(c.name);
     }
   }
   if (names.length) return names;
@@ -186,7 +186,11 @@ function collectSkills(base: string, found: { name: string; dir: string }[]): vo
   for (const root of SKILL_ROOTS) {
     const skillsBase = join(base, root);
     if (!existsSync(skillsBase)) continue;
-    for (const name of readdirSync(skillsBase)) {
+    // skillsBase が通常ファイル等で列挙できない場合は、その標準ルートだけを
+    // 飛ばす（例外を呼び出し元へ伝播させて探索全体を落とさない）
+    let names: string[];
+    try { names = readdirSync(skillsBase); } catch { continue; }
+    for (const name of names) {
       const dir = join(skillsBase, name);
       try {
         if (statSync(dir).isDirectory() && existsSync(join(dir, "SKILL.md"))) found.push({ name, dir });
@@ -196,7 +200,7 @@ function collectSkills(base: string, found: { name: string; dir: string }[]): vo
 }
 
 /** 同じ実フォルダへの重複登録を除くためのキー（シンボリックリンク経由の二重発見を防ぐ） */
-function skillDirKey(dir: string): string {
+export function skillDirKey(dir: string): string {
   let p = dir;
   try { p = realpathSync(dir); } catch { /* 実パスが取れなければそのまま */ }
   return process.platform === "win32" ? p.toLowerCase() : p;
@@ -207,6 +211,18 @@ function skillDirKey(dir: string): string {
  *  リポジトリ等）の中の標準ルートも見る。広げるのは1段目までで、再帰的な
  *  走査はしない。隠しフォルダと node_modules は対象にしない。
  *  「1つのワークスペースフォルダの下に複数の clone を並べる」構成への対応 */
+/** 記録パスとの照合に使うスキルフォルダのパス形。配置パスそのものに加え、
+ *  実パス（シンボリックリンク解決後）も返す。重複排除で別名側が落ちても、
+ *  記録がどちらのパスを指していても照合できるようにするため */
+export function skillDirMatchForms(dir: string): string[] {
+  const forms = [normPath(dir)];
+  try {
+    const real = normPath(realpathSync(dir));
+    if (!forms.includes(real)) forms.push(real);
+  } catch { /* 実パスが取れなければ配置パスだけで照合する */ }
+  return forms;
+}
+
 export function discoverSkills(workspaceDir: string, opts?: { descendIntoChildFolders?: boolean }): { name: string; dir: string }[] {
   const found: { name: string; dir: string }[] = [];
   collectSkills(workspaceDir, found);

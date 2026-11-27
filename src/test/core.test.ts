@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -579,6 +579,65 @@ test("discoverSkills: descendIntoChildFolders は直下の子フォルダ（clon
     const deep = discoverSkills(root, { descendIntoChildFolders: true }).map(s => s.name).sort();
     // 子フォルダ1段目まで。2段下（deep）、node_modules、隠しフォルダは対象外
     assert.deepEqual(deep, ["child-skill", "root-skill"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("discoverSkills: 列挙できない標準ルートがあっても、他のルートの探索は続く", () => {
+  // .github/skills が通常ファイルだと readdirSync が例外になる。1つの標準
+  // ルートの失敗で探索全体（ひいてはトレース構築）が落ちないことの回帰テスト
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-discover-bad-"));
+  try {
+    mkdirSync(join(root, ".github"), { recursive: true });
+    writeFileSync(join(root, ".github", "skills"), "not a directory\n");
+    mkdirSync(join(root, ".agents", "skills", "demo"), { recursive: true });
+    writeFileSync(join(root, ".agents", "skills", "demo", "SKILL.md"), "# demo\n");
+    // 子フォルダ側の壊れた標準ルートでも、ルート直下の結果は返る
+    mkdirSync(join(root, "repo-x", ".github"), { recursive: true });
+    writeFileSync(join(root, "repo-x", ".github", "skills"), "not a directory\n");
+    assert.deepEqual(discoverSkills(root).map(s => s.name), ["demo"]);
+    assert.deepEqual(discoverSkills(root, { descendIntoChildFolders: true }).map(s => s.name), ["demo"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("discoverSkills: シンボリックリンクの別名で重複排除されても、記録の別名パスで照合できる", async () => {
+  // .github/skills/lint が .agents/skills/lint へのリンクだと、重複排除で
+  // 残るのは .github 側だけになる。記録が .agents 側のパスを指していても、
+  // 実パスでの照合で検出できることの回帰テスト
+  const { detectSkillsForSession } = await import("../core/autodetect.js");
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-alias-"));
+  try {
+    const agentsLint = join(root, ".agents", "skills", "lint");
+    mkdirSync(agentsLint, { recursive: true });
+    writeFileSync(join(agentsLint, "SKILL.md"), "# lint\n");
+    mkdirSync(join(root, ".agents", "skills", "other"), { recursive: true });
+    writeFileSync(join(root, ".agents", "skills", "other", "SKILL.md"), "# other\n");
+    mkdirSync(join(root, ".github", "skills"), { recursive: true });
+    symlinkSync(agentsLint, join(root, ".github", "skills", "lint"), "dir");
+
+    const found = discoverSkills(root);
+    // 実フォルダが同じ lint は1件にまとまる（別名の二重登録をしない）
+    assert.deepEqual(found.map(s => s.name).sort(), ["lint", "other"]);
+    assert.equal(found.filter(s => s.name === "lint").length, 1);
+
+    // 起動記録は別名（.agents）側のパスだけを持ち、スキル名の文字列は含まない
+    const invokedPath = join(agentsLint, "SKILL.md").replace(/\\/g, "/");
+    const text = [
+      JSON.stringify({ type: "user.message", timestamp: "2026-11-27T00:00:00.000Z", id: "u1", data: { content: "please check the code" } }),
+      JSON.stringify({ type: "skill.invoked", timestamp: "2026-11-27T00:00:01.000Z", id: "e1", data: { skillPath: invokedPath } }),
+    ].join("\n");
+    const parsed = parseEventsText(text);
+    // 他スキル（other）があるため単一候補フォールバックでは救えない条件で、
+    // lint だけがパス照合で検出される
+    assert.deepEqual(detectSkillsForSession(parsed, root).map(s => s.name), ["lint"]);
+
+    // 履歴ラベルの候補照合（scanInvokedSkillNames）でも別名で一致する
+    const eventsPath = join(root, "events.jsonl");
+    writeFileSync(eventsPath, text + "\n");
+    assert.deepEqual(scanInvokedSkillNames(eventsPath, found), ["lint"]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

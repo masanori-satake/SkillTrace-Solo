@@ -9,7 +9,7 @@ import { renderFileUsageHtml, renderFileUsageMissingHtml, renderSessionHtml, ren
 import { aggregateFileUsageGroups, extractSessionFileUsage, type FileUsageGroup, type SessionFileUsage } from "./core/fileusage";
 import type { Graph } from "./core/graph";
 import { aggregateSessionFile, mergeSkillTotals, type SessionSkillUsage } from "./core/aggregate";
-import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, formatLocalDateTime, listSessions, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
+import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, formatLocalDateTime, listSessions, locateSkillFromPaths, scanInvokedSkillNames, skillDirKey, skillDirMatchForms, type SessionInfo } from "./core/sessions";
 import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames, type KiroSkillPartInput } from "./core/kiro";
 import { buildVSCodeSessionTrace, defaultVSCodeStorageDir, listVSCodeChatSessions, parseVSCodeChatSessionFile, scanVSCodeActivationNames, type VSCodeSkillPartInput } from "./core/vscode";
 import { normPath } from "./core/graph";
@@ -110,7 +110,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const activated = new Set(parsed.activations.map(a => a.name));
         const readPaths = parsed.requests.flatMap(r => r.tools.map(t => t.readPath).filter((p): p is string => !!p));
         const parts: VSCodeSkillPartInput[] = workspaceDir ? discoverSkills(workspaceDir, { descendIntoChildFolders: true })
-          .filter(sk => activated.has(sk.name) || readPaths.some(p => normPath(p).includes(normPath(sk.dir))))
+          .filter(sk => activated.has(sk.name) || readPaths.some(p => skillDirMatchForms(sk.dir).some(f => normPath(p).includes(f))))
           .map(sk => {
             // 見出しは buildGraph が上限付きで読んだ SKILL.md のタイトルを再利用する
             // （監査 2026-11-22: 素の readFileSync での再読をやめる）
@@ -611,11 +611,17 @@ export function activate(context: vscode.ExtensionContext): void {
       // 同名スキルは配置場所（スキルフォルダ）ごとに分けて集計する。
       // スキル別集計の行から呼ばれた場合は、その行のフォルダだけを対象にする
       const groups: FileUsageGroup[] = [];
+      // 親フォルダとその子フォルダが両方ルートにある場合、子フォルダ側の
+      // スキルは親側の1段探索でも見つかるため、ルートをまたいで重複を除く
+      const seenDirs = new Set<string>();
       for (const root of roots) {
         if (!root || !existsSync(root)) continue;
         const descend = root !== homedir();
         for (const s of discoverSkills(root, descend ? { descendIntoChildFolders: true } : undefined)) {
           if (s.name.toLowerCase() !== name.toLowerCase()) continue;
+          const dirKey = skillDirKey(s.dir);
+          if (seenDirs.has(dirKey)) continue;
+          seenDirs.add(dirKey);
           const dir = normPath(s.dir);
           if (onlyDir && dir !== onlyDir) continue;
           try { groups.push({ label: s.dir, dirs: [dir], graphs: [buildGraph(s.dir, root)] }); } catch { /* 読めないスキルは飛ばす */ }
