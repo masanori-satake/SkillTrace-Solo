@@ -13,11 +13,13 @@ export interface SkillEl { kind: "skill"; session: SessionInfo; part: SkillPart 
 export interface NodeEl { kind: "node"; session: SessionInfo; part: SkillPart; gnode: GraphNode }
 export interface OutsideGroupEl { kind: "outsideGroup"; session: SessionInfo; reads: SessionTrace["outsideReads"] }
 export interface OutsideEl { kind: "outside"; session: SessionInfo; read: SessionTrace["outsideReads"][number] }
+export interface UnreferencedGroupEl { kind: "unreferencedGroup"; session: SessionInfo; reads: SessionTrace["unreferencedReads"] }
+export interface UnreferencedEl { kind: "unreferenced"; session: SessionInfo; read: SessionTrace["unreferencedReads"][number] }
 export interface ContextGroupEl { kind: "contextGroup"; session: SessionInfo; loads: NonNullable<SessionTrace["contextLoads"]>; startRatio?: number | null }
 export interface ContextFileEl { kind: "contextFile"; session: SessionInfo; load: NonNullable<SessionTrace["contextLoads"]>[number] }
 export interface NoteEl { kind: "note"; session: SessionInfo; text: string }
 export interface TotalsEl { kind: "totals" }
-export type El = SessionEl | SkillEl | NodeEl | OutsideGroupEl | OutsideEl | ContextGroupEl | ContextFileEl | NoteEl | TotalsEl;
+export type El = SessionEl | SkillEl | NodeEl | OutsideGroupEl | OutsideEl | UnreferencedGroupEl | UnreferencedEl | ContextGroupEl | ContextFileEl | NoteEl | TotalsEl;
 
 export function elementKey(el: El): string {
   switch (el.kind) {
@@ -26,6 +28,8 @@ export function elementKey(el: El): string {
     case "node": return `n:${el.session.id}:${el.part.skillName}:${el.gnode.id}`;
     case "outsideGroup": return `o:${el.session.id}`;
     case "outside": return `o:${el.session.id}:${el.read.path}`;
+    case "unreferencedGroup": return `u:${el.session.id}`;
+    case "unreferenced": return `u:${el.session.id}:${el.read.path}`;
     case "contextGroup": return `c:${el.session.id}`;
     case "contextFile": return `c:${el.session.id}:${el.load.path}`;
     case "note": return `t:${el.session.id}:${el.text}`;
@@ -363,6 +367,14 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         item.command = { command: "skilltrace.openNodeFile", title: "Open File", arguments: [gn.absPath] };
         break;
       }
+      case "unreferencedGroup": {
+        item.label = this.L("スキル内・未参照の読み取り", "Reads inside the skill (unreferenced)");
+        item.description = this.L(`${element.reads.length} 件`, `${element.reads.length} items`);
+        item.iconPath = new vscode.ThemeIcon("folder");
+        item.collapsibleState = allExp ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+        item.contextValue = "skilltraceUnreferencedGroup";
+        break;
+      }
       case "outsideGroup": {
         item.label = this.L("スキル外の読み取り", "Reads outside the skill");
         item.description = this.L(`${element.reads.length} 件`, `${element.reads.length} items`);
@@ -398,6 +410,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         }
         break;
       }
+      case "unreferenced":
       case "outside": {
         const r = element.read;
         item.label = r.path.split(/[/\\]/).filter(Boolean).pop() ?? r.path;
@@ -436,6 +449,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         if (!trace) return [{ kind: "note", session: element.session, text: this.L("このセッションではスキル起動を検出できませんでした", "No skill activation was detected in this session") } as NoteEl];
         const out: El[] = trace.skills.map(part => ({ kind: "skill", session: element.session, part } as SkillEl));
         if (trace.contextLoads?.length) out.push({ kind: "contextGroup", session: element.session, loads: trace.contextLoads, startRatio: firstContextUsageRatio(trace.contextUsageSeries) } as ContextGroupEl);
+        if (trace.unreferencedReads.length) out.push({ kind: "unreferencedGroup", session: element.session, reads: trace.unreferencedReads } as UnreferencedGroupEl);
         if (trace.outsideReads.length) out.push({ kind: "outsideGroup", session: element.session, reads: trace.outsideReads } as OutsideGroupEl);
         // 記録では起動が確認できたのに、現在のワークスペースで見つからないスキル。
         // 何も出さないと「開いたのに空」という無言の失敗になるため、注記として出す
@@ -474,6 +488,8 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
       }
       case "outsideGroup":
         return element.reads.map(read => ({ kind: "outside", session: element.session, read } as OutsideEl));
+      case "unreferencedGroup":
+        return element.reads.map(read => ({ kind: "unreferenced", session: element.session, read } as UnreferencedEl));
       case "contextGroup":
         return element.loads.map(load => ({ kind: "contextFile", session: element.session, load } as ContextFileEl));
       default:
@@ -487,12 +503,17 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<El> {
         return undefined;
       case "skill":
       case "outsideGroup":
+      case "unreferencedGroup":
       case "contextGroup":
       case "note":
         return { kind: "session", session: element.session };
       case "outside": {
         const trace = this.traces.get(element.session.id);
         return trace ? { kind: "outsideGroup", session: element.session, reads: trace.outsideReads } : { kind: "session", session: element.session };
+      }
+      case "unreferenced": {
+        const trace = this.traces.get(element.session.id);
+        return trace ? { kind: "unreferencedGroup", session: element.session, reads: trace.unreferencedReads } : { kind: "session", session: element.session };
       }
       case "contextFile": {
         const trace = this.traces.get(element.session.id);

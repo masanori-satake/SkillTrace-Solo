@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildGraph } from "../core/graph";
+import { buildGraph, skillDirRelativePath } from "../core/graph";
 import { buildKiroSessionTrace, listKiroSessions, parseKiroMessages, scanKiroActivationNames, scanKiroInvokedSkillNames } from "../core/kiro";
 import { renderSessionHtml } from "../core/report";
 import { renderSessionMarkdown, renderSessionHtmlFragment } from "../core/document";
@@ -266,4 +266,58 @@ test("kiro listing: workspacePaths and rootPaths are unioned for skill discovery
     assert.equal(sessions.length, 1);
     assert.deepEqual(sessions[0].workspacePaths, ["C:/ws/rootA", "C:/ws/rootB"]);
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("kiro trace: reads of unreferenced files inside the skill are split from outside reads", () => {
+  // スキルフォルダ内に用意されているのに参照の連なりには無いファイルの読み取りは、
+  // 「スキル外」ではなく「スキル内・未参照」に分ける（2026-11-27 の表示改善）。
+  // 判定の下敷き: 絶対パスはフォルダ配下か、相対パスは実ファイルの存在で裏を取る
+  const rootDir = mkdtempSync(join(tmpdir(), "skilltrace-unref-"));
+  try {
+    const ws = join(rootDir, "ws");
+    const skillDir = join(ws, ".kiro", "skills", "demo-skill");
+    mkdirSync(join(skillDir, "references", "docs"), { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "# Demo\n\nSee [a](references/a.md).\n");
+    writeFileSync(join(skillDir, "references", "a.md"), "# A\n");
+    writeFileSync(join(skillDir, "references", "docs", "guide.md"), "# Guide\n");
+
+    assert.equal(skillDirRelativePath("demo-skill/references/docs/guide.md", skillDir), "references/docs/guide.md");
+    assert.equal(skillDirRelativePath("references/docs/guide.md", skillDir), "references/docs/guide.md");
+    assert.equal(skillDirRelativePath("guide.md", skillDir), null);
+    assert.equal(skillDirRelativePath("demo-skill/references/none.md", skillDir), null);
+    assert.equal(skillDirRelativePath("c:/elsewhere/notes.md", skillDir), null);
+
+    const missingAbs = join(skillDir, "references", "docs", "missing.md").replace(/\\/g, "/");
+    const rows = [
+      { id: "u1", timestamp: "2026-11-27T01:00:00.000Z", payload: { type: "session_start", content: "" } },
+      { id: "u2", timestamp: "2026-11-27T01:00:01.000Z", payload: { type: "tool_call", actionType: "read_files", args: { path: "../demo-skill/references/docs/guide.md", offset: null, limit: null }, executionId: "e1", toolCallId: "tc1" } },
+      { id: "u3", timestamp: "2026-11-27T01:00:02.000Z", payload: { type: "tool_result", executionId: "e1", toolCallId: "tc1", success: true, content: "# Guide" } },
+      { id: "u4", timestamp: "2026-11-27T01:00:03.000Z", payload: { type: "tool_call", actionType: "read_files", args: { path: missingAbs, offset: null, limit: null }, executionId: "e1", toolCallId: "tc2" } },
+      { id: "u5", timestamp: "2026-11-27T01:00:04.000Z", payload: { type: "tool_result", executionId: "e1", toolCallId: "tc2", success: false, content: "" } },
+      { id: "u6", timestamp: "2026-11-27T01:00:05.000Z", payload: { type: "tool_call", actionType: "read_files", args: { path: "c:\\Users\\someone\\other\\notes.md", offset: null, limit: null }, executionId: "e1", toolCallId: "tc3" } },
+      { id: "u7", timestamp: "2026-11-27T01:00:06.000Z", payload: { type: "tool_result", executionId: "e1", toolCallId: "tc3", success: true, content: "# notes" } },
+    ].map(o => JSON.stringify(o)).join("\n");
+    const parsed = parseKiroMessages(rows);
+    const graph = buildGraph(skillDir, ws);
+    const trace = buildKiroSessionTrace(parsed, [{ graph, skillDirAbs: skillDir, disclosed: false }], {
+      sessionId: "sess_unref",
+      workspaceAbs: ws,
+    });
+    // スキル内・未参照は2件（実在する guide と、絶対パスで場所が示された missing）
+    assert.equal(trace.unreferencedReads.length, 2);
+    assert.ok(trace.unreferencedReads.some(r => r.path === "demo-skill/references/docs/guide.md"));
+    const missing = trace.unreferencedReads.find(r => r.path.endsWith("missing.md"));
+    assert.ok(missing && missing.failed);
+    // フォルダ外は1件だけが従来どおり「スキル外」に残る
+    assert.equal(trace.outsideReads.length, 1);
+    assert.ok(trace.outsideReads[0].path.endsWith("notes.md"));
+    // 表示でも見出しが分かれる
+    const md = renderSessionMarkdown(trace);
+    assert.ok(md.includes("スキル内（未参照）で読まれたファイル"));
+    assert.ok(md.includes("スキル外で読まれたファイル"));
+    const frag = renderSessionHtmlFragment(trace);
+    assert.ok(frag.includes("スキル内（未参照）で読まれたファイル"));
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
 });
