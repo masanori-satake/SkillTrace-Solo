@@ -128,7 +128,7 @@ function nodeSuffix(tn: TraceNode | undefined, gn: { boundary: boolean; missing:
 }
 
 /** グラフを深さ付きの行リストに平らにする（共有参照は最初の出現だけ辿る。画面表示と同じ） */
-/** ノード明細の推定トークンに添えるバー（母数はそのスキルの全ファイル合計） */
+/** ノード詳細の推定トークンに添えるバー（母数はそのスキルの全ファイル合計） */
 function nodeBar(n: TraceNode, part: SkillPart): string {
   const total = part.nodes.reduce((a, x) => a + x.estTokens, 0);
   return n.estTokens > 0 && total > 0 ? ` ${blockBar(n.estTokens / total)}` : "";
@@ -440,7 +440,7 @@ ${en
 
 ${treeMd(part, lang)}
 
-## ${en ? "Node details" : "ノード明細"}
+## ${en ? "Node details" : "ノード詳細"}
 
 ${en
     ? `| File | Certainty | Order | First seen | Evidence | Est. tokens |
@@ -648,7 +648,7 @@ ${promptHtml(st)}
 <p>${en ? "Arrivals" : "到達"}: ${pill("A", lang)} <b>${counts.A}</b>${en ? " (loading into context confirmed)" : "（コンテキストへの読み込みを確認）"} / ${pill("B", lang)} <b>${counts.B}</b>${en ? " (read)" : "（読み取り）"} / ${pill("C", lang)} <b>${counts.C}</b>${en ? " (mention only)" : "（言及のみ）"} / ${en ? "No record" : "記録なし"} <b>${counts.N}</b> / ${en ? `${part.nodes.length} files in total` : `全 ${part.nodes.length} ファイル`}</p>
 <h2 style="${H.h2}">${en ? "Arrival flow" : "到達の流れ"}</h2>
 ${treeHtml(part, lang)}
-<h2 style="${H.h2}">${en ? "Node details" : "ノード明細"}</h2>
+<h2 style="${H.h2}">${en ? "Node details" : "ノード詳細"}</h2>
 <table style="${H.table}"><tr><th style="${H.cell}">${en ? "File" : "ファイル"}</th><th style="${H.cell}">${en ? "Certainty" : "確度"}</th><th style="${H.cell}">${en ? "Order" : "順"}</th><th style="${H.cell}">${en ? "First seen" : "初出"}</th><th style="${H.cell}">${en ? "Evidence" : "根拠"}</th><th style="${H.cell}">${en ? "Est. tokens" : "推定トークン"}</th></tr>${nodeRows}</table>
 <h2 style="${H.h2}">${st.source === "kiro" ? (en ? "Credit usage" : "クレジット実測") : (en ? "Token usage" : "トークン実測")}${en ? " (session-wide)" : "（セッション全体）"}</h2>
 ${measuredHtml(st, lang)}

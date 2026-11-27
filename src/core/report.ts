@@ -410,7 +410,7 @@ function referenceDiagramSection(nodes: TraceNode[], graph: Graph, lang: Lang): 
   if (nodes.length > DIAGRAM_NODE_CAP) {
     return head + intro + `<p>${en
       ? `The diagram is omitted because this skill has ${nodes.length} files (legibility limit: ${DIAGRAM_NODE_CAP}). See the arrival flow below and the file list in Node details. The tree may stop at cycles.`
-      : `このスキルはファイルが ${nodes.length} 件あるため、図は省略しました（見やすさの上限: ${DIAGRAM_NODE_CAP} 件）。下の到達の流れとノード明細のファイル一覧を参照してください。ツリーは循環箇所で展開を止める場合があります。`}</p>`;
+      : `このスキルはファイルが ${nodes.length} 件あるため、図は省略しました（見やすさの上限: ${DIAGRAM_NODE_CAP} 件）。下の到達の流れとノード詳細のファイル一覧を参照してください。ツリーは循環箇所で展開を止める場合があります。`}</p>`;
   }
   const diagram = buildReferenceDiagram(nodes, graph.order[0]?.relToSkill ?? "SKILL.md");
   // 階層レイアウト: 深さごとに1段、段の中では到達順→名前順
@@ -491,7 +491,7 @@ ${referenceDiagramSection(trace.nodes, graph, lang)}
 ${renderTreeHtml(trace.nodes, graph, lang)}
 <button id="play" type="button">▶ ${en ? "Play in arrival order" : "到達順に再生"}</button>
 ${usageBlock(trace, lang)}
-<h2>${en ? "Node details" : "ノード明細"}</h2>
+<h2>${en ? "Node details" : "ノード詳細"}</h2>
 <table class="nodes"><tr><th>${en ? "File" : "ファイル"}</th><th>${en ? "Certainty" : "確度"}</th><th>${en ? "Order" : "順"}</th><th>${en ? "First seen" : "初出"}</th><th>${en ? "Evidence" : "根拠"}</th><th>${en ? "Est. tokens" : "推定トークン"}</th></tr>${nodeRows}</table>
 ${outside}
 <h2>${en ? "How to read this" : "読み方の注意"}</h2>

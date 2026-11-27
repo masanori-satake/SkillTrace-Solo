@@ -266,3 +266,30 @@ export function discoverSkills(workspaceDir: string, opts?: { descendIntoChildFo
   }
   return [...byKey.values()];
 }
+
+/** 指定した名前のスキルを、複数のルートから名前で探す。
+ *  セッションの実行時フォルダでも記録のパスでも見つからない起動スキルを、
+ *  今開いているワークスペースの別ルートから拾うためのフォールバック。
+ *  各ルートでは直下の子フォルダまで見る（discoverSkills と同じ範囲）。
+ *  同じ実フォルダは1件にまとめ、名前が一致したものだけを返す */
+export function findSkillsByNameInRoots(names: readonly string[], roots: readonly string[]): { name: string; dir: string }[] {
+  const wanted = new Map<string, string>();
+  for (const n of names) if (n) wanted.set(n.toLowerCase(), n);
+  const out: { name: string; dir: string }[] = [];
+  if (!wanted.size) return out;
+  const seenDirs = new Set<string>();
+  for (const root of roots) {
+    if (!wanted.size) break;
+    if (!root) continue;
+    for (const cand of discoverSkills(root, { descendIntoChildFolders: true })) {
+      const key = cand.name.toLowerCase();
+      if (!wanted.has(key)) continue;
+      const dirKey = skillDirKey(cand.dir);
+      if (seenDirs.has(dirKey)) continue;
+      seenDirs.add(dirKey);
+      out.push({ name: cand.name, dir: cand.dir });
+      wanted.delete(key);
+    }
+  }
+  return out;
+}

@@ -9,7 +9,7 @@ import { renderFileUsageHtml, renderFileUsageMissingHtml, renderSessionHtml, ren
 import { aggregateFileUsageGroups, extractSessionFileUsage, type FileUsageGroup, type SessionFileUsage } from "./core/fileusage";
 import type { Graph } from "./core/graph";
 import { aggregateSessionFile, mergeSkillTotals, type SessionSkillUsage } from "./core/aggregate";
-import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, formatLocalDateTime, listSessions, locateSkillFromPaths, scanInvokedSkillNames, skillDirKey, skillDirMatchForms, type SessionInfo } from "./core/sessions";
+import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, findSkillsByNameInRoots, formatLocalDateTime, listSessions, locateSkillFromPaths, scanInvokedSkillNames, skillDirKey, skillDirMatchForms, type SessionInfo } from "./core/sessions";
 import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames, type KiroSkillPartInput } from "./core/kiro";
 import { buildVSCodeSessionTrace, defaultVSCodeStorageDir, listVSCodeChatSessions, parseVSCodeChatSessionFile, scanVSCodeActivationNames, type VSCodeSkillPartInput } from "./core/vscode";
 import { normPath } from "./core/graph";
@@ -164,6 +164,18 @@ export function activate(context: vscode.ExtensionContext): void {
           if (!dir) continue;
           skills.push({ name, dir });
           recordLocatedSkills.push({ name, dir: dir.replace(/\\/g, "/") });
+        }
+      }
+      // 記録のパスでも特定できない起動スキルは、今開いているワークスペースの
+      // 別ルートから名前で探す。マルチルートのワークスペースで実行された
+      // セッションでは、スキルが実行時フォルダ以外のルートにあることがある
+      // （置き場所が .github から .agents に移った場合も、現在の場所で拾える）
+      {
+        const known = new Set(skills.map(sk => sk.name.toLowerCase()));
+        const missing = invokedNames.filter(n => !known.has(n.toLowerCase()));
+        if (missing.length) {
+          const roots = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath);
+          for (const foundSkill of findSkillsByNameInRoots(missing, roots)) skills.push(foundSkill);
         }
       }
       const parts = skills.map(skill => {

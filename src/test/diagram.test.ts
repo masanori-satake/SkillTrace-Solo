@@ -118,6 +118,6 @@ test("omitted diagram points to the node-details file list, noting cycles (Issue
   const html = renderHtml(trace, graph);
   assert.ok(!html.includes("参照構造の図"));
   assert.ok(html.includes("41 件"));
-  assert.ok(html.includes("ノード明細のファイル一覧を参照してください"));
+  assert.ok(html.includes("ノード詳細のファイル一覧を参照してください"));
   assert.ok(html.includes("ツリーは循環箇所で展開を止める場合があります"));
 });
