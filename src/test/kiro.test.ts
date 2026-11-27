@@ -295,6 +295,14 @@ test("kiro trace: reads of unreferenced files inside the skill are split from ou
     // 実在すればスキル内と判定する（大文字小文字を区別する FS でも落とさない）
     assert.equal(skillDirRelativePath("references/caseguide.md", skillDir), "references/caseguide.md");
     assert.equal(skillDirRelativePath("demo-skill/references/caseguide.md", skillDir), "references/caseguide.md");
+    // 大文字小文字だけが異なるフォルダが共存しても、候補をすべて辿って
+    // 実在する側を見つける（最初に一致した候補だけで打ち切らない）
+    mkdirSync(join(skillDir, "templates", "CaseA"), { recursive: true });
+    mkdirSync(join(skillDir, "templates", "casea"), { recursive: true });
+    writeFileSync(join(skillDir, "templates", "CaseA", "item.md"), "# Item\n");
+    writeFileSync(join(skillDir, "templates", "casea", "decoy.md"), "# Decoy\n");
+    assert.equal(skillDirRelativePath("templates/casea/item.md", skillDir), "templates/casea/item.md");
+    assert.equal(skillDirRelativePath("templates/casea/decoy.md", skillDir), "templates/casea/decoy.md");
 
     const missingAbs = join(skillDir, "references", "docs", "missing.md").replace(/\\/g, "/");
     const rows = [

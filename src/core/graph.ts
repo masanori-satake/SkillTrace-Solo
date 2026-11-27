@@ -35,18 +35,19 @@ export function toSlashes(p: string): string { return String(p).split(sep).join(
  * フォルダ配下に、相対セグメント列が指すファイルが実在するかを返す。
  * 記録パスは正規化で小文字化されているため、そのまま existsSync に渡すと
  * 大文字小文字を区別するファイルシステムでは実在するファイルを見落とす。
- * フォルダ内の実名と小文字同士で突き合わせながら辿る。
+ * フォルダ内の実名と小文字同士で突き合わせながら辿る。大文字小文字だけが
+ * 異なる名前が共存する場合は、候補をすべて辿っていずれかで実在すれば
+ * 成功とする（最初に一致した候補だけでは、別候補の配下にあるファイル
+ * を見落とす）。
  */
 function existsUnderDir(dirAbs: string, relSegs: string[]): boolean {
-  let cur = dirAbs;
-  for (const seg of relSegs) {
-    let names: string[];
-    try { names = readdirSync(cur); } catch { return false; }
-    const hit = names.find(name => name.toLowerCase() === seg);
-    if (hit === undefined) return false;
-    cur = join(cur, hit);
-  }
-  return existsSync(cur);
+  if (relSegs.length === 0) return existsSync(dirAbs);
+  let names: string[];
+  try { names = readdirSync(dirAbs); } catch { return false; }
+  const [head, ...rest] = relSegs;
+  return names
+    .filter(name => name.toLowerCase() === head)
+    .some(name => existsUnderDir(join(dirAbs, name), rest));
 }
 
 export function skillDirRelativePath(recordedNorm: string, skillDirAbs: string): string | null {
