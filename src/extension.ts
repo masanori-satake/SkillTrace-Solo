@@ -9,7 +9,7 @@ import { renderFileUsageHtml, renderFileUsageMissingHtml, renderSessionHtml, ren
 import { aggregateFileUsageGroups, extractSessionFileUsage, type FileUsageGroup, type SessionFileUsage } from "./core/fileusage";
 import type { Graph } from "./core/graph";
 import { aggregateSessionFile, mergeSkillTotals, type SessionSkillUsage } from "./core/aggregate";
-import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, formatLocalDateTime, listSessions, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "./core/sessions";
+import { capSessionsBySource, defaultSessionStateDir, discoverSkills, filterSessionsToWorkspace, formatLocalDateTime, listSessions, locateSkillFromPaths, scanInvokedSkillNames, skillDirKey, skillDirMatchForms, type SessionInfo } from "./core/sessions";
 import { buildKiroSessionTrace, defaultKiroHome, listKiroSessions, parseKiroMessagesFile, scanKiroActivationNames, type KiroSkillPartInput } from "./core/kiro";
 import { buildVSCodeSessionTrace, defaultVSCodeStorageDir, listVSCodeChatSessions, parseVSCodeChatSessionFile, scanVSCodeActivationNames, type VSCodeSkillPartInput } from "./core/vscode";
 import { normPath } from "./core/graph";
@@ -52,8 +52,13 @@ export function activate(context: vscode.ExtensionContext): void {
     const out: { name: string; dir: string; root: string }[] = [];
     for (const root of [...roots, homedir()]) {
       if (!root || !existsSync(root)) continue;
-      for (const s of discoverSkills(root)) {
-        const key = s.dir.toLowerCase();
+      // ワークスペースのルートは直下の子フォルダ（clone 群）まで見る。
+      // ホーム配下は標準ルートだけ（個人用スキル置き場）に留める
+      const descend = root !== homedir();
+      for (const s of discoverSkills(root, descend ? { descendIntoChildFolders: true } : undefined)) {
+        // ルートをまたぐ重複も実パス基準で除く（ホーム側のリンクと実体が
+        // 別候補として残ると、同じスキルが二重に数えられるため）
+        const key = skillDirKey(s.dir);
         if (seen.has(key)) continue;
         seen.add(key);
         out.push({ ...s, root });
@@ -106,8 +111,8 @@ export function activate(context: vscode.ExtensionContext): void {
           : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
         const activated = new Set(parsed.activations.map(a => a.name));
         const readPaths = parsed.requests.flatMap(r => r.tools.map(t => t.readPath).filter((p): p is string => !!p));
-        const parts: VSCodeSkillPartInput[] = workspaceDir ? discoverSkills(workspaceDir)
-          .filter(sk => activated.has(sk.name) || readPaths.some(p => normPath(p).includes(normPath(sk.dir))))
+        const parts: VSCodeSkillPartInput[] = workspaceDir ? discoverSkills(workspaceDir, { descendIntoChildFolders: true })
+          .filter(sk => activated.has(sk.name) || readPaths.some(p => skillDirMatchForms(sk.dir, sk.aliasDirs).some(f => normPath(p).includes(f))))
           .map(sk => {
             // 見出しは buildGraph が上限付きで読んだ SKILL.md のタイトルを再利用する
             // （監査 2026-11-22: 素の readFileSync での再読をやめる）
@@ -199,7 +204,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // Kiro と同じく、記録にある起動名をそのまま使う（候補で絞らない）
       result = scanVSCodeActivationNames(session.eventsPath);
     } else if (session.workspaceHint && existsSync(session.workspaceHint)) {
-      result = scanInvokedSkillNames(session.eventsPath, discoverSkills(session.workspaceHint));
+      result = scanInvokedSkillNames(session.eventsPath, discoverSkills(session.workspaceHint, { descendIntoChildFolders: true }));
     }
     scanCache.set(key, result);
     return result;
@@ -608,12 +613,21 @@ export function activate(context: vscode.ExtensionContext): void {
       // 同名スキルは配置場所（スキルフォルダ）ごとに分けて集計する。
       // スキル別集計の行から呼ばれた場合は、その行のフォルダだけを対象にする
       const groups: FileUsageGroup[] = [];
+      // 親フォルダとその子フォルダが両方ルートにある場合、子フォルダ側の
+      // スキルは親側の1段探索でも見つかるため、ルートをまたいで重複を除く
+      const seenDirs = new Set<string>();
       for (const root of roots) {
         if (!root || !existsSync(root)) continue;
-        for (const s of discoverSkills(root)) {
+        const descend = root !== homedir();
+        for (const s of discoverSkills(root, descend ? { descendIntoChildFolders: true } : undefined)) {
           if (s.name.toLowerCase() !== name.toLowerCase()) continue;
           const dir = normPath(s.dir);
           if (onlyDir && dir !== onlyDir) continue;
+          // 重複キーの登録は配置指定（onlyDir）の照合を通ってからにする。
+          // 先に登録すると、別名側がキーを埋めて指定側まで除外してしまう
+          const dirKey = skillDirKey(s.dir);
+          if (seenDirs.has(dirKey)) continue;
+          seenDirs.add(dirKey);
           try { groups.push({ label: s.dir, dirs: [dir], graphs: [buildGraph(s.dir, root)] }); } catch { /* 読めないスキルは飛ばす */ }
         }
       }

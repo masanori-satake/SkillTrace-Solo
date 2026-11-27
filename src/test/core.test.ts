@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { buildGraph, MAX_GRAPH_NODES } from "../core/graph";
 import { parseEventsText } from "../core/events";
 import { buildSessionTrace, buildTrace, extractRecordedPaths, firstHeading, gradeCertaintyLabel } from "../core/trace";
-import { capSessionsBySource, formatLocalDateTime, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
+import { capSessionsBySource, discoverSkills, formatLocalDateTime, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
 import { langFromEnv, recordLocatedSkillsNote, sanitizeFilenamePart, undiscoveredSkillsNote } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
 
@@ -556,4 +556,130 @@ test("recordLocatedSkillsNote: 特定できたスキルの注記文", () => {
   assert.ok(note.includes("diataxis-reviewer"));
   assert.ok(note.includes("ワークスペース外"));
   assert.ok(recordLocatedSkillsNote([{ name: "x", dir: "/tmp/x" }], "en").includes("located from paths in the record"));
+});
+
+test("discoverSkills: descendIntoChildFolders は直下の子フォルダ（clone）の中まで見る", () => {
+  // 「1つのワークスペースフォルダの下に複数の clone を並べる」構成では、
+  // スキルは <ルート>/<リポジトリ>/.github/skills/<名前> にある（2026-11-27 の報告）
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-discover-"));
+  try {
+    const mk = (rel: string) => {
+      mkdirSync(join(root, rel), { recursive: true });
+      writeFileSync(join(root, rel, "SKILL.md"), "# skill\n");
+    };
+    mk(".github/skills/root-skill");
+    mk("repo-a/.github/skills/child-skill");
+    mk("repo-a/nested/.github/skills/deep-skill");
+    mk("node_modules/pkg/.github/skills/nm-skill");
+    mk(".hidden/.github/skills/hidden-skill");
+
+    const shallow = discoverSkills(root).map(s => s.name);
+    assert.deepEqual(shallow, ["root-skill"]);
+
+    const deep = discoverSkills(root, { descendIntoChildFolders: true }).map(s => s.name).sort();
+    // 子フォルダ1段目まで。2段下（deep）、node_modules、隠しフォルダは対象外
+    assert.deepEqual(deep, ["child-skill", "root-skill"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("discoverSkills: 列挙できない標準ルートがあっても、他のルートの探索は続く", () => {
+  // .github/skills が通常ファイルだと readdirSync が例外になる。1つの標準
+  // ルートの失敗で探索全体（ひいてはトレース構築）が落ちないことの回帰テスト
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-discover-bad-"));
+  try {
+    mkdirSync(join(root, ".github"), { recursive: true });
+    writeFileSync(join(root, ".github", "skills"), "not a directory\n");
+    mkdirSync(join(root, ".agents", "skills", "demo"), { recursive: true });
+    writeFileSync(join(root, ".agents", "skills", "demo", "SKILL.md"), "# demo\n");
+    // 子フォルダ側の壊れた標準ルートでも、ルート直下の結果は返る
+    mkdirSync(join(root, "repo-x", ".github"), { recursive: true });
+    writeFileSync(join(root, "repo-x", ".github", "skills"), "not a directory\n");
+    assert.deepEqual(discoverSkills(root).map(s => s.name), ["demo"]);
+    assert.deepEqual(discoverSkills(root, { descendIntoChildFolders: true }).map(s => s.name), ["demo"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("discoverSkills: シンボリックリンクの別名で重複排除されても、記録の別名パスで照合できる", async () => {
+  // .github/skills/lint が .agents/skills/lint へのリンクだと、重複排除で
+  // 残るのは .github 側だけになる。記録が .agents 側のパスを指していても、
+  // 実パスでの照合で検出できることの回帰テスト
+  const { detectSkillsForSession } = await import("../core/autodetect.js");
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-alias-"));
+  try {
+    const agentsLint = join(root, ".agents", "skills", "lint");
+    mkdirSync(agentsLint, { recursive: true });
+    writeFileSync(join(agentsLint, "SKILL.md"), "# lint\n");
+    mkdirSync(join(root, ".agents", "skills", "other"), { recursive: true });
+    writeFileSync(join(root, ".agents", "skills", "other", "SKILL.md"), "# other\n");
+    mkdirSync(join(root, ".github", "skills"), { recursive: true });
+    symlinkSync(agentsLint, join(root, ".github", "skills", "lint"), "dir");
+
+    const found = discoverSkills(root);
+    // 実フォルダが同じ lint は1件にまとまる（別名の二重登録をしない）
+    assert.deepEqual(found.map(s => s.name).sort(), ["lint", "other"]);
+    assert.equal(found.filter(s => s.name === "lint").length, 1);
+
+    // 起動記録は別名（.agents）側のパスだけを持ち、スキル名の文字列は含まない
+    const invokedPath = join(agentsLint, "SKILL.md").replace(/\\/g, "/");
+    const text = [
+      JSON.stringify({ type: "user.message", timestamp: "2026-11-27T00:00:00.000Z", id: "u1", data: { content: "please check the code" } }),
+      JSON.stringify({ type: "skill.invoked", timestamp: "2026-11-27T00:00:01.000Z", id: "e1", data: { skillPath: invokedPath } }),
+    ].join("\n");
+    const parsed = parseEventsText(text);
+    // 他スキル（other）があるため単一候補フォールバックでは救えない条件で、
+    // lint だけがパス照合で検出される
+    assert.deepEqual(detectSkillsForSession(parsed, root).map(s => s.name), ["lint"]);
+
+    // 履歴ラベルの候補照合（scanInvokedSkillNames）でも別名で一致する
+    const eventsPath = join(root, "events.jsonl");
+    writeFileSync(eventsPath, text + "\n");
+    assert.deepEqual(scanInvokedSkillNames(eventsPath, found), ["lint"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("discoverSkills: 実体が先に見つかる向きのリンクでも、別名パスで照合できる", async () => {
+  // .github/skills/lint が実体で .agents/skills/lint がそのリンクだと、
+  // 重複排除で残るのは実体（.github）側だけになり、実パス形は実体と同一に
+  // なる。記録が別名（.agents）側のパスだけを持つ場合でも、重複排除で
+  // 落ちた別名を aliasDirs として保持し、照合に使えることの回帰テスト
+  const { detectSkillsForSession } = await import("../core/autodetect.js");
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-alias-rev-"));
+  try {
+    const githubLint = join(root, ".github", "skills", "lint");
+    mkdirSync(githubLint, { recursive: true });
+    writeFileSync(join(githubLint, "SKILL.md"), "# lint\n");
+    mkdirSync(join(root, ".github", "skills", "other"), { recursive: true });
+    writeFileSync(join(root, ".github", "skills", "other", "SKILL.md"), "# other\n");
+    mkdirSync(join(root, ".agents", "skills"), { recursive: true });
+    const agentsLint = join(root, ".agents", "skills", "lint");
+    symlinkSync(githubLint, agentsLint, "dir");
+
+    const found = discoverSkills(root);
+    assert.deepEqual(found.map(s => s.name).sort(), ["lint", "other"]);
+    const lint = found.find(s => s.name === "lint");
+    assert.ok(lint);
+    // 残ったのは実体（.github）側で、落ちた別名（.agents）側が保持される
+    assert.equal(lint.dir, githubLint);
+    assert.deepEqual(lint.aliasDirs, [agentsLint]);
+
+    const invokedPath = join(agentsLint, "SKILL.md").replace(/\\/g, "/");
+    const text = [
+      JSON.stringify({ type: "user.message", timestamp: "2026-11-27T00:00:00.000Z", id: "u1", data: { content: "please check the code" } }),
+      JSON.stringify({ type: "skill.invoked", timestamp: "2026-11-27T00:00:01.000Z", id: "e1", data: { skillPath: invokedPath } }),
+    ].join("\n");
+    const parsed = parseEventsText(text);
+    assert.deepEqual(detectSkillsForSession(parsed, root).map(s => s.name), ["lint"]);
+
+    const eventsPath = join(root, "events.jsonl");
+    writeFileSync(eventsPath, text + "\n");
+    assert.deepEqual(scanInvokedSkillNames(eventsPath, found), ["lint"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

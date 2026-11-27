@@ -1,6 +1,6 @@
 // Copilot CLI のセッション（~/.copilot/session-state/<id>/）の列挙と、
 // ワークスペース内のスキル探索。
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { normPath } from "./graph";
@@ -118,7 +118,7 @@ export function capSessionsBySource(sessions: SessionInfo[], perSource: number):
 // 履歴ラベル用の軽量スキャン: skill.invoked 系の行だけをパースし、
 // 発動したスキル名を返す（全文パースは表示中のセッションだけに行う）。
 // 候補が無い・読めない場合は null（未判定）。発動が無ければ空配列。
-export function scanInvokedSkillNames(eventsPath: string, candidates: { name: string; dir: string }[]): string[] | null {
+export function scanInvokedSkillNames(eventsPath: string, candidates: { name: string; dir: string; aliasDirs?: string[] }[]): string[] | null {
   const text = readTextFileWithinLimit(eventsPath, MAX_RECORD_BYTES);
   if (text === null) return null;
   const names: string[] = [];
@@ -140,7 +140,7 @@ export function scanInvokedSkillNames(eventsPath: string, candidates: { name: st
     const norm = strings.map(x => normPath(x));
     for (const c of candidates) {
       if (names.includes(c.name)) continue;
-      if (norm.some(x => x.includes(normPath(c.dir))) || norm.some(x => x === c.name.toLowerCase())) names.push(c.name);
+      if (norm.some(x => skillDirMatchForms(c.dir, c.aliasDirs).some(f => x.includes(f))) || norm.some(x => x === c.name.toLowerCase())) names.push(c.name);
     }
   }
   if (names.length) return names;
@@ -178,17 +178,78 @@ export function locateSkillFromPaths(name: string, paths: readonly string[]): st
   return null;
 }
 
-export function discoverSkills(workspaceDir: string): { name: string; dir: string }[] {
-  const found: { name: string; dir: string }[] = [];
+/** 1段下の探索で対象にしない子フォルダ（依存パッケージ置き場） */
+const DESCEND_SKIP = new Set(["node_modules"]);
+
+/** base 直下の標準ルート（SKILL_ROOTS）からスキルを集める */
+function collectSkills(base: string, found: { name: string; dir: string }[]): void {
   for (const root of SKILL_ROOTS) {
-    const base = join(workspaceDir, root);
-    if (!existsSync(base)) continue;
-    for (const name of readdirSync(base)) {
-      const dir = join(base, name);
+    const skillsBase = join(base, root);
+    if (!existsSync(skillsBase)) continue;
+    // skillsBase が通常ファイル等で列挙できない場合は、その標準ルートだけを
+    // 飛ばす（例外を呼び出し元へ伝播させて探索全体を落とさない）
+    let names: string[];
+    try { names = readdirSync(skillsBase); } catch { continue; }
+    for (const name of names) {
+      const dir = join(skillsBase, name);
       try {
         if (statSync(dir).isDirectory() && existsSync(join(dir, "SKILL.md"))) found.push({ name, dir });
       } catch { /* skip */ }
     }
   }
-  return found;
+}
+
+/** 同じ実フォルダへの重複登録を除くためのキー（シンボリックリンク経由の二重発見を防ぐ） */
+export function skillDirKey(dir: string): string {
+  let p = dir;
+  try { p = realpathSync(dir); } catch { /* 実パスが取れなければそのまま */ }
+  return process.platform === "win32" ? p.toLowerCase() : p;
+}
+
+/** ワークスペース内のスキルを、標準ルート（SKILL_ROOTS）から探す。
+ *  descendIntoChildFolders を付けると、直下の子フォルダ（clone してきた
+ *  リポジトリ等）の中の標準ルートも見る。広げるのは1段目までで、再帰的な
+ *  走査はしない。隠しフォルダと node_modules は対象にしない。
+ *  「1つのワークスペースフォルダの下に複数の clone を並べる」構成への対応 */
+/** 記録パスとの照合に使うスキルフォルダのパス形。配置パスそのものに加え、
+ *  実パス（シンボリックリンク解決後）も返す。重複排除で別名側が落ちても、
+ *  記録がどちらのパスを指していても照合できるようにするため */
+export function skillDirMatchForms(dir: string, aliasDirs?: readonly string[]): string[] {
+  const forms = [normPath(dir)];
+  try {
+    const real = normPath(realpathSync(dir));
+    if (!forms.includes(real)) forms.push(real);
+  } catch { /* 実パスが取れなければ配置パスだけで照合する */ }
+  // 重複排除で落ちた別名（シンボリックリンク等）も照合に使う。実体が先に
+  // 見つかった場合は実パス形だけでは別名をカバーできないため
+  for (const alias of aliasDirs ?? []) {
+    const form = normPath(alias);
+    if (!forms.includes(form)) forms.push(form);
+  }
+  return forms;
+}
+
+export function discoverSkills(workspaceDir: string, opts?: { descendIntoChildFolders?: boolean }): { name: string; dir: string; aliasDirs?: string[] }[] {
+  const found: { name: string; dir: string }[] = [];
+  collectSkills(workspaceDir, found);
+  if (opts?.descendIntoChildFolders) {
+    let children: string[] = [];
+    try { children = readdirSync(workspaceDir); } catch { children = []; }
+    for (const child of children) {
+      if (child.startsWith(".") || DESCEND_SKIP.has(child)) continue;
+      const childDir = join(workspaceDir, child);
+      try { if (!statSync(childDir).isDirectory()) continue; } catch { continue; }
+      collectSkills(childDir, found);
+    }
+  }
+  // 同じ実フォルダは1件にまとめる。落ちた側のパスは別名として残し、
+  // 記録パスとの照合（skillDirMatchForms）で使えるようにする
+  const byKey = new Map<string, { name: string; dir: string; aliasDirs?: string[] }>();
+  for (const s of found) {
+    const key = skillDirKey(s.dir);
+    const kept = byKey.get(key);
+    if (!kept) { byKey.set(key, { name: s.name, dir: s.dir }); continue; }
+    kept.aliasDirs = [...(kept.aliasDirs ?? []), s.dir];
+  }
+  return [...byKey.values()];
 }
