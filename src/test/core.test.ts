@@ -286,7 +286,7 @@ test("document: skill markdown has node details", async () => {
   const { st } = fixtureSessionTrace();
   const md = renderSkillMarkdown(st, st.skills[0]);
   assert.ok(md.includes("# スキルサマリ — phase0-probe"));
-  assert.ok(md.includes("## ノード明細"));
+  assert.ok(md.includes("## ノード詳細"));
   assert.ok(md.includes("references/alpha.md"));
 });
 
