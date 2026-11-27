@@ -104,6 +104,10 @@ export function renderSessionCopy(st: SessionTrace, mode: SessionCopyMode, lang:
     lines.push(`== ${part.skillName} ==`);
     renderPartLines(part, mode, lines, lang);
   }
+  if (st.unreferencedReads.length) {
+    lines.push(en ? "== Reads inside the skill (unreferenced) ==" : "== スキル内・未参照の読み取り ==");
+    for (const r of st.unreferencedReads) lines.push(en ? `- ${r.path} (${r.tool}${r.failed ? " · read failed" : ""})${r.title ? ` — ${r.title}` : ""}` : `- ${r.path}（${r.tool}${r.failed ? "・読取失敗" : ""}）${r.title ? ` — ${r.title}` : ""}`);
+  }
   if (st.outsideReads.length) {
     lines.push(en ? "== Reads outside the skill ==" : "== スキル外の読み取り ==");
     for (const r of st.outsideReads) lines.push(en ? `- ${r.path} (${r.tool}${r.failed ? " · read failed" : ""})${r.title ? ` — ${r.title}` : ""}` : `- ${r.path}（${r.tool}${r.failed ? "・読取失敗" : ""}）${r.title ? ` — ${r.title}` : ""}`);

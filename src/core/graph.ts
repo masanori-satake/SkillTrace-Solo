@@ -23,6 +23,35 @@ export function normPath(p: string): string {
 }
 export function toSlashes(p: string): string { return String(p).split(sep).join("/"); }
 
+/**
+ * 正規化済みの記録パスがスキルフォルダ内を指しているかを判定し、指していれば
+ * フォルダ内相対パスを、そうでなければ null を返す。
+ * 絶対パスはフォルダ配下かどうかだけで判定する（読み取りに失敗したファイルは
+ * 実在しなくても、パス自体が場所を示している）。相対パス（スキル名を含む形や
+ * スキルルート相対の形）は、同名の別ファイルをスキル内と誤認しないよう、
+ * 実ファイルの存在で裏を取る。
+ */
+export function skillDirRelativePath(recordedNorm: string, skillDirAbs: string): string | null {
+  const dir = normPath(skillDirAbs);
+  const p = recordedNorm;
+  if (p === dir) return null;
+  if (p.startsWith(dir + "/")) return p.slice(dir.length + 1);
+  const segs = p.split("/");
+  const base = dir.split("/").pop() ?? "";
+  // 例: ../<スキル名>/references/docs/guide.md（正規化で先頭の ../ は落ちている）
+  const idx = base ? segs.lastIndexOf(base) : -1;
+  if (idx >= 0 && idx < segs.length - 1) {
+    const rel = segs.slice(idx + 1).join("/");
+    if (existsSync(join(skillDirAbs, ...rel.split("/")))) return rel;
+  }
+  // スキルルート相対（例: references/docs/guide.md）。区切りを含まない
+  // ファイル名だけの断片は誤認しやすいため対象にしない
+  if (!p.startsWith("/") && !/^[a-z]:/.test(p) && p.includes("/")) {
+    if (existsSync(join(skillDirAbs, ...p.split("/")))) return p;
+  }
+  return null;
+}
+
 // トークン推定（概算。実測とは混ぜない表示用）
 export function estimateTokens(text: string): number {
   let ascii = 0, other = 0;
