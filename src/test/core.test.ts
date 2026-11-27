@@ -683,3 +683,29 @@ test("discoverSkills: 実体が先に見つかる向きのリンクでも、別�
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("locateSkillFromPaths: 文章や JSON 文字列に埋め込まれたパスからも特定する", () => {
+  // Copilot CLI の記録では、読み取りパスがツール結果の文章や引数の JSON
+  // 文字列の中に埋め込まれて現れることがある。文字列全体を区切るだけでは
+  // 先頭に余分な部分が付いて絶対パスとして組み立てられず、スキル外の
+  // 読み取りには出るのに所在を特定できない、という不整合があった
+  const base = mkdtempSync(join(tmpdir(), "skilltrace-locate-embed-"));
+  try {
+    const skillDir = join(base, "diataxis_skills", ".github", "skills", "diataxis-reviewer");
+    mkdirSync(join(skillDir, "references"), { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "# reviewer\n");
+    const clean = join(skillDir, "references", "review-criteria.md");
+    const found = (p: string) => p.replace(/\\/g, "/");
+    // 文章に埋め込まれた形（ツール結果）
+    assert.equal(found(locateSkillFromPaths("diataxis-reviewer", [`Successfully read the file: ${clean} (120 lines)`])!), found(skillDir));
+    // JSON 文字列に埋め込まれた形（ツール引数）
+    assert.equal(found(locateSkillFromPaths("diataxis-reviewer", [JSON.stringify({ path: clean })])!), found(skillDir));
+    // file:// URI の形
+    assert.equal(found(locateSkillFromPaths("diataxis-reviewer", [`file://${clean}`])!), found(skillDir));
+    // 埋め込まれていても、実在しないフォルダや名前違いは特定しない
+    assert.equal(locateSkillFromPaths("diataxis-reviewer", [`read: ${join(base, "nope", ".github", "skills", "diataxis-reviewer", "SKILL.md")}`]), null);
+    assert.equal(locateSkillFromPaths("diataxis-creator", [JSON.stringify({ path: clean })]), null);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});

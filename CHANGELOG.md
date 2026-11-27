@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.19.1] - 2026-11-27
+
+### Fixed
+
+- Locating a skill from paths in the record (for skills outside the session's workspace) now also works when the recorded path is embedded in a longer string — for example inside a tool result sentence or a JSON-encoded tool argument, as happens in Copilot CLI records. Previously only a string that was exactly a path could be matched, so a skill could appear in the "files read outside the skill" list yet still be reported as not found. The locator now extracts path-like parts from each recorded string (the same extraction used for outside reads) and matches on those as well.
+
+### 修正 (Fixed)
+
+- セッションのワークスペース外にあるスキルの所在を記録のパスから特定する処理で、パスが文章や JSON 文字列の中に埋め込まれている場合（Copilot CLI のツール結果・引数など）も特定できるようにした。従来はパス単体の文字列しか照合できず、「スキル外で読まれたファイル」にはパスが出ているのに「見つかりませんでした」になることがあった。記録の文字列からパスらしい部分を抜き出して照合する（スキル外の読み取りと同じ抽出を使う）。
+
 ## [1.19.0] - 2026-11-27
 
 ### Added
