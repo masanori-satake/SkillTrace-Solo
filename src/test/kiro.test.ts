@@ -280,12 +280,21 @@ test("kiro trace: reads of unreferenced files inside the skill are split from ou
     writeFileSync(join(skillDir, "SKILL.md"), "# Demo\n\nSee [a](references/a.md).\n");
     writeFileSync(join(skillDir, "references", "a.md"), "# A\n");
     writeFileSync(join(skillDir, "references", "docs", "guide.md"), "# Guide\n");
+    writeFileSync(join(skillDir, "references", "CaseGuide.md"), "# Case Guide\n");
 
     assert.equal(skillDirRelativePath("demo-skill/references/docs/guide.md", skillDir), "references/docs/guide.md");
     assert.equal(skillDirRelativePath("references/docs/guide.md", skillDir), "references/docs/guide.md");
     assert.equal(skillDirRelativePath("guide.md", skillDir), null);
     assert.equal(skillDirRelativePath("demo-skill/references/none.md", skillDir), null);
     assert.equal(skillDirRelativePath("c:/elsewhere/notes.md", skillDir), null);
+    // 配下でない絶対パスは、途中にスキル名と同じセグメントを含んでいても
+    // スキル内と誤認しない（存在確認のフォールバックは相対パスだけ）
+    assert.equal(skillDirRelativePath("/archive/demo-skill/references/docs/guide.md", skillDir), null);
+    assert.equal(skillDirRelativePath("c:/archive/demo-skill/references/docs/guide.md", skillDir), null);
+    // 記録パスは正規化で小文字化されるが、実名の大文字小文字が違っても
+    // 実在すればスキル内と判定する（大文字小文字を区別する FS でも落とさない）
+    assert.equal(skillDirRelativePath("references/caseguide.md", skillDir), "references/caseguide.md");
+    assert.equal(skillDirRelativePath("demo-skill/references/caseguide.md", skillDir), "references/caseguide.md");
 
     const missingAbs = join(skillDir, "references", "docs", "missing.md").replace(/\\/g, "/");
     const rows = [

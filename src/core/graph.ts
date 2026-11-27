@@ -5,7 +5,7 @@
 // 読み取り総バイト数に上限を設け、超過したら打ち切って notes に残す。
 // また、許可ルート（スキルディレクトリとワークスペース）の外へ解決される
 // 参照先については見出しを取得せず、パスの表示のみに留める。
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { MAX_GRAPH_FILE_BYTES, readTextFileWithinLimit } from "./readfile";
 
@@ -31,23 +31,45 @@ export function toSlashes(p: string): string { return String(p).split(sep).join(
  * スキルルート相対の形）は、同名の別ファイルをスキル内と誤認しないよう、
  * 実ファイルの存在で裏を取る。
  */
+/**
+ * フォルダ配下に、相対セグメント列が指すファイルが実在するかを返す。
+ * 記録パスは正規化で小文字化されているため、そのまま existsSync に渡すと
+ * 大文字小文字を区別するファイルシステムでは実在するファイルを見落とす。
+ * フォルダ内の実名と小文字同士で突き合わせながら辿る。
+ */
+function existsUnderDir(dirAbs: string, relSegs: string[]): boolean {
+  let cur = dirAbs;
+  for (const seg of relSegs) {
+    let names: string[];
+    try { names = readdirSync(cur); } catch { return false; }
+    const hit = names.find(name => name.toLowerCase() === seg);
+    if (hit === undefined) return false;
+    cur = join(cur, hit);
+  }
+  return existsSync(cur);
+}
+
 export function skillDirRelativePath(recordedNorm: string, skillDirAbs: string): string | null {
   const dir = normPath(skillDirAbs);
   const p = recordedNorm;
   if (p === dir) return null;
   if (p.startsWith(dir + "/")) return p.slice(dir.length + 1);
+  // 配下でない絶対パスはここで打ち切る。スキル名と同名の別フォルダ配下の
+  // ファイルをスキル内と誤認しないよう、存在確認によるフォールバックは
+  // 相対パスだけに適用する
+  if (p.startsWith("/") || /^[a-z]:/.test(p)) return null;
   const segs = p.split("/");
   const base = dir.split("/").pop() ?? "";
   // 例: ../<スキル名>/references/docs/guide.md（正規化で先頭の ../ は落ちている）
   const idx = base ? segs.lastIndexOf(base) : -1;
   if (idx >= 0 && idx < segs.length - 1) {
     const rel = segs.slice(idx + 1).join("/");
-    if (existsSync(join(skillDirAbs, ...rel.split("/")))) return rel;
+    if (existsUnderDir(skillDirAbs, rel.split("/"))) return rel;
   }
   // スキルルート相対（例: references/docs/guide.md）。区切りを含まない
   // ファイル名だけの断片は誤認しやすいため対象にしない
-  if (!p.startsWith("/") && !/^[a-z]:/.test(p) && p.includes("/")) {
-    if (existsSync(join(skillDirAbs, ...p.split("/")))) return p;
+  if (p.includes("/")) {
+    if (existsUnderDir(skillDirAbs, p.split("/"))) return p;
   }
   return null;
 }
