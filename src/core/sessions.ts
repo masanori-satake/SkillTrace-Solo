@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { normPath } from "./graph";
 import { collectStrings } from "./events";
 import { HEADING_PREFIX_BYTES, MAX_RECORD_BYTES, readFilePrefix, readTextFileWithinLimit } from "./readfile";
-import type { Lang } from "./common";
+import { extractRecordedPaths, type Lang } from "./common";
 
 export interface SessionInfo {
   id: string;
@@ -158,11 +158,13 @@ const LOCATE_ROOT_HEADS = new Set([".github", ".agents", ".kiro", ".claude", ".c
 /** 未発見スキルの所在を、セッション記録に残るパスから特定する（Issue #60）。
  *  パス中に「<ルート>/skills/<名前>/」の形が現れた場合に限り、そのフォルダを候補とし、
  *  実在して SKILL.md を含むときだけ返す。任意のディレクトリ走査はせず、記録に実際に
- *  現れた絶対パスだけを使う。相対パスの断片は実在確認の対象にしない */
+ *  現れた絶対パスだけを使う。相対パスの断片は実在確認の対象にしない。
+ *  パスが文章や JSON 文字列に埋め込まれている場合は、パスらしい部分を
+ *  抜き出してから照合する（文字列全体の先頭に余分な部分があると、絶対パス
+ *  として組み立てられないため） */
 export function locateSkillFromPaths(name: string, paths: readonly string[]): string | null {
   const target = name.toLowerCase();
-  for (const raw of paths) {
-    if (!raw) continue;
+  const tryCandidate = (raw: string): string | null => {
     const segs = raw.replace(/\\/g, "/").split("/");
     for (let i = 0; i + 2 < segs.length; i++) {
       if (!LOCATE_ROOT_HEADS.has(segs[i].toLowerCase())) continue;
@@ -174,6 +176,17 @@ export function locateSkillFromPaths(name: string, paths: readonly string[]): st
         if (statSync(dir).isDirectory() && existsSync(join(dir, "SKILL.md"))) return dir;
       } catch { /* skip */ }
     }
+    return null;
+  };
+  for (const raw of paths) {
+    if (!raw) continue;
+    // 記録の文字列はパス単体とは限らず、文章や JSON 文字列の中に埋め込まれて
+    // いることがある（Copilot CLI のツール引数・結果など）。文字列全体を
+    // 区切るだけでは先頭に余分な部分が付いて照合できないため、パスらしい
+    // 部分を抜き出した候補でも試す（スキル外の読み取りと同じ抽出器を使う）
+    const hit = tryCandidate(raw)
+      ?? extractRecordedPaths(raw).reduce<string | null>((acc, p) => acc ?? tryCandidate(p), null);
+    if (hit) return hit;
   }
   return null;
 }
