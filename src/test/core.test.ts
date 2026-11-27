@@ -6,7 +6,7 @@ import test from "node:test";
 import { buildGraph, MAX_GRAPH_NODES } from "../core/graph";
 import { parseEventsText } from "../core/events";
 import { buildSessionTrace, buildTrace, extractRecordedPaths, firstHeading, gradeCertaintyLabel } from "../core/trace";
-import { capSessionsBySource, formatLocalDateTime, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
+import { capSessionsBySource, discoverSkills, formatLocalDateTime, locateSkillFromPaths, scanInvokedSkillNames, type SessionInfo } from "../core/sessions";
 import { langFromEnv, recordLocatedSkillsNote, sanitizeFilenamePart, undiscoveredSkillsNote } from "../core/common";
 import { renderHtml, renderSessionHtml } from "../core/report";
 
@@ -556,4 +556,30 @@ test("recordLocatedSkillsNote: 特定できたスキルの注記文", () => {
   assert.ok(note.includes("diataxis-reviewer"));
   assert.ok(note.includes("ワークスペース外"));
   assert.ok(recordLocatedSkillsNote([{ name: "x", dir: "/tmp/x" }], "en").includes("located from paths in the record"));
+});
+
+test("discoverSkills: descendIntoChildFolders は直下の子フォルダ（clone）の中まで見る", () => {
+  // 「1つのワークスペースフォルダの下に複数の clone を並べる」構成では、
+  // スキルは <ルート>/<リポジトリ>/.github/skills/<名前> にある（2026-11-27 の報告）
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-discover-"));
+  try {
+    const mk = (rel: string) => {
+      mkdirSync(join(root, rel), { recursive: true });
+      writeFileSync(join(root, rel, "SKILL.md"), "# skill\n");
+    };
+    mk(".github/skills/root-skill");
+    mk("repo-a/.github/skills/child-skill");
+    mk("repo-a/nested/.github/skills/deep-skill");
+    mk("node_modules/pkg/.github/skills/nm-skill");
+    mk(".hidden/.github/skills/hidden-skill");
+
+    const shallow = discoverSkills(root).map(s => s.name);
+    assert.deepEqual(shallow, ["root-skill"]);
+
+    const deep = discoverSkills(root, { descendIntoChildFolders: true }).map(s => s.name).sort();
+    // 子フォルダ1段目まで。2段下（deep）、node_modules、隠しフォルダは対象外
+    assert.deepEqual(deep, ["child-skill", "root-skill"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

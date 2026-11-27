@@ -1,6 +1,6 @@
 // Copilot CLI のセッション（~/.copilot/session-state/<id>/）の列挙と、
 // ワークスペース内のスキル探索。
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { normPath } from "./graph";
@@ -178,17 +178,53 @@ export function locateSkillFromPaths(name: string, paths: readonly string[]): st
   return null;
 }
 
-export function discoverSkills(workspaceDir: string): { name: string; dir: string }[] {
-  const found: { name: string; dir: string }[] = [];
+/** 1段下の探索で対象にしない子フォルダ（依存パッケージ置き場） */
+const DESCEND_SKIP = new Set(["node_modules"]);
+
+/** base 直下の標準ルート（SKILL_ROOTS）からスキルを集める */
+function collectSkills(base: string, found: { name: string; dir: string }[]): void {
   for (const root of SKILL_ROOTS) {
-    const base = join(workspaceDir, root);
-    if (!existsSync(base)) continue;
-    for (const name of readdirSync(base)) {
-      const dir = join(base, name);
+    const skillsBase = join(base, root);
+    if (!existsSync(skillsBase)) continue;
+    for (const name of readdirSync(skillsBase)) {
+      const dir = join(skillsBase, name);
       try {
         if (statSync(dir).isDirectory() && existsSync(join(dir, "SKILL.md"))) found.push({ name, dir });
       } catch { /* skip */ }
     }
   }
-  return found;
+}
+
+/** 同じ実フォルダへの重複登録を除くためのキー（シンボリックリンク経由の二重発見を防ぐ） */
+function skillDirKey(dir: string): string {
+  let p = dir;
+  try { p = realpathSync(dir); } catch { /* 実パスが取れなければそのまま */ }
+  return process.platform === "win32" ? p.toLowerCase() : p;
+}
+
+/** ワークスペース内のスキルを、標準ルート（SKILL_ROOTS）から探す。
+ *  descendIntoChildFolders を付けると、直下の子フォルダ（clone してきた
+ *  リポジトリ等）の中の標準ルートも見る。広げるのは1段目までで、再帰的な
+ *  走査はしない。隠しフォルダと node_modules は対象にしない。
+ *  「1つのワークスペースフォルダの下に複数の clone を並べる」構成への対応 */
+export function discoverSkills(workspaceDir: string, opts?: { descendIntoChildFolders?: boolean }): { name: string; dir: string }[] {
+  const found: { name: string; dir: string }[] = [];
+  collectSkills(workspaceDir, found);
+  if (opts?.descendIntoChildFolders) {
+    let children: string[] = [];
+    try { children = readdirSync(workspaceDir); } catch { children = []; }
+    for (const child of children) {
+      if (child.startsWith(".") || DESCEND_SKIP.has(child)) continue;
+      const childDir = join(workspaceDir, child);
+      try { if (!statSync(childDir).isDirectory()) continue; } catch { continue; }
+      collectSkills(childDir, found);
+    }
+  }
+  const seen = new Set<string>();
+  return found.filter(s => {
+    const key = skillDirKey(s.dir);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

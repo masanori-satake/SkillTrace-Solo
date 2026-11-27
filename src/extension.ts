@@ -52,7 +52,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const out: { name: string; dir: string; root: string }[] = [];
     for (const root of [...roots, homedir()]) {
       if (!root || !existsSync(root)) continue;
-      for (const s of discoverSkills(root)) {
+      // ワークスペースのルートは直下の子フォルダ（clone 群）まで見る。
+      // ホーム配下は標準ルートだけ（個人用スキル置き場）に留める
+      const descend = root !== homedir();
+      for (const s of discoverSkills(root, descend ? { descendIntoChildFolders: true } : undefined)) {
         const key = s.dir.toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
@@ -106,7 +109,7 @@ export function activate(context: vscode.ExtensionContext): void {
           : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "");
         const activated = new Set(parsed.activations.map(a => a.name));
         const readPaths = parsed.requests.flatMap(r => r.tools.map(t => t.readPath).filter((p): p is string => !!p));
-        const parts: VSCodeSkillPartInput[] = workspaceDir ? discoverSkills(workspaceDir)
+        const parts: VSCodeSkillPartInput[] = workspaceDir ? discoverSkills(workspaceDir, { descendIntoChildFolders: true })
           .filter(sk => activated.has(sk.name) || readPaths.some(p => normPath(p).includes(normPath(sk.dir))))
           .map(sk => {
             // 見出しは buildGraph が上限付きで読んだ SKILL.md のタイトルを再利用する
@@ -199,7 +202,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // Kiro と同じく、記録にある起動名をそのまま使う（候補で絞らない）
       result = scanVSCodeActivationNames(session.eventsPath);
     } else if (session.workspaceHint && existsSync(session.workspaceHint)) {
-      result = scanInvokedSkillNames(session.eventsPath, discoverSkills(session.workspaceHint));
+      result = scanInvokedSkillNames(session.eventsPath, discoverSkills(session.workspaceHint, { descendIntoChildFolders: true }));
     }
     scanCache.set(key, result);
     return result;
@@ -610,7 +613,8 @@ export function activate(context: vscode.ExtensionContext): void {
       const groups: FileUsageGroup[] = [];
       for (const root of roots) {
         if (!root || !existsSync(root)) continue;
-        for (const s of discoverSkills(root)) {
+        const descend = root !== homedir();
+        for (const s of discoverSkills(root, descend ? { descendIntoChildFolders: true } : undefined)) {
           if (s.name.toLowerCase() !== name.toLowerCase()) continue;
           const dir = normPath(s.dir);
           if (onlyDir && dir !== onlyDir) continue;

@@ -10,7 +10,7 @@ import type { ParsedEvents } from "./events";
 export interface SkillRef { name: string; dir: string }
 
 export function detectSkillsForSession(parsed: ParsedEvents, workspaceDir: string): SkillRef[] {
-  const skills = discoverSkills(workspaceDir);
+  const skills = discoverSkills(workspaceDir, { descendIntoChildFolders: true });
   if (!skills.length) return [];
 
   const invokedStrings: string[] = [];
