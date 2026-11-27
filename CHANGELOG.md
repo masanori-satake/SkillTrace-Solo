@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.19.0] - 2026-11-27
+
+### Added
+
+- Skill discovery now also looks inside the immediate child folders of a workspace root: for each child folder (for example a cloned repository), the standard skill locations (`.github/skills`, `.agents/skills`, `.kiro/skills`, `.claude/skills`) are checked as well. This covers layouts where several clones sit side by side under one workspace folder. The widening is limited to one level — there is no recursive scanning — and hidden folders and `node_modules` are skipped. Home-directory skill locations are unchanged (standard locations only).
+
+### 追加 (Added)
+
+- スキルの探索で、ワークスペースのルート直下の子フォルダ（clone してきたリポジトリ等）の中の標準の置き場所（`.github/skills`、`.agents/skills`、`.kiro/skills`、`.claude/skills`）も見るようにした。「1つのワークスペースフォルダの下に複数の clone を並べる」構成で、子フォルダ側のリポジトリにあるスキルが見つかるようになる。広げるのは1段目までで、再帰的な走査はしない。隠しフォルダと `node_modules` は対象にしない。ホーム配下の置き場所は従来どおり標準の置き場所のみ
+
 ## [1.18.2] - 2026-11-27
 
 ### Changed
