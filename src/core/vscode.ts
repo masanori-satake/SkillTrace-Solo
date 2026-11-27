@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { normPath, toSlashes, type Graph, type GraphNode } from "./graph";
 import type { ParseHealth } from "./events";
-import { readOutsideTitle, type Grade, type OutsideRead, type SessionTrace, type TraceNode } from "./trace";
+import { readOutsideTitle, splitUnreferencedReads, type Grade, type OutsideRead, type SessionTrace, type TraceNode } from "./trace";
 import { MAX_RECORD_BYTES, readTextFileWithinLimit } from "./readfile";
 import type { SessionInfo } from "./sessions";
 import type { Lang } from "./common";
@@ -629,6 +629,8 @@ export function buildVSCodeSessionTrace(
   const contextCurrentSeries = parsed.requests.filter(r => r.promptTokens > 0).map(r => ({ at: r.at ?? "", tokens: r.promptTokens }));
   const lastContextCurrentTokens = contextCurrentSeries.length ? contextCurrentSeries[contextCurrentSeries.length - 1].tokens : null;
   const contextTokenLimit = parsed.contextTokenLimit;
+  const outsideAll = [...outside.values()].map(r => ({ ...r, title: readOutsideTitle(r.path) })) as OutsideRead[];
+  const { outsideReads, unreferencedReads } = splitUnreferencedReads(outsideAll, parts.map(p => p.skillDirAbs));
   return {
     source: "vscode",
     session: {
@@ -647,7 +649,8 @@ export function buildVSCodeSessionTrace(
     totals,
     toolExecutions: parsed.requests.flatMap(r => r.tools.map(t => ({ at: t.startedAt, toolName: t.toolId, success: t.complete }))),
     skills,
-    outsideReads: [...outside.values()].map(r => ({ ...r, title: readOutsideTitle(r.path) })) as OutsideRead[],
+    outsideReads,
+    unreferencedReads,
     creditsTotal,
     creditTurns,
     undiscoveredSkills,
