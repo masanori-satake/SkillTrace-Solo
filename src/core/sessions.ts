@@ -118,7 +118,7 @@ export function capSessionsBySource(sessions: SessionInfo[], perSource: number):
 // 履歴ラベル用の軽量スキャン: skill.invoked 系の行だけをパースし、
 // 発動したスキル名を返す（全文パースは表示中のセッションだけに行う）。
 // 候補が無い・読めない場合は null（未判定）。発動が無ければ空配列。
-export function scanInvokedSkillNames(eventsPath: string, candidates: { name: string; dir: string }[]): string[] | null {
+export function scanInvokedSkillNames(eventsPath: string, candidates: { name: string; dir: string; aliasDirs?: string[] }[]): string[] | null {
   const text = readTextFileWithinLimit(eventsPath, MAX_RECORD_BYTES);
   if (text === null) return null;
   const names: string[] = [];
@@ -140,7 +140,7 @@ export function scanInvokedSkillNames(eventsPath: string, candidates: { name: st
     const norm = strings.map(x => normPath(x));
     for (const c of candidates) {
       if (names.includes(c.name)) continue;
-      if (norm.some(x => skillDirMatchForms(c.dir).some(f => x.includes(f))) || norm.some(x => x === c.name.toLowerCase())) names.push(c.name);
+      if (norm.some(x => skillDirMatchForms(c.dir, c.aliasDirs).some(f => x.includes(f))) || norm.some(x => x === c.name.toLowerCase())) names.push(c.name);
     }
   }
   if (names.length) return names;
@@ -214,16 +214,22 @@ export function skillDirKey(dir: string): string {
 /** 記録パスとの照合に使うスキルフォルダのパス形。配置パスそのものに加え、
  *  実パス（シンボリックリンク解決後）も返す。重複排除で別名側が落ちても、
  *  記録がどちらのパスを指していても照合できるようにするため */
-export function skillDirMatchForms(dir: string): string[] {
+export function skillDirMatchForms(dir: string, aliasDirs?: readonly string[]): string[] {
   const forms = [normPath(dir)];
   try {
     const real = normPath(realpathSync(dir));
     if (!forms.includes(real)) forms.push(real);
   } catch { /* 実パスが取れなければ配置パスだけで照合する */ }
+  // 重複排除で落ちた別名（シンボリックリンク等）も照合に使う。実体が先に
+  // 見つかった場合は実パス形だけでは別名をカバーできないため
+  for (const alias of aliasDirs ?? []) {
+    const form = normPath(alias);
+    if (!forms.includes(form)) forms.push(form);
+  }
   return forms;
 }
 
-export function discoverSkills(workspaceDir: string, opts?: { descendIntoChildFolders?: boolean }): { name: string; dir: string }[] {
+export function discoverSkills(workspaceDir: string, opts?: { descendIntoChildFolders?: boolean }): { name: string; dir: string; aliasDirs?: string[] }[] {
   const found: { name: string; dir: string }[] = [];
   collectSkills(workspaceDir, found);
   if (opts?.descendIntoChildFolders) {
@@ -236,11 +242,14 @@ export function discoverSkills(workspaceDir: string, opts?: { descendIntoChildFo
       collectSkills(childDir, found);
     }
   }
-  const seen = new Set<string>();
-  return found.filter(s => {
+  // 同じ実フォルダは1件にまとめる。落ちた側のパスは別名として残し、
+  // 記録パスとの照合（skillDirMatchForms）で使えるようにする
+  const byKey = new Map<string, { name: string; dir: string; aliasDirs?: string[] }>();
+  for (const s of found) {
     const key = skillDirKey(s.dir);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    const kept = byKey.get(key);
+    if (!kept) { byKey.set(key, { name: s.name, dir: s.dir }); continue; }
+    kept.aliasDirs = [...(kept.aliasDirs ?? []), s.dir];
+  }
+  return [...byKey.values()];
 }

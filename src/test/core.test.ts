@@ -642,3 +642,44 @@ test("discoverSkills: シンボリックリンクの別名で重複排除され�
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("discoverSkills: 実体が先に見つかる向きのリンクでも、別名パスで照合できる", async () => {
+  // .github/skills/lint が実体で .agents/skills/lint がそのリンクだと、
+  // 重複排除で残るのは実体（.github）側だけになり、実パス形は実体と同一に
+  // なる。記録が別名（.agents）側のパスだけを持つ場合でも、重複排除で
+  // 落ちた別名を aliasDirs として保持し、照合に使えることの回帰テスト
+  const { detectSkillsForSession } = await import("../core/autodetect.js");
+  const root = mkdtempSync(join(tmpdir(), "skilltrace-alias-rev-"));
+  try {
+    const githubLint = join(root, ".github", "skills", "lint");
+    mkdirSync(githubLint, { recursive: true });
+    writeFileSync(join(githubLint, "SKILL.md"), "# lint\n");
+    mkdirSync(join(root, ".github", "skills", "other"), { recursive: true });
+    writeFileSync(join(root, ".github", "skills", "other", "SKILL.md"), "# other\n");
+    mkdirSync(join(root, ".agents", "skills"), { recursive: true });
+    const agentsLint = join(root, ".agents", "skills", "lint");
+    symlinkSync(githubLint, agentsLint, "dir");
+
+    const found = discoverSkills(root);
+    assert.deepEqual(found.map(s => s.name).sort(), ["lint", "other"]);
+    const lint = found.find(s => s.name === "lint");
+    assert.ok(lint);
+    // 残ったのは実体（.github）側で、落ちた別名（.agents）側が保持される
+    assert.equal(lint.dir, githubLint);
+    assert.deepEqual(lint.aliasDirs, [agentsLint]);
+
+    const invokedPath = join(agentsLint, "SKILL.md").replace(/\\/g, "/");
+    const text = [
+      JSON.stringify({ type: "user.message", timestamp: "2026-11-27T00:00:00.000Z", id: "u1", data: { content: "please check the code" } }),
+      JSON.stringify({ type: "skill.invoked", timestamp: "2026-11-27T00:00:01.000Z", id: "e1", data: { skillPath: invokedPath } }),
+    ].join("\n");
+    const parsed = parseEventsText(text);
+    assert.deepEqual(detectSkillsForSession(parsed, root).map(s => s.name), ["lint"]);
+
+    const eventsPath = join(root, "events.jsonl");
+    writeFileSync(eventsPath, text + "\n");
+    assert.deepEqual(scanInvokedSkillNames(eventsPath, found), ["lint"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

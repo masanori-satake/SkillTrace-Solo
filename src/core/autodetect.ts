@@ -7,7 +7,7 @@ import { normPath } from "./graph";
 import { discoverSkills, skillDirMatchForms } from "./sessions";
 import type { ParsedEvents } from "./events";
 
-export interface SkillRef { name: string; dir: string }
+export interface SkillRef { name: string; dir: string; aliasDirs?: string[] }
 
 export function detectSkillsForSession(parsed: ParsedEvents, workspaceDir: string): SkillRef[] {
   const skills = discoverSkills(workspaceDir, { descendIntoChildFolders: true });
@@ -21,7 +21,7 @@ export function detectSkillsForSession(parsed: ParsedEvents, workspaceDir: strin
 
   const matched: SkillRef[] = [];
   for (const skill of skills) {
-    const dirForms = skillDirMatchForms(skill.dir);
+    const dirForms = skillDirMatchForms(skill.dir, skill.aliasDirs);
     const hit = invokedNorm.some(s => dirForms.some(f => s.includes(f)))
       || invokedNorm.some(s => s === skill.name.toLowerCase())
       || parsed.firstUserMessage.includes(`/${skill.name}`);
@@ -35,7 +35,7 @@ export function detectSkillsForSession(parsed: ParsedEvents, workspaceDir: strin
     for (const s of ev.strings) {
       const ns = normPath(s);
       for (const skill of matched) {
-        if (!firstIdx.has(skill.name) && skillDirMatchForms(skill.dir).some(f => ns.includes(f))) firstIdx.set(skill.name, i);
+        if (!firstIdx.has(skill.name) && skillDirMatchForms(skill.dir, skill.aliasDirs).some(f => ns.includes(f))) firstIdx.set(skill.name, i);
       }
     }
   });

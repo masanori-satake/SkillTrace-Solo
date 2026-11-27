@@ -56,7 +56,9 @@ export function activate(context: vscode.ExtensionContext): void {
       // ホーム配下は標準ルートだけ（個人用スキル置き場）に留める
       const descend = root !== homedir();
       for (const s of discoverSkills(root, descend ? { descendIntoChildFolders: true } : undefined)) {
-        const key = s.dir.toLowerCase();
+        // ルートをまたぐ重複も実パス基準で除く（ホーム側のリンクと実体が
+        // 別候補として残ると、同じスキルが二重に数えられるため）
+        const key = skillDirKey(s.dir);
         if (seen.has(key)) continue;
         seen.add(key);
         out.push({ ...s, root });
@@ -110,7 +112,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const activated = new Set(parsed.activations.map(a => a.name));
         const readPaths = parsed.requests.flatMap(r => r.tools.map(t => t.readPath).filter((p): p is string => !!p));
         const parts: VSCodeSkillPartInput[] = workspaceDir ? discoverSkills(workspaceDir, { descendIntoChildFolders: true })
-          .filter(sk => activated.has(sk.name) || readPaths.some(p => skillDirMatchForms(sk.dir).some(f => normPath(p).includes(f))))
+          .filter(sk => activated.has(sk.name) || readPaths.some(p => skillDirMatchForms(sk.dir, sk.aliasDirs).some(f => normPath(p).includes(f))))
           .map(sk => {
             // 見出しは buildGraph が上限付きで読んだ SKILL.md のタイトルを再利用する
             // （監査 2026-11-22: 素の readFileSync での再読をやめる）
@@ -619,11 +621,13 @@ export function activate(context: vscode.ExtensionContext): void {
         const descend = root !== homedir();
         for (const s of discoverSkills(root, descend ? { descendIntoChildFolders: true } : undefined)) {
           if (s.name.toLowerCase() !== name.toLowerCase()) continue;
+          const dir = normPath(s.dir);
+          if (onlyDir && dir !== onlyDir) continue;
+          // 重複キーの登録は配置指定（onlyDir）の照合を通ってからにする。
+          // 先に登録すると、別名側がキーを埋めて指定側まで除外してしまう
           const dirKey = skillDirKey(s.dir);
           if (seenDirs.has(dirKey)) continue;
           seenDirs.add(dirKey);
-          const dir = normPath(s.dir);
-          if (onlyDir && dir !== onlyDir) continue;
           try { groups.push({ label: s.dir, dirs: [dir], graphs: [buildGraph(s.dir, root)] }); } catch { /* 読めないスキルは飛ばす */ }
         }
       }
